@@ -187,7 +187,11 @@ func (r *Registry) handle(st *wstate, c cmd) any {
 			return nil
 		}
 		e.readySent = true
-		r.onReady(ReadyEvent{PublishID: e.publishID, Key: c.key})
+		re := ReadyEvent{PublishID: e.publishID, Key: c.key}
+		// §10.2/§13: strukturali maydonlar — camera_id, publish_id, profile.
+		r.log.Info("media_ready", "camera_id", re.Key.CameraID, "profile", re.Key.Profile,
+			"ingest", re.Key.Ingest, "publish_id", re.PublishID)
+		r.onReady(re)
 		return nil
 	case cmdCount:
 		e, ok := entries[c.key]
@@ -215,7 +219,10 @@ func (r *Registry) handle(st *wstate, c cmd) any {
 		// §9.4: barcha publish'larni belgilangan reason bilan yopish.
 		for k, e := range entries {
 			delete(entries, k)
-			r.onStopped(StoppedEvent{PublishID: e.publishID, Key: k, Reason: c.reason})
+			se := StoppedEvent{PublishID: e.publishID, Key: k, Reason: c.reason}
+			r.log.Info("media_stopped", "camera_id", se.Key.CameraID, "profile", se.Key.Profile,
+				"publish_id", se.PublishID, "reason", se.Reason)
+			r.onStopped(se)
 		}
 		return nil
 	}
@@ -243,10 +250,16 @@ func (r *Registry) expire(st *wstate) {
 		switch {
 		case len(e.sessions) == 0 && !e.closeAt.IsZero() && !now.Before(e.closeAt):
 			delete(entries, k)
-			r.onStopped(StoppedEvent{PublishID: e.publishID, Key: k, Reason: "no_viewers"})
+			se := StoppedEvent{PublishID: e.publishID, Key: k, Reason: "no_viewers"}
+			r.log.Info("media_stopped", "camera_id", se.Key.CameraID, "profile", se.Key.Profile,
+				"publish_id", se.PublishID, "reason", se.Reason)
+			r.onStopped(se)
 		case !e.ttlDeadline.IsZero() && !now.Before(e.ttlDeadline):
 			delete(entries, k)
-			r.onStopped(StoppedEvent{PublishID: e.publishID, Key: k, Reason: "ttl_expired"})
+			se := StoppedEvent{PublishID: e.publishID, Key: k, Reason: "ttl_expired"}
+			r.log.Warn("media_stopped", "camera_id", se.Key.CameraID, "profile", se.Key.Profile,
+				"publish_id", se.PublishID, "reason", se.Reason)
+			r.onStopped(se)
 		}
 	}
 }

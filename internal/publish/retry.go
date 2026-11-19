@@ -3,9 +3,11 @@ package publish
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 
 	"central-vms/client/internal/clock"
+	"central-vms/client/internal/redact"
 	"time"
 )
 
@@ -61,7 +63,7 @@ func openWithRetry(ctx context.Context, clk clock.Clock, log *slog.Logger, base 
 	for i := 0; i < retryAttempts; i++ {
 		if i > 0 {
 			d := retryDelay(base, i-1)
-			log.Warn("publish_retry", "attempt", i, "wait_ms", d.Milliseconds(), "cause", last)
+			log.Warn("publish_retry", "attempt", i, "wait_ms", d.Milliseconds(), "cause", redact.String(fmt.Sprint(last)))
 			select {
 			case <-ctx.Done():
 				return ctx.Err()

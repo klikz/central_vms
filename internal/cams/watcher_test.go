@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -264,5 +265,47 @@ func TestWatcherEmitOnlyOnChange(t *testing.T) {
 	}
 	if events[0].Status != StatusOnline || events[1].Status != StatusOffline {
 		t.Errorf("ketma-ketlik xato: %+v", events)
+	}
+}
+
+// §10.2/C4.1: holat o'zgarishi strukturali maydonlar bilan loglanadi.
+type lockBuf struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *lockBuf) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *lockBuf) str() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
+func TestWatcher_StatusChangeStructuredLog(t *testing.T) {
+	clk := clock.NewFake(time.Unix(0, 0))
+	dial := func(_ context.Context, _ string) (Prober, func() error, error) {
+		return nil, nil, errors.New("refused")
+	}
+	lb := &lockBuf{}
+	lg := slog.New(slog.NewTextHandler(lb, nil))
+	w := NewWatcher(WatcherConfig{
+		Clock: clk, Interval: time.Minute, Parallel: 2, Timeout: time.Second, Dial: dial,
+		Log: lg, Emit: func(ProbeResult) {},
+		List: func() []Target { return []Target{{ID: "cam-7", URL: "rtsp://10.0.0.7/media"}} },
+	})
+	w.ProbeCycle(context.Background())
+	out := lb.str()
+	for _, want := range []string{"camera_id=cam-7", "new=offline", "reason=unreachable"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("logda %q yo'q: %s", want, out)
+		}
+	}
+	if !strings.Contains(out, "level=WARN") {
+		t.Errorf("offline WARN bo'lishi kerak: %s", out)
 	}
 }

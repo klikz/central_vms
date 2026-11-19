@@ -131,7 +131,16 @@ func (w *Watcher) ProbeCycle(ctx context.Context) []ProbeResult {
 			continue // bekor qilingan probe — holat haqida xulosa yo'q
 		}
 		if w.prev[r.ID] != r.Status {
+			old := w.prev[r.ID]
 			w.prev[r.ID] = r.Status
+			// §10.2: strukturali xato/holat maydonlari — camera_id, reason.
+			lvl := slog.LevelInfo
+			if r.Status == StatusOffline {
+				lvl = slog.LevelWarn
+			}
+			w.cfg.Log.Log(ctx, lvl, "kamera holati o'zgardi",
+				"camera_id", r.ID, "old", string(old), "new", string(r.Status),
+				"method", r.Method, "reason", r.Err)
 			w.cfg.Emit(r)
 		}
 	}

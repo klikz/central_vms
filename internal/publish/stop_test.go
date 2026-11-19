@@ -1,7 +1,11 @@
 package publish
 
 import (
+	"bytes"
+	"log/slog"
 	"runtime"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -115,6 +119,50 @@ func TestCloseAll_AgentRestart(t *testing.T) {
 	for _, want := range []string{ReasonAgentRestart} {
 		if st := ev.lastStopped(); st.Reason != want {
 			t.Errorf("reason = %q, %q kutilardi", st.Reason, want)
+		}
+	}
+}
+
+// syncBuf — registry goroutine'si yozadi, test o'qiydi (race yo'q).
+type syncBuf struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuf) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuf) str() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
+// §10.2/§13: hodisa loglari strukturali maydonlar bilan chiqadi.
+func TestRegistry_StructuredLogFields(t *testing.T) {
+	clk := clock.NewFake(time.Unix(0, 0))
+	buf := &syncBuf{}
+	lg := slog.New(slog.NewTextHandler(buf, nil))
+	r := New(clk, lg, nil, nil)
+	defer r.Shutdown()
+
+	r.Start("pub-42", Key{CameraID: "cam-7", Profile: "sub", Ingest: "whip"}, "play")
+	// TTL muddati o'tsa — media_stopped reason=ttl_expired.
+	clk.Advance(61 * time.Second)
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if strings.Contains(buf.str(), "media_stopped") {
+			break
+		}
+		runtime.Gosched()
+	}
+	out := buf.str()
+	for _, want := range []string{"camera_id=cam-7", "publish_id=pub_", "reason=ttl_expired", "profile=sub"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("logda %q yo'q: %s", want, out)
 		}
 	}
 }
