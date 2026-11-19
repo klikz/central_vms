@@ -19,6 +19,12 @@ type Config struct {
 	KeyFile   string `yaml:"key_file"`
 	LogLevel  string `yaml:"log_level"`
 
+	// Log fayli (talab 2026-11-19): xatolar terminal+BILAN faylga ham.
+	// Client fayli ALLOHIIDA (serverniki vmsd o'z faylida).
+	LogFile  string `yaml:"log_file"`
+	LogMaxMB int    `yaml:"log_max_mb"`
+	LogKeep  int    `yaml:"log_keep"`
+
 	Probe struct {
 		StatusParallel         int    `yaml:"status_parallel"`
 		StatusKeepalive        string `yaml:"status_keepalive"` // auto|get_parameter|options|describe
@@ -61,6 +67,9 @@ func Default() Config {
 	c.StateDir = "/var/lib/vmsagent"
 	c.KeyFile = "/etc/vmsagent/agent.key"
 	c.LogLevel = "info"
+	c.LogFile = "/var/log/vmsagent/vmsagent.log"
+	c.LogMaxMB = 4
+	c.LogKeep = 5
 
 	c.Probe.StatusParallel = 5
 	c.Probe.StatusKeepalive = "auto"
@@ -149,6 +158,9 @@ func Parse(src []byte) (Config, error) {
 		{"state_dir", func() error { return setStr("state_dir", &c.StateDir) }},
 		{"key_file", func() error { return setStr("key_file", &c.KeyFile) }},
 		{"log_level", func() error { return setStr("log_level", &c.LogLevel) }},
+		{"log_file", func() error { return setStr("log_file", &c.LogFile) }},
+		{"log_max_mb", func() error { return setInt("log_max_mb", &c.LogMaxMB) }},
+		{"log_keep", func() error { return setInt("log_keep", &c.LogKeep) }},
 
 		{"probe.status_parallel", func() error { return setInt("probe.status_parallel", &c.Probe.StatusParallel) }},
 		{"probe.status_keepalive", func() error { return setStr("probe.status_keepalive", &c.Probe.StatusKeepalive) }},
@@ -202,7 +214,8 @@ func Parse(src []byte) (Config, error) {
 // printy xatosi yoki eski konfiguratsiya jimgina ishlatilmasin.
 var knownKeys = map[string]bool{
 	"server_url": true, "ui_bind": true, "ui_pin": true, "state_dir": true,
-	"key_file": true, "log_level": true, "probe": true, "limits": true,
+	"key_file": true, "log_level": true, "log_file": true, "log_max_mb": true,
+	"log_keep": true, "probe": true, "limits": true,
 	"onvif": true, "discovery": true, "publish": true,
 }
 
@@ -252,6 +265,13 @@ func (c Config) Validate() error {
 	case "debug", "info", "warn", "error":
 	default:
 		return fmt.Errorf("log_level: debug|info|warn|error kerak, topildi %q", c.LogLevel)
+	}
+
+	if c.LogMaxMB < 1 || c.LogMaxMB > 512 {
+		return fmt.Errorf("log_max_mb: 1..512 kerak, topildi %d", c.LogMaxMB)
+	}
+	if c.LogKeep < 1 || c.LogKeep > 50 {
+		return fmt.Errorf("log_keep: 1..50 kerak, topildi %d", c.LogKeep)
 	}
 
 	host, port, err := net.SplitHostPort(c.UIBind)

@@ -190,3 +190,46 @@ func TestCheckCIDRLimit(t *testing.T) {
 		}
 	}
 }
+
+// Log fayli sozlamalari (talab 2026-11-19: xatolar faylga ham yozilsin).
+func TestParse_LogFileFields(t *testing.T) {
+	c := Default()
+	if c.LogFile == "" {
+		t.Error("Default LogFile bo'sh — standart yo'l belgilanishi kerak")
+	}
+	if c.LogMaxMB < 1 {
+		t.Errorf("LogMaxMB = %d, kamida 1 kutilardi", c.LogMaxMB)
+	}
+	if c.LogKeep < 1 {
+		t.Errorf("LogKeep = %d, kamida 1 kutilardi", c.LogKeep)
+	}
+
+	src := "server_url: http://10.0.0.5:8081\nlog_file: /var/log/vmsagent/vmsagent.log\nlog_max_mb: 8\nlog_keep: 5\n"
+	got, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.LogFile != "/var/log/vmsagent/vmsagent.log" {
+		t.Errorf("LogFile = %q", got.LogFile)
+	}
+	if got.LogMaxMB != 8 || got.LogKeep != 5 {
+		t.Errorf("LogMaxMB/LogKeep = %d/%d", got.LogMaxMB, got.LogKeep)
+	}
+
+	for _, bad := range []string{"log_max_mb: 0\n", "log_max_mb: -3\n", "log_keep: 0\n", "log_keep: 200\n"} {
+		bc := Default()
+		if _, err := Parse([]byte("server_url: http://h:1\n" + bad)); err == nil {
+			// Parse o'zi tekshirmaydi — Validate tekshiradi:
+			c2, perr := Parse([]byte("server_url: http://h:1\n" + bad))
+			if perr != nil {
+				continue
+			}
+			_ = bc
+			if verr := c2.Validate(); verr == nil {
+				t.Errorf("%q: Validate o'tkazib yubordi", bad)
+			}
+		} else if err == nil {
+			t.Errorf("%q: xato kutilardi", bad)
+		}
+	}
+}

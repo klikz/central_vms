@@ -11,6 +11,9 @@ ui_pin: ""                              # bo'sh = PIN yo'q (faqat localhost hola
 state_dir: /var/lib/vmsagent
 key_file: /etc/vmsagent/agent.key
 log_level: info                         # debug|info|warn|error
+log_file: /var/log/vmsagent/vmsagent.log  # CLIENT logi (alohida; serverniki vmsd o'z faylida)
+log_max_mb: 4                           # hajm chegarasi — oshsa rotatsiya
+log_keep: 5                             # .1…N eski fayllar soni (disk to'lmaydi)
 
 probe:
   status_parallel: 5                    # pacing: bir vaqtda nechta probe (§16.4)
