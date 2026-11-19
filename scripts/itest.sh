@@ -29,9 +29,14 @@ case "$SCENARIO" in
     go test ./tests/integration -run TestC2 -race -count=1 -timeout 180s
     go test ./internal/discovery ./internal/cams ./internal/agent -run "Watcher|CodecProbe|CodecFix|BFrame|ONVIF|WSDD|Merge|Scan|BulkAdd|Status|Sync|Epoch" -race -count=1 -timeout 180s
     ;;
+  c3|c3_h264_rtsp)
+    # C3.20 (mock): media_start → pull → RTSP/TCP publish → media_ready →
+    # media_stop → media_stopped (MediaMTX o'rniga fake ingest).
+    go test ./tests/integration -run "TestC3_" -race -v -timeout 120s
+    ;;
   c3_h264_whip|c3_h265_rtsp|c3_udp_blocked|c3_client_transcode|c3_bframes|\
-  c3_remux|c3_ffmpeg_fallback|c3_codec_change|c3|shutdown|restore|version_mismatch|all)
-    echo "SSSENARIY '$SCENARIO' hali qo'shilmagan — C3.20 da qo'shiladi."
+  c3_remux|c3_ffmpeg_fallback|c3_codec_change|shutdown|restore|version_mismatch|all)
+    echo "SSSENARIY '$SCENARIO' real server S2 + MediaMTX talab qiladi (keyingi bosqich)."
     echo "Ro'yxat: docs/protocol.md §18"
     exit 2
     ;;
