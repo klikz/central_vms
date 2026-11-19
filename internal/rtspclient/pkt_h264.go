@@ -64,7 +64,7 @@ func (p *H264Packetizer) fua(nal []byte, ts uint32, marker bool, maxPayload int)
 		}
 		chunk := body[i:end]
 		last := end == len(body)
-		fu := byte(0)
+		fu := nal[0] & 0x1f // FU header: S|E|R|Type (Type = original NAL turi)
 		if i == 0 {
 			fu |= 0x80 // S
 		}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 )
 
 // RTSP publish tomoni (C3.7/C3.8, §8.1 rtsp_tcp yo'li):
@@ -76,6 +77,55 @@ func parseInterleaved(s string) (int, int, bool) {
 		i++
 	}
 	return 0, 0, false
+}
+
+// SetupTrack — SDP'dagi a=control bo'yicha SETUP (trackID=1, video, …).
+func (c *Conn) SetupTrack(ctx context.Context, control string, rtpCh, rtcpCh int) (int, int, error) {
+	url := c.uri
+	if control != "" {
+		url = joinRTSP(c.uri, control)
+	}
+	tr := fmt.Sprintf("RTP/AVP/TCP;unicast;interleaved=%d-%d", rtpCh, rtcpCh)
+	resp, err := c.doAt(ctx, "SETUP", url, Headers{"transport": tr, "session": c.session}, nil)
+	if err != nil {
+		return 0, 0, err
+	}
+	if err := check("SETUP", resp); err != nil {
+		return 0, 0, err
+	}
+	if s := resp.Headers["session"]; s != "" {
+		c.session = s
+	}
+	if got := resp.Headers["transport"]; got != "" {
+		if a, b, ok := parseInterleaved(got); ok {
+			return a, b, nil
+		}
+	}
+	return rtpCh, rtcpCh, nil
+}
+
+// joinRTSP — base URL + control (nisbiy yoki to'liq rtsp:// bo'lishi mumkin).
+func joinRTSP(base, control string) string {
+	if strings.HasPrefix(control, "rtsp://") {
+		return control
+	}
+	if strings.HasPrefix(base, "rtsp://") {
+		return strings.TrimSuffix(base, "/") + "/" + strings.TrimPrefix(control, "/")
+	}
+	return control
+}
+
+// Play — oqimni boshlash (pull). rangeNpt "npt=0.0-" ko'rinishida.
+func (c *Conn) Play(ctx context.Context, rangeNpt string) error {
+	h := Headers{"session": c.session}
+	if rangeNpt != "" {
+		h["range"] = rangeNpt
+	}
+	resp, err := c.Do(ctx, "PLAY", h, nil)
+	if err != nil {
+		return err
+	}
+	return check("PLAY", resp)
 }
 
 // Record — oqimni boshlash. rangeNpt "npt=0-" (chegara yo'q) ko'rinishida.
