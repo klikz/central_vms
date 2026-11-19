@@ -121,11 +121,33 @@ func (s *Session) setSendCh(ch chan proto.Envelope) {
 	s.sendMu.Unlock()
 }
 
-// getSendCh — faol kanal (nil bo'lsa sessiya yopiq).
-func (s *Session) getSendCh() chan proto.Envelope {
+// trySend — faol kanalga yuborish (bor bo'lsa). Kanal topish va yuborish
+// bitta mutex ostida: serve yopilayotganda "send on closed channel"
+// poydeq'idan himoya (race detektori topgan uzil shu edi).
+func (s *Session) trySend(env proto.Envelope) error {
 	s.sendMu.Lock()
 	defer s.sendMu.Unlock()
-	return s.sendCh
+	if s.sendCh == nil {
+		return ErrChannelClosed
+	}
+	select {
+	case s.sendCh <- env:
+		return nil
+	default: // navbat to'lgan — uzilish deb hisoblaymiz
+		return ErrChannelClosed
+	}
+}
+
+// closeSendCh — yopilish: avval maydonni nol qilamiz (keyingi trySend'lar
+// darhol ErrChannelClosed oladi), so'ng kanalni yopamiz (yozuvchi
+// goroutine'ning `range` shu yerda tugaydi).
+func (s *Session) closeSendCh(ch chan proto.Envelope) {
+	s.sendMu.Lock()
+	if s.sendCh == ch {
+		s.sendCh = nil
+	}
+	s.sendMu.Unlock()
+	close(ch)
 }
 
 // ErrChannelClosed — sessiya yopilgan, xabar yuborib bo'lmadi.

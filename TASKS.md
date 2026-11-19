@@ -172,13 +172,13 @@ ulanadi; `secret_rotate` dan keyin uzilmaydi; `make itest SCENARIO=c1` o'tadi; U
 - [x] **C2.2** RTSP URL qurish/yorliqlash (`url.URL`, mask'lash `rtsp_masked`) — [§4.2, §10.2] — [Test: Dahua shablon `subtype=0|1`, parol mask'langan, `?` escape] — [Tekshiruv: `go test ./internal/cams -run URL -race`]
 - [x] **C2.3** Kamera CRUD lokal UI (jadval + inline edit + `position`) — [§17] — [Test: handler CRUD (httptest)] — [Tekshiruv: `go test ./internal/localui -run CamCRUD -race`]
 - [x] **C2.4** Bulk amaliyotlar + CSV import/eksport (`--with-secrets` bayrog'i) — [§16.3] — [Test: 50 qatorli CSV import, xato qatorlar hisoboti; eksportda parol `***`] — [Tekshiruv: `go test ./internal/cams -run CSV -race`]
-- [ ] **C2.5** `internal/rtspclient` — RTSP mijoz (**bloklangan**: proxy `gortsplib`/`mediacommon` o'rniga bo'sh stub berdi): `Describe`, `GetParameter`, `Options`, timeout, retry (bitta joyda) — [§8, §12] — [Test: `gortsplib` sun'iy serveri bilan; timeout/401/refused holatlari] — [Tekshiruv: `go test ./internal/rtspclient -race`]
+- [x] **C2.5** `internal/rtspclient` — RTSP mijoz: `Describe`, `GetParameter`, `Options`, timeout, retry (bitta joyda). **Qaror (2026-11-19):** tarmoq to'liq intercept — proxy ham, `git clone` ham soxta stub qaytardi; variant (b) bo'yicha **o'z minimal mijoz (stdlib)**: `msg.go` (golden fixture `testdata/rtsp/*`), `client.go` (transport, ctx timeout, CSeq, StatusError), `auth.go` (401 Basic + Digest MD5/qop=auth), `retry.go` (`WithRetry`+`backoffDelay`). Qoplama 89 % — [§8, §12] — [Test: lokal TCP sun'iy server; timeout/401/refused/uzilish; Digest RFC 2617 mustaqil orakol] — [Tekshiruv: `go test ./internal/rtspclient -race`]
 - [x] **C2.6** **SDP tahlili**: kodek (`h264|h265|unknown`) + profile (Baseline/Main/High) + B-frame belgisi — [§8.1, §12] — [Test: **golden** `testdata/sdp/*` — 4 fixture: h264-baseline, h264-main-nob, h264-high-bframes, h265; kutilgan natija JSON bilan solishtiriladi] — [Tekshiruv: `go test ./internal/cams -run SDP -race`]
 - [ ] **C2.7** Status watcher: `GET_PARAMETER` → `OPTIONS` → `DESCRIBE` fallback (C2.5 ga bog'liq); pacing **5 parallel**; event-driven `cam_status` — [§12] — [Test: fake clock + fake rtspclient: 100 kamera sikli, fallback ketma-ketligi, `probe_cycle_s` hisobi] — [Tekshiruv: `go test ./internal/cams -run Watcher -race`]
 - [ ] **C2.8** Kodek probe jadvali: ulanganda + kuniga 1 + publish fail'da darhol — [§12.3] — [Test: 3 trigger holati, takrorlanish blokirovkasi] — [Tekshiruv: `go test ./internal/cams -run CodecProbe -race`]
 - [ ] **C2.9** `codec_probe` / `cam_status` yuborish (`internal/agent` orqali) — [§4.4, §4.5] — [Test: golden JSON chiqishi] — [Tekshiruv: `go test ./internal/agent -run Status -race`]
-- [ ] **C2.10** `cams_sync`: chunk'lash (≤100 kamera, ≤900 KiB), `op: upsert|delete`, `epoch/seq_no/chunk_count/done`, `cams_ack` (10 s retry ×3) — [§4.2, §4.3] — [Test: 250 kamera → 3 chunk; ack yo'qolsa retry; stale epoch rad etiladi] — [Tekshiruv: `go test ./internal/agent -run Sync -race`]
-- [ ] **C2.11** `cams_epoch` integratsiyasi: `hello`/`welcome` solishtiruvi → to'liq sync — [§6.5] — [Test: epoch farq → full sync; bir xil → delta yo'q] — [Tekshiruv: `go test ./internal/agent -run Epoch -race`]
+- [x] **C2.10** `cams_sync`: chunk'lash (≤100 kamera, ≤900 KiB), `op: upsert|delete`, `epoch/seq_no/chunk_count/done`, `cams_ack` (10 s retry ×3) — [§4.2, §4.3] — [Test: 250 kamera → 3 chunk; ack yo'qolsa retry; stale epoch rad etiladi] — [Tekshiruv: `go test ./internal/agent -run Sync -race`] *(2026-11-19: `internal/agent/sync.go` + unit + integratsiya (`tests/integration/c2_test.go`) yashil; testdagi ack-hisoblagich va `CamsRequest` ulanuvi tuzatildi; `Session.trySend/closeSendCh` race'ini yopdi)*
+- [x] **C2.11** `cams_epoch` integratsiyasi: `hello`/`welcome` solishtiruvi → to'liq sync — [§6.5] — [Test: epoch farq → full sync; bir xil → delta yo'q] — [Tekshiruv: `go test ./internal/agent -run Epoch -race`] *(2026-11-19: `SyncIfRequired` + `cmd/vmsagent` OnWelcome ulanuvi; `go test ./internal/agent -run "Sync|Epoch"` o'tdi)*
 - [ ] **C2.12** ONVIF moduli (ixtiyoriy): `GetProfiles/GetStreamUri`, `SetVideoEncoderConfiguration` (sub → 720p/10fps/700kbps CBR/GOP 2s/B-frame'siz) — [§16.1, §12] — [Test: SOAP fixture javoblar (httptest server); ONVIF bo'lmasa jimgina o'tkazib yuborish] — [Tekshiruv: `go test ./internal/cams -run ONVIF -race`]
 - [ ] **C2.13** `codec_fix` bajarish + `apply_all` bulk + `codec_fix_done` javob — [§5.5] — [Test: 1 va 12 kamera, qisman muvaffaqiyat hisoboti] — [Tekshiruv: `go test ./internal/cams -run CodecFix -race`]
 - [ ] **C2.14** B-frame siyosati: ONVIF bo'lmasa → C3 re-encode belgisi (`needs_reencode`) — [§8.1] — [Test: fixture `h264-high-bframes.sdp` → flag true] — [Tekshiruv: `go test ./internal/cams -run BFrame -race`]
@@ -199,6 +199,16 @@ ulanadi; `secret_rotate` dan keyin uzilmaydi; `make itest SCENARIO=c1` o'tadi; U
   `GOPROXY=direct` ham ishlamadi. Shu sababli C2.5/C2.7/C2.16 dagi RTSP amaliyotlari vaqtincha to'xtadi. Variantlar:
   (a) tarmoq ruxsati (haqiqiy proxy yoki GitHub), (b) o'z minimal RTSP mijozimiz (stdlib, ~500 qator), (c) boshqa mashinadan vendor qilish.
   Kodek/SDP tahlili bog'liq emas — o'z parserimiz yozildi va testlandi.
+- **2026-11-19 (2-tekshiruv) — blok ochildi, variant (b) tanlandi:** tarmoq "ochiq" (curl 200), ammo proxy ham,
+  GitHub'ga `git clone` ham **soxta 5 faylli stub** qaytardi (tarmoq to'liq intercept). C2.5 o'z minimal
+  RTSP mijozimiz sifatida yozildi (C2.5a xabar modeli → C2.5b transport → C2.5c auth+retry; coverage 89 %).
+  C2.7/C2.16 endi `internal/rtspclient` orqali davom etadi. RTP pull (C3.5) bu mijozda yo'q — C3 FFmpeg
+  zaxira yo'li orqali (yoki tarmoq tuzalgach gortsplib).
+- **Tuzatilgan (C2.10/C2.11 yashil bo'ldi):** `tests/integration/c2_test.go` da `cams_ack` hisoblagichi
+  sync'dan KEYIN o'rnatilgan edi (ack'lar allaqachon iste'mol qilingan) va `CamsRequest` hook'i ulanmagan
+  edi. Race detektori `Session`da haqiqiy uzilni topdi: `serve()` `sendCh`ni yopayotganda parallel `Send()`
+  "send on closed channel"ga tushishi mumkin edi — `trySend`/`closeSendCh` (bitta mutex ostida) yopildi.
+  Endi `go test ./... -race -count=3` toza.
 - Qo'shimcha himoya: `scripts/jscheck.py` (UI JS'ini node'siz tekshiradi — o'zbek apostrofi JS satrini uzib butun UI bo'sh qolgan xatoni ushlash uchun),
   `make ui-shot` har ekran uchun **DOM tekshiruvi** ham qiladi (JS o'lsa oq sahifa skrinshoti "yashil" ko'rinardi — endi ushlanadi).
 

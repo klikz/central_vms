@@ -86,24 +86,22 @@ func (s *Session) serve(ctx context.Context, conn *websocket.Conn) error {
 	for {
 		select {
 		case <-ctx.Done():
-			close(sendCh)
+			s.closeSendCh(sendCh)
 			_ = conn.WriteControl(websocket.CloseMessage,
 				websocket.FormatCloseMessage(websocket.CloseNormalClosure, "agent ishonchli to'xtadi"),
 				time.Now().Add(2*time.Second))
 			return context.Cause(ctx)
 		case err := <-errCh:
-			close(sendCh)
+			s.closeSendCh(sendCh)
 			return err
 		case <-tick.C():
 			env, err := proto.NewEnvelope(proto.MsgHB, s.nextSeq(), map[string]int64{"uptime_s": int64(s.cfg.Clock.Now().Sub(s.cfg.StartedAt).Seconds())})
 			if err != nil {
-				close(sendCh)
+				s.closeSendCh(sendCh)
 				return err
 			}
-			select {
-			case sendCh <- env:
-			default: // navbat to'lgan — uzilish deb hisoblaymiz
-				close(sendCh)
+			if err := s.trySend(env); err != nil { // navbat to'lgan — uzilish deb hisoblaymiz
+				s.closeSendCh(sendCh)
 				return errors.New("heartbeat navbati to'ldi")
 			}
 		}

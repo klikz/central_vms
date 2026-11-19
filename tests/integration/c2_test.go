@@ -76,8 +76,25 @@ func TestC2_CamsSyncChunksAndEpoch(t *testing.T) {
 	})
 	sy := agent.NewSyncer(sess, st, clock.Real{}, discardLog())
 	hnd := &agent.Handlers{KS: ks, St: st, Log: discardLog(), Sess: sess,
-		CamsAck: sy.OnCamsAck}
-	sess.SetOnMessage(hnd.Handle)
+		CamsAck: sy.OnCamsAck,
+		// §5.1: server `cams_request` qilsa agent sync yuboradi
+		// (cmd/vmsagent/agent.go'dagi asl ulanuv takrorlanadi).
+		CamsRequest: func(req proto.CamsRequest) {
+			if req.Full {
+				go func() { _ = sy.Push(st.CamsEpoch) }()
+				return
+			}
+			go func() { _ = sy.PushDelta(st.CamsEpoch, req.CameraIDs) }()
+		}}
+	// cams_ack hisoblagichi sync'dan OLDIN o'rnatiladi: SyncIfRequired
+	// ack'larni ichida iste'mol qiladi, kech o'rnatilsa ular sanalmaydi.
+	var acks atomic.Int64
+	sess.SetOnMessage(func(e proto.Envelope) {
+		hnd.Handle(e)
+		if e.Type == proto.MsgCamsAck {
+			acks.Add(1)
+		}
+	})
 
 	// §14: uzluksiz sessiya (Run) — sync yuborish uchun ulanish ochiq turishi kerak
 	done := make(chan struct{}, 1)
@@ -115,15 +132,6 @@ func TestC2_CamsSyncChunksAndEpoch(t *testing.T) {
 	if total != 250 {
 		t.Fatalf("jami kamera=%d", total)
 	}
-	// cams_ack — server→agent yo'nalishi (bizning OnMessage hooki faqat
-	// agent→server xabarlarini sanaydi), shuning uchun agent tomonida sanaymiz.
-	var acks atomic.Int64
-	sess.SetOnMessage(func(e proto.Envelope) {
-		hnd.Handle(e)
-		if e.Type == proto.MsgCamsAck {
-			acks.Add(1)
-		}
-	})
 	if n := h.waitFor(func() bool { return acks.Load() >= 3 }, 5*time.Second); !n {
 		t.Fatalf("cams_ack kelmadi: %d", acks.Load())
 	}
