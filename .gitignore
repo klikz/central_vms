@@ -13,3 +13,4 @@ state.json
 # Node/venv yo'q (client UI go:embed), lekin ehtimol uchun
 node_modules/
 .DS_Store
+logs

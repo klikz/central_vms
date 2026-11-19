@@ -40,7 +40,7 @@ STOP_PATTERNS := 'build/[v]msagent -config' 'exe/[v]msagent' 'go-build[^ ]*/[v]m
                  'go run ./cmd/[v]msagent' 'go run ./cmd/[d]evserver'
 
 .PHONY: all start dev build run install uninstall logs status test race cover gate \
-        lint fmt vet fixtures deps deps-fetch devserver itest stress secretscan ui-lint ui-shot \
+        lint fmt vet fixtures deps deps-fetch devserver itest stress secretscan ui-lint ui-shot logs-err \
         package remote-update stop stop-service clean help
 
 all: build
@@ -189,8 +189,13 @@ uninstall:
 	@sudo systemctl daemon-reload
 	@echo "unit o'chirildi; /opt/$(BIN) va /var/lib/$(BIN) qoldi (parollar saqlanadi)"
 
-logs:
-	journalctl -u $(BIN) -f
+logs: ## CLIENT logi: fayl bo'lsa undan, bo'lmasa journald (ikkalasi bir xil mazmundа)
+	@if [ -f /var/log/vmsagent/vmsagent.log ]; then tail -f /var/log/vmsagent/vmsagent.log; \
+	else journalctl -u $(BIN) -f; fi
+
+logs-err: ## faqat xatolar (level=ERROR) — fayldan yoki journald'dan
+	@if [ -f /var/log/vmsagent/vmsagent.log ]; then grep --line-buffered "level=ERROR" /var/log/vmsagent/vmsagent.log | tail -f; \
+	else journalctl -u $(BIN) -p err -f; fi
 
 status:
 	systemctl status $(BIN) --no-pager || true

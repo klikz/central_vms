@@ -72,13 +72,18 @@ func main() {
 // Barcha xatolar (level=error ham) ikkala joyga ham yoziladi — level
 // filtridan error har doim o'tadi.
 func newLogger(level string, ring *logbuf.Ring, file *logx.Writer) *slog.Logger {
+	return newLoggerAt(level, ring, file, os.Stderr)
+}
+
+// newLoggerAt — terminal yozuvchi inject qilinadi (test uchun).
+func newLoggerAt(level string, ring *logbuf.Ring, file *logx.Writer, term io.Writer) *slog.Logger {
 	var lvl slog.Level
 	if err := lvl.UnmarshalText([]byte(level)); err != nil {
 		lvl = slog.LevelInfo
 	}
-	out := io.Writer(os.Stderr)
+	out := io.Writer(term)
 	if file != nil && file.Enabled() {
-		out = io.MultiWriter(os.Stderr, file)
+		out = io.MultiWriter(term, file)
 	}
 	text := slog.NewTextHandler(out, &slog.HandlerOptions{Level: lvl})
 	return slog.New(redact.NewHandlerWithNext(logbuf.NewHandler(text, ring)))
