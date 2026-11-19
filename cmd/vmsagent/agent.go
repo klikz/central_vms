@@ -246,7 +246,7 @@ func (r *runtime) statusFn() localui.Status {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	st := localui.Status{
-		Version: version, ServerOnline: r.online,
+		Version: version, ServerOnline: r.online, AgentID: r.st.AgentID,
 		CamsTotal: len(r.st.Cameras), Publishes: 0, CamsEpoch: r.st.CamsEpoch,
 		FFmpegOK: r.caps.FFmpegVersion != "",
 	}

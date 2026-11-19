@@ -1,16 +1,17 @@
-// vmsagent lokal UI — vanilla JS (framework yo'q, build'ga npm kerak emas).
-// Ekranlar: kameralar · kashf etish · holat · sozlamalar · jurnal (docs/protocol.md §17).
+// vmsagent local console — vanilla JS (no framework, no build step).
+// Screens: cameras · discovery · status & self-test · settings · event log
+// (docs/protocol.md §17).
 "use strict";
 
 const SCREENS = ["cams", "discovery", "status", "settings", "log"];
 const I18N = {
-  loading: "yuklanmoqda…",
-  needPin: "PIN talab qilinadi",
-  saved: "Saqlandi",
-  saveFailed: "Saqlanmadi",
-  scanDone: (n) => `${n} kamera topildi`,
-  serverOnline: "server: ulangan",
-  serverOffline: "server: uzilgan",
+  loading: "loading…",
+  needPin: "PIN required",
+  saved: "Saved",
+  saveFailed: "Could not save",
+  scanDone: (n) => `${n} camera(s) found`,
+  serverOnline: "server: connected",
+  serverOffline: "server: disconnected",
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -27,12 +28,12 @@ function toast(msg, kind) {
 function showScreen(name) {
   if (!SCREENS.includes(name)) name = "cams";
   $$(".screen").forEach((s) => { s.hidden = s.dataset.screen !== name; });
-  $$(".rail-item").forEach((a) => a.classList.toggle("active", a.dataset.nav === name));
+  $$(".nav-item").forEach((a) => a.classList.toggle("active", a.dataset.nav === name));
   if (location.hash !== "#/" + name) location.hash = "#/" + name;
   load(name);
 }
 
-let agentPin = ""; // yozuv amallari uchun (§10.3)
+let agentPin = ""; // required for write actions (§10.3)
 
 async function api(path, opts) {
   const o = Object.assign({ credentials: "same-origin" }, opts || {});
@@ -49,9 +50,11 @@ async function loadStatus() {
     const st = await api("/api/ui/status");
     if (!st) return;
     const ver = st.version || "?";
-      $("#txt-version").textContent = /^[0-9]/.test(ver) ? "v" + ver : ver;
-    $("#txt-cams").textContent = `kameralar: ${st.cams_online ?? 0}/${st.cams_total ?? 0}`;
-    $("#txt-publishes").textContent = `publish: ${st.publishes ?? 0}`;
+    $("#txt-version").textContent = /^[0-9]/.test(ver) ? "v" + ver : ver;
+    $("#txt-cams").textContent = `${st.cams_online ?? 0}/${st.cams_total ?? 0}`;
+    const sa = $("#side-agent");
+    if (sa) sa.textContent = st.agent_id ? st.agent_id.slice(0, 11) : "—";
+    $("#txt-publishes").textContent = String(st.publishes ?? 0);
     const dot = $("#dot-server");
     dot.className = "dot " + (st.server_online ? "dot-ok" : "dot-off");
     $("#txt-server").textContent = st.server_online ? I18N.serverOnline : I18N.serverOffline;
@@ -62,27 +65,27 @@ async function loadStatus() {
   }
 }
 
-// §17: Holat ekrani — server/heartbeat/kamera kartochkalari + oxirgi xato banneri.
+// §17: status screen — server/heartbeat/camera cards + last-error banner.
 function renderStatusCards(st) {
   const cards = $("#status-cards");
   if (!cards) return;
   const hb = st.last_heartbeat ? st.last_heartbeat : "—";
   const items = [
-    ["Server", st.server_online ? "jonli" : "uzilgan", st.server_online ? "ok" : "err"],
-    ["Oxirgi heartbeat", hb, ""],
-    ["Kameralar", `${st.cams_online ?? 0}/${st.cams_total ?? 0}`, ""],
-    ["Publish'lar", String(st.publishes ?? 0), ""],
-    ["cams_epoch", String(st.cams_epoch ?? 0), ""],
-    ["FFmpeg", st.ffmpeg_ok ? "topildi" : "YO'Q", st.ffmpeg_ok ? "ok" : "warn"],
+    ["Server", st.server_online ? "live" : "down", st.server_online ? "ok" : "err"],
+    ["Last heartbeat", hb, ""],
+    ["Cameras online", `${st.cams_online ?? 0}/${st.cams_total ?? 0}`, ""],
+    ["Active streams", String(st.publishes ?? 0), ""],
+    ["cams epoch", String(st.cams_epoch ?? 0), ""],
+    ["FFmpeg", st.ffmpeg_ok ? "found" : "MISSING", st.ffmpeg_ok ? "ok" : "warn"],
   ];
   cards.innerHTML = items.map((it) =>
-    `<div class="card"><b>${esc(it[1])}</b><span>${esc(it[0])}</span></div>`).join("");
+    `<div class="card ${it[2]}"><b>${esc(it[1])}</b><span>${esc(it[0])}</span></div>`).join("");
   const vb = $("#ver-banner");
   if (vb) {
     if (st.version_mismatch) {
       vb.hidden = false;
-      vb.textContent = "Protokol versiyasi mos emas: server " + (st.server_version || "?") +
-        " (qo'llab-quvvatlangan " + st.proto_min + ".." + st.proto_max + ") — agentni yangilang";
+      vb.textContent = "Protocol version mismatch: server " + (st.server_version || "?") +
+        " (supports " + st.proto_min + ".." + st.proto_max + ") — update the agent";
     } else {
       vb.hidden = true;
     }
@@ -91,7 +94,7 @@ function renderStatusCards(st) {
   if (banner) {
     if (st.last_error) {
       banner.hidden = false;
-      banner.innerHTML = "Oxirgi xato: " + esc(st.last_error) +
+      banner.innerHTML = "Last error: " + esc(st.last_error) +
         (st.last_error_at ? `<span class="when">${esc(st.last_error_at)}</span>` : "");
     } else {
       banner.hidden = true;
@@ -106,12 +109,12 @@ async function load(screen) {
   if (screen === "log") {
     try {
       const r = await api("/api/ui/log?limit=200");
-      $("#log-out").textContent = (r && r.lines && r.lines.length) ? r.lines.join("\n") : "jurnal bo'sh";
-    } catch (e) { /* eski versiyalarda log yo'q */ }
+      $("#log-out").textContent = (r && r.lines && r.lines.length) ? r.lines.join("\n") : "log is empty";
+    } catch (e) { /* older versions have no log endpoint */ }
   }
 }
 
-// --- klaviatura (§17) ---
+// --- keyboard shortcuts (§17) ---
 document.addEventListener("keydown", (ev) => {
   const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
   if (ev.key === "Escape") { $("#modal").hidden = true; return; }
@@ -119,7 +122,7 @@ document.addEventListener("keydown", (ev) => {
   const map = { "/": () => $("#filter").focus(), "n": () => showScreen("cams"),
     "d": () => showScreen("discovery"), "s": () => showScreen("status"),
     "t": () => showScreen("settings"), "l": () => showScreen("log"),
-    "?": () => toast("Hotkeylar: / filtr · n kameralar · d kashf etish · s holat · t sozlamalar · l jurnal · Esc yopish") };
+    "?": () => toast("Shortcuts: / filter · n cameras · d discovery · s status · t settings · l log · Esc close") };
   const fn = map[ev.key];
   if (fn) { ev.preventDefault(); fn(); }
 });
@@ -145,44 +148,46 @@ document.addEventListener("click", (ev) => {
   }
 });
 
-// C4.6: self-test paneli — POST /api/ui/selftest, natijalar jadvali.
+// C4.6: self-test panel — POST /api/ui/selftest, results table.
 async function runSelftest(btn) {
   btn.disabled = true;
   const old = btn.textContent;
-  btn.textContent = "Tekshirilmoqda…";
+  btn.textContent = "Running…";
   try {
     const res = await api("/api/ui/selftest", { method: "POST" });
     const body = $("#selftest-body");
     if (body) {
       body.innerHTML = (res.results || []).map((r) =>
-        `<tr><td>${esc(r.name)}</td><td>${r.ok ? "OK" : "XATO"}</td><td>${r.ms}</td></tr>`).join("") ||
-        '<tr><td colspan="3" class="empty">Tekshiruv topilmadi.</td></tr>';
+        `<tr><td>${esc(r.name)}</td><td>${r.ok ? '<span class="badge badge-ok">OK</span>' :
+          '<span class="badge badge-err">FAIL</span>'}</td><td class="mono">${r.ms}</td></tr>`).join("") ||
+        '<tr><td colspan="3" class="empty">No checks configured.</td></tr>';
     }
-    toast("Self-test tugadi", "ok");
+    toast("Self-test finished", "ok");
   } catch (e) {
-    toast("Self-testda xato", "err");
+    toast("Self-test failed", "err");
   } finally {
     btn.disabled = false;
     btn.textContent = old;
   }
 }
 
-// Sahifa ochilganda saqlangan natijalarni ko'rsatamiz (GET).
+// Show previously stored results on page open (GET).
 api("/api/ui/selftest").then((res) => {
   const body = $("#selftest-body");
   if (body && res && res.results && res.results.length) {
     body.innerHTML = res.results.map((r) =>
-      `<tr><td>${esc(r.name)}</td><td>${r.ok ? "OK" : "XATO"}</td><td>${r.ms}</td></tr>`).join("");
+      `<tr><td>${esc(r.name)}</td><td>${r.ok ? '<span class="badge badge-ok">OK</span>' :
+        '<span class="badge badge-err">FAIL</span>'}</td><td class="mono">${r.ms}</td></tr>`).join("");
   }
 }).catch(() => {});
 
 showScreen((location.hash || "#/cams").slice(2));
 setInterval(loadStatus, 5000);
 
-// --- Kameralar (C2.3): ro'yxat, qo'shish, o'chirish ---
+// --- Cameras (C2.3): list, add, delete ---
 function esc(v) {
-  // Regex literal ishlatmaymiz: scripts/jscheck.py (node yo'q muhit) regex ichidagi
-  // tirnoqlarni adashtiradi. split/join bir xil natija beradi.
+  // No regex literal: scripts/jscheck.py (no node in this env) confuses quotes
+  // inside regexes. split/join gives identical results.
   let s = String(v == null ? "" : v);
   s = s.split("&").join("&amp;");
   s = s.split("<").join("&lt;");
@@ -206,26 +211,26 @@ async function loadCams() {
   try { r = await api("/api/ui/cams"); } catch (e) { r = null; }
   const list = (r && r.cams) || [];
   if (!list.length) {
-    body.innerHTML = '<tr><td colspan="7" class="empty">Ma\'lumot yo\'q — <kbd>n</kbd> bilan qo\'shing yoki <kbd>d</kbd> bilan kashf eting.</td></tr>';
+    body.innerHTML = '<tr><td colspan="7" class="empty">No cameras yet — press <kbd>n</kbd> to add one or <kbd>d</kbd> to discover.</td></tr>';
     return;
   }
   body.innerHTML = list.map((c) => {
     const profiles = (c.main_path ? 1 : 0) + (c.sub_path ? 1 : 0);
     const codec = [c.codec_main, c.codec_sub].filter(Boolean).join(" / ") || "—";
     return `<tr>
-      <td><input type="checkbox" data-cam="${esc(c.id)}" aria-label="${esc(c.name)} tanlash"></td>
-      <td>${esc(c.name || "(nomsiz)")}${c.secret_ref ? `<span class="lock" title="Parol keystore da saqlangan">parol</span>` : ""}</td>
+      <td><input type="checkbox" data-cam="${esc(c.id)}" aria-label="select ${esc(c.name)}"></td>
+      <td>${esc(c.name || "(unnamed)")}${c.secret_ref ? '<span class="lock" title="password stored in keystore">pwd</span>' : ""}</td>
       <td class="mono">${esc(c.host)}${c.port ? ":" + esc(c.port) : ""}</td>
       <td>${profiles}</td>
       <td class="mono">${esc(codec)}</td>
       <td><span class="${badgeClass(c.status)}">${esc(c.status || "unknown")}</span></td>
-      <td class="dim" title="Oqim holati C4 bosqichida to'ldiriladi">—</td>
+      <td class="dim" title="live stream controls arrive in the next phase">—</td>
     </tr>`;
   }).join("");
 }
 
-// --- Kashf etish (C2.18): skan, natija jadvali, checkbox, ommaviy qo'shish ---
-let scanDevices = []; // oxirgi natijalar (key bo'yicha tanlash uchun)
+// --- Discovery (C2.18): scan, results table, checkbox, bulk add ---
+let scanDevices = []; // last results (selection keyed by device key)
 
 async function loadDiscovery() {
   const body = $("#scan-body");
@@ -234,13 +239,13 @@ async function loadDiscovery() {
   try { r = await api("/api/ui/discovery/results"); } catch (e) { r = null; }
   scanDevices = (r && r.devices) || [];
   if (!scanDevices.length) {
-    body.innerHTML = '<tr><td colspan="8" class="empty">Skan natijasi yo\'q — «Skan boshlash» tugmasini bosing.</td></tr>';
+    body.innerHTML = '<tr><td colspan="8" class="empty">No scan results — press "Start scan".</td></tr>';
     return;
   }
   body.innerHTML = scanDevices.map((d) => {
     const known = d.already_known
-      ? '<span class="badge badge-warn">qo\'shilgan</span>'
-      : '<span class="badge badge-ok">yangi</span>';
+      ? '<span class="badge badge-warn">added</span>'
+      : '<span class="badge badge-ok">new</span>';
     const check = d.already_known ? "" :
       `<input type="checkbox" class="scan-check" value="${esc(d.key)}">`;
     return `<tr>
@@ -248,8 +253,8 @@ async function loadDiscovery() {
       <td class="mono">${esc(d.ip)}:${esc(d.port)}</td>
       <td>${esc(d.model || "—")}</td>
       <td>${esc(d.name || "—")}</td>
-      <td>${d.has_onvif ? "bor" : "yo'q"}</td>
-      <td>${d.mac ? "bor" : "—"}</td>
+      <td>${d.has_onvif ? "yes" : "no"}</td>
+      <td class="mono">${d.mac ? esc(d.mac) : "—"}</td>
       <td class="dim">—</td>
       <td>${known}</td>
     </tr>`;
@@ -257,19 +262,19 @@ async function loadDiscovery() {
 }
 
 async function startScan() {
-  toast("Skan boshlandi…");
+  toast("Scan started…");
   try {
     const r = await api("/api/ui/discovery/scan", { method: "POST" });
-    if (r) toast(`Skan tugadi: ${r.scanned} host tekshirildi`, "ok");
+    if (r) toast(`Scan finished: ${r.scanned} host(s) checked`, "ok");
     await loadDiscovery();
   } catch (e) {
-    toast("Skan xatosi", "err");
+    toast("Scan failed", "err");
   }
 }
 
 async function addSelected() {
   const keys = Array.from(document.querySelectorAll(".scan-check:checked")).map((c) => c.value);
-  if (!keys.length) { toast("Hech narsa tanlanmagan", "err"); return; }
+  if (!keys.length) { toast("Nothing selected", "err"); return; }
   const in_ = {
     keys: keys,
     name_pattern: ($("#name-pattern") || {}).value || "",
@@ -279,33 +284,32 @@ async function addSelected() {
   try {
     const r = await api("/api/ui/discovery/add", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(in_) });
-    if (r) toast(`Qo'shildi: ${r.added}, xato: ${r.failed}`, r.failed ? "warn" : "ok");
+    if (r) toast(`Added: ${r.added}, failed: ${r.failed}`, r.failed ? "warn" : "ok");
     await loadDiscovery();
   } catch (e) {
-    toast("Qo'shish xatosi", "err");
+    toast("Add failed", "err");
   }
 }
 
 function openNewCamModal() {
   const box = $("#modal-box");
   if (!box) return;
-  box.innerHTML = `<h2>Yangi kamera</h2>
-    <div class="row"><label class="field"><span>Nom</span><input id="c-name" placeholder="masalan: Ong eshik"></label>
+  box.innerHTML = `<h2>Add camera</h2>
+    <div class="row"><label class="field"><span>Name</span><input id="c-name" placeholder="e.g. Front door"></label>
     <label class="field"><span>Host / IP</span><input id="c-host" placeholder="192.168.10.20"></label></div>
-    <div class="row"><label class="field"><span>Port</span><input id="c-port" value="554"></label>
-    <label class="field"><span>User</span><input id="c-user" value="admin"></label>
-    <label class="field"><span>Parol</span><input id="c-pass" type="password"></label></div>
+    <div class="row"><label class="field"><span>RTSP port</span><input id="c-port" value="554"></label>
+    <label class="field"><span>RTSP user</span><input id="c-user" value="admin"></label>
+    <label class="field"><span>Password</span><input id="c-pass" type="password"></label></div>
     <div class="row" style="margin-top:10px">
-      <button class="btn btn-primary" id="c-save">Saqlash</button>
-      <button class="btn" id="c-cancel">Bekor qilish</button>
+      <button class="btn btn-primary" id="c-save">Save</button>
+      <button class="btn" id="c-cancel">Cancel</button>
     </div>`;
   $("#modal").hidden = false;
   $("#c-save").onclick = async () => {
     const host = $("#c-host").value.trim();
-    if (!host) { toast("Host kerak", "err"); return; }
+    if (!host) { toast("Host is required", "err"); return; }
     const pass = $("#c-pass").value;
-    // Kamera yozuvida usernama alohida saqlanadi (C2.5 da qo'shiladi);
-    // hozircha faqat parol keystore'ga boradi.
+    // The camera row keeps no plaintext password — it goes to the keystore (§10.1).
     const secret = pass;
     try {
       await api("/api/ui/cams", { method: "POST", headers: { "Content-Type": "application/json" },

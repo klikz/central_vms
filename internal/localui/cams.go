@@ -2,11 +2,12 @@ package localui
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
-	"strings"
 
 	"central-vms/client/internal/cams"
+	"central-vms/client/internal/camsvc"
 )
 
 // Kamera CRUD endpoint'lari (docs/protocol.md §17.1, §6).
@@ -91,7 +92,7 @@ func (s *Server) handleCamsUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	updated, err := s.cams.Update(id, reqToCamera(req), req.Secret)
 	if err != nil {
-		if strings.Contains(err.Error(), "topilmadi") {
+		if errors.Is(err, camsvc.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found"})
 			return
 		}
@@ -117,7 +118,7 @@ func (s *Server) handleCamsDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(in.IDs) == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "ids_bo'sh"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "ids_empty"})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"deleted": s.cams.Delete(in.IDs)})
@@ -135,7 +136,7 @@ func (s *Server) handleCamsImport(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	rep, err := s.cams.ImportCSV(io.LimitReader(r.Body, 4<<20), withSecrets)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "csv_xato", "detail": err.Error()})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "csv_error", "detail": err.Error()})
 		return
 	}
 	writeJSON(w, http.StatusOK, rep)

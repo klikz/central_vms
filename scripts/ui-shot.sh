@@ -12,7 +12,7 @@ OUT="build/shots"
 RUN="build/run"
 
 screens=(cams discovery status settings log)
-headings=(Kameralar "Kashf etish" "Holat / Self-test" Sozlamalar Jurnal)
+headings=(Cameras Discovery "Status / Self-test" Settings "Event log")
 
 command -v google-chrome >/dev/null 2>&1 || { echo "google-chrome yo'q — skrinshot olinmadi"; exit 0; }
 

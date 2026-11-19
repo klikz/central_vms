@@ -56,8 +56,8 @@ func TestIndex_ServedAndHasFiveScreens(t *testing.T) {
 	if n := strings.Count(string(body), `data-screen="`); n < 5 {
 		t.Fatalf("ekranlar soni %d (>=5 kerak): index.html", n)
 	}
-	if !strings.Contains(string(body), `<html lang="uz">`) {
-		t.Fatal("til o'zbek bo'lishi kerak")
+	if !strings.Contains(string(body), `<html lang="en">`) {
+		t.Fatal("interfeys tili inglizcha bo'lishi kerak (operator talabi, 2026-11-19)")
 	}
 }
 

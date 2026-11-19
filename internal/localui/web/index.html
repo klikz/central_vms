@@ -1,118 +1,137 @@
 <!doctype html>
-<html lang="uz">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>vmsagent — joy agenti</title>
+<title>vmsagent — local agent console</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="alternate icon" href="/favicon.ico">
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
-<a class="skip" href="#main">Kontentga o'tish</a>
+<a class="skip" href="#main">Skip to content</a>
 
-<nav class="rail" aria-label="Bo'limlar">
-  <a class="rail-item" href="#/cams" data-nav="cams" title="Kameralar (c)">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h11l4 3v7H4z"/><circle cx="9" cy="12" r="2.5"/></svg>
-    <span>Kam.</span></a>
-  <a class="rail-item" href="#/discovery" data-nav="discovery" title="Kashf etish (d)">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M16 16l4 4"/></svg>
-    <span>Kashf</span></a>
-  <a class="rail-item" href="#/status" data-nav="status" title="Holat / Self-test (s)">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h4l2-5 3 10 2-5h5"/></svg>
-    <span>Holat</span></a>
-  <a class="rail-item" href="#/settings" data-nav="settings" title="Sozlamalar (t)">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3v3m0 12v3M3 12h3m12 0h3"/></svg>
-    <span>Soz.</span></a>
-  <a class="rail-item" href="#/log" data-nav="log" title="Jurnal (l)">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
-    <span>Jurnal</span></a>
-</nav>
+<aside class="side">
+  <div class="side-brand">
+    <div class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="M3 7h12l5 4v6H3z"/><circle cx="9" cy="13" r="3"/><path d="M9 10v6M6 13h6"/></svg>
+    </div>
+    <div class="brand-text">
+      <b>VMSAGENT</b>
+      <span>local console</span>
+    </div>
+  </div>
+
+  <nav class="side-nav" aria-label="Sections">
+    <p class="nav-group">Monitoring</p>
+    <a class="nav-item" href="#/cams" data-nav="cams">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h12l5 4v6H3z"/><circle cx="9" cy="13" r="2.5"/></svg>
+      <span>Cameras</span><kbd>n</kbd></a>
+    <a class="nav-item" href="#/status" data-nav="status">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2-6 4 12 2-6h6"/></svg>
+      <span>Status &amp; Self-test</span><kbd>s</kbd></a>
+    <a class="nav-item" href="#/log" data-nav="log">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14v18H5z"/><path d="M8 7h8M8 11h8M8 15h5"/></svg>
+      <span>Event log</span><kbd>l</kbd></a>
+
+    <p class="nav-group">Setup</p>
+    <a class="nav-item" href="#/discovery" data-nav="discovery">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M16 16l4.5 4.5"/></svg>
+      <span>Discovery</span><kbd>d</kbd></a>
+    <a class="nav-item" href="#/settings" data-nav="settings">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M19 5l-2 2M7 17l-2 2"/></svg>
+      <span>Settings</span><kbd>t</kbd></a>
+  </nav>
+
+  <div class="side-foot">
+    <div class="foot-row"><span>agent</span><span class="mono" id="side-agent">—</span></div>
+    <div class="foot-row"><span>build</span><span class="mono" id="txt-version">v—</span></div>
+    <div class="foot-row"><span>hotkeys</span><span class="mono">? help</span></div>
+  </div>
+</aside>
 
 <header class="topbar">
-  <div class="brand">vmsagent</div>
   <div class="statusline" id="statusline" role="status" aria-live="polite">
-    <span class="dot dot-unknown" id="dot-server"></span><span id="txt-server">server: tekshirilmoqda…</span>
-    <span class="sep"></span><span id="txt-publishes">publish: —</span>
-    <span class="sep"></span><span id="txt-cams">kameralar: —</span>
-    <span class="sep"></span><span class="mono" id="txt-version">v—</span>
+    <span class="chip" id="chip-server"><span class="dot dot-unknown" id="dot-server"></span><span id="txt-server">server: checking…</span></span>
+    <span class="chip"><span class="chip-k">streams</span><span class="mono" id="txt-publishes">0</span></span>
+    <span class="chip"><span class="chip-k">cameras</span><span class="mono" id="txt-cams">0/0</span></span>
   </div>
   <div class="topbar-actions">
-    <input id="filter" class="filter" type="search" placeholder="filtr  (/)" aria-label="Filtr">
+    <input id="filter" class="filter" type="search" placeholder="filter  (/)" aria-label="Filter">
   </div>
 </header>
 
 <main id="main">
   <section class="screen" data-screen="cams" hidden>
     <div class="screen-head">
-      <h1>Kameralar</h1>
+      <h1>Cameras</h1>
       <div class="actions">
-        <button class="btn btn-primary" data-act="new">Yangi kamera <kbd>n</kbd></button>
-        <button class="btn" data-act="scan">Kashf etish <kbd>d</kbd></button>
+        <button class="btn btn-primary" data-act="new">Add camera <kbd>n</kbd></button>
+        <button class="btn" data-act="scan">Discover <kbd>d</kbd></button>
         <button class="btn" data-act="import">Import CSV</button>
         <button class="btn" data-act="export">Export</button>
       </div>
     </div>
     <table class="grid" id="cams-table">
       <thead><tr>
-        <th class="col-check"><input type="checkbox" id="sel-all" aria-label="Barchasini tanlash"></th>
-        <th>Nom</th><th>Manzil</th><th>Profillar</th><th>Kodek</th><th>Holat</th><th>Oqim</th>
+        <th class="col-check"><input type="checkbox" id="sel-all" aria-label="Select all"></th>
+        <th>Name</th><th>Address</th><th>Profiles</th><th>Codec</th><th>Status</th><th>Stream</th>
       </tr></thead>
       <tbody id="cams-body">
-        <tr><td colspan="7" class="empty">Ma'lumot yo'q — <kbd>n</kbd> bilan qo'shing yoki <kbd>d</kbd> bilan kashf eting.</td></tr>
+        <tr><td colspan="7" class="empty">No cameras yet — press <kbd>n</kbd> to add one or <kbd>d</kbd> to discover.</td></tr>
       </tbody>
     </table>
   </section>
 
   <section class="screen" data-screen="discovery" hidden>
     <div class="screen-head">
-      <h1>Kashf etish</h1>
+      <h1>Discovery</h1>
       <div class="actions">
-        <button class="btn btn-primary" data-act="scan-start">Skan boshlash</button>
-        <button class="btn" data-act="scan-add">Tanlanganlarini qo'shish</button>
+        <button class="btn btn-primary" data-act="scan-start">Start scan</button>
+        <button class="btn" data-act="scan-add">Add selected</button>
       </div>
     </div>
     <div class="row">
-      <label class="field"><span>Naming pattern</span>
+      <label class="field"><span>Name pattern</span>
         <input id="name-pattern" class="mono" value="{model}-{index:02d}"></label>
-      <label class="field"><span>User</span><input id="scan-user" value="admin"></label>
-      <label class="field"><span>Parol</span><input id="scan-pass" type="password" placeholder="umumiy"></label>
+      <label class="field"><span>RTSP user</span><input id="scan-user" value="admin"></label>
+      <label class="field"><span>Password</span><input id="scan-pass" type="password" placeholder="shared"></label>
     </div>
     <table class="grid" id="scan-table">
-      <thead><tr><th class="col-check"></th><th>IP</th><th>Model</th><th>Vendor</th><th>ONVIF</th><th>RTSP</th><th>Kodeklar</th><th>Holat</th></tr></thead>
-      <tbody id="scan-body"><tr><td colspan="8" class="empty">Skan natijasi yo'q.</td></tr></tbody>
+      <thead><tr><th class="col-check"></th><th>IP</th><th>Model</th><th>Vendor</th><th>ONVIF</th><th>MAC</th><th>Codecs</th><th>State</th></tr></thead>
+      <tbody id="scan-body"><tr><td colspan="8" class="empty">No scan results yet.</td></tr></tbody>
     </table>
   </section>
 
   <section class="screen" data-screen="status" hidden>
-    <div class="screen-head"><h1>Holat / Self-test</h1>
-      <div class="actions"><button class="btn btn-primary" data-act="selftest">Tekshiruv boshlash</button></div></div>
+    <div class="screen-head"><h1>Status / Self-test</h1>
+      <div class="actions"><button class="btn btn-primary" data-act="selftest">Run self-test</button></div></div>
     <div class="banner banner-warn" id="ver-banner" hidden></div>
     <div class="banner banner-err" id="last-error" hidden></div>
     <div class="cards" id="status-cards"></div>
     <table class="grid" id="selftest-table">
-      <thead><tr><th>Tekshiruv</th><th>Natija</th><th>ms</th></tr></thead>
-      <tbody id="selftest-body"><tr><td colspan="3" class="empty">Tekshiruv bajarilmagan.</td></tr></tbody>
+      <thead><tr><th>Check</th><th>Result</th><th>ms</th></tr></thead>
+      <tbody id="selftest-body"><tr><td colspan="3" class="empty">Self-test not run yet.</td></tr></tbody>
     </table>
   </section>
 
   <section class="screen" data-screen="settings" hidden>
-    <div class="screen-head"><h1>Sozlamalar</h1></div>
+    <div class="screen-head"><h1>Settings</h1></div>
     <div class="form" id="settings-form">
-      <label class="field"><span>Server adresi</span><input id="set-server" class="mono" placeholder="ws://192.168.1.10:8081"></label>
-      <label class="field"><span>Enrollment kodi</span><input id="set-code" class="mono" placeholder="bir martalik kod"></label>
+      <label class="field"><span>Server URL</span><input id="set-server" class="mono" placeholder="ws://192.168.1.10:8081"></label>
+      <label class="field"><span>Enrollment code</span><input id="set-code" class="mono" placeholder="one-time code"></label>
       <label class="field"><span>UI PIN</span><input id="set-pin" type="password"></label>
-      <label class="field"><span>Log darajasi</span>
+      <label class="field"><span>Log level</span>
         <select id="set-loglevel"><option>debug</option><option selected>info</option><option>warn</option><option>error</option></select></label>
-      <button class="btn btn-primary" data-act="save">Saqlash</button>
-      <button class="btn" data-act="enroll">Ulanish (enroll)</button>
+      <button class="btn btn-primary" data-act="save">Save</button>
+      <button class="btn" data-act="enroll">Enroll (connect)</button>
     </div>
   </section>
 
   <section class="screen" data-screen="log" hidden>
-    <div class="screen-head"><h1>Jurnal</h1>
-      <div class="actions"><button class="btn" data-act="log-refresh">Yangilash</button></div></div>
-    <pre class="log mono" id="log-out">jurnal bo'sh</pre>
+    <div class="screen-head"><h1>Event log</h1>
+      <div class="actions"><button class="btn" data-act="log-refresh">Refresh</button></div></div>
+    <pre class="log mono" id="log-out">log is empty</pre>
   </section>
 </main>
 

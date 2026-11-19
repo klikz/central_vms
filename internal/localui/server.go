@@ -40,6 +40,7 @@ func loadFavicon() []byte {
 // Status — UI status chizig'i uchun holat (agent/publish modullari beradi).
 type Status struct {
 	Version      string `json:"version"`
+	AgentID      string `json:"agent_id,omitempty"`
 	ServerOnline bool   `json:"server_online"`
 	CamsTotal    int    `json:"cams_total"`
 	CamsOnline   int    `json:"cams_online"`
@@ -192,7 +193,7 @@ func redactPath(p string) string {
 // handleSelftest — POST: barcha tekshiruvlarni qayta bajar; GET: oxirgisi.
 func (s *Server) handleSelftest(w http.ResponseWriter, r *http.Request) {
 	if s.selftestRun == nil && s.selftestLast == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "self-test sozlanmagan"})
+		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "self-test not configured"})
 		return
 	}
 	var res []selftest.Result
@@ -206,7 +207,7 @@ func (s *Server) handleSelftest(w http.ResponseWriter, r *http.Request) {
 			res = s.selftestLast()
 		}
 	default:
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "GET yoki POST"})
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "GET or POST"})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"results": res})
