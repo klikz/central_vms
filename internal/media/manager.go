@@ -75,7 +75,7 @@ func New(cfg Config) *Manager {
 	m := &Manager{cfg: cfg, reg: cfg.Reg, sess: map[publish.Key]*sess{}}
 	m.openFn = cfg.OpenFn
 	if m.openFn == nil {
-		m.openFn = openTransport
+		m.openFn = OpenTransport
 	}
 	m.pullFn = cfg.PullFn
 	if m.pullFn == nil {

@@ -16,7 +16,8 @@ import (
 // C3.20: haqiqiy transportlar — whip (pion) va rtsp_tcp (o'z rtspclient).
 // §8.1: H.264→WHIP; H.265→RTSP/TCP (yoki server/client transcode).
 
-func openTransport(ctx context.Context, plan publish.StartPlan, cam cams.Camera, pass string) (Transport, error) {
+// OpenTransport — ingest turiga qarab transport ochish (§8.1).
+func OpenTransport(ctx context.Context, plan publish.StartPlan, cam cams.Camera, pass string) (Transport, error) {
 	switch plan.Ingest {
 	case "whip":
 		return openWhipTransport(ctx, plan)

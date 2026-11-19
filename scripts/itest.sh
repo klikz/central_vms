@@ -34,7 +34,11 @@ case "$SCENARIO" in
     # media_stop → media_stopped (MediaMTX o'rniga fake ingest).
     go test ./tests/integration -run "TestC3_" -race -v -timeout 120s
     ;;
-  c3_h264_whip|c3_h265_rtsp|c3_udp_blocked|c3_client_transcode|c3_bframes|\
+  c3_h264_whip)
+    # C3.20 o'lchovi (mock): H.264 → WHIP ochilishi ≤1.5 s (pion ICE loopback).
+    go test ./tests/integration -run "TestC3_H264Whip" -race -v -timeout 120s
+    ;;
+  c3_h265_rtsp|c3_udp_blocked|c3_client_transcode|c3_bframes|\
   c3_remux|c3_ffmpeg_fallback|c3_codec_change|shutdown|restore|version_mismatch|all)
     echo "SSSENARIY '$SCENARIO' real server S2 + MediaMTX talab qiladi (keyingi bosqich)."
     echo "Ro'yxat: docs/protocol.md §18"

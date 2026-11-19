@@ -7,6 +7,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // RTSP publish tomoni (C3.7/C3.8, §8.1 rtsp_tcp yo'li):
@@ -169,7 +170,14 @@ func (c *Conn) WriteInterleaved(ch int, payload []byte) error {
 
 // ReadInterleaved — o'qish tomoni (C3.5 pull) uchun: $-freym yoki
 // boshqa satr (RTSP javob aralash oqimda).
+// interleavedIdleTimeout — ReadInterleaved uchun idle o'qish chegarasi
+// (so'rov dediti oqimga meros bo'lmasin, §8).
+const interleavedIdleTimeout = 10 * time.Second
+
 func (c *Conn) ReadInterleaved() (byte, []byte, error) {
+	// Streaming o'qish: har chaqiruvda idle deditini yangilaymiz — aks
+	// holda so'rov (PLAY) dediti butun oqimga meros bo'lib 5 s'da uzadi.
+	_ = c.conn.SetReadDeadline(time.Now().Add(interleavedIdleTimeout))
 	b0, err := c.br.ReadByte()
 	if err != nil {
 		return 0, nil, err

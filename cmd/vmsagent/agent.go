@@ -203,10 +203,11 @@ func (r *runtime) newSession() *agent.Session {
 	sess := agent.NewSession(cfg)
 	r.syncer = agent.NewSyncer(sess, r.st, clockReal(), r.log)
 	h := &agent.Handlers{KS: r.ks, St: r.st, Log: r.log, Sess: sess,
-		SetLogLevel: func(l string) error { return r.setLogLevel(l) },
-		CamsAck:     r.syncer.OnCamsAck,
-		MediaStart:  r.media.OnStart, // C3.20: media_start → publish sessiyasi
-		MediaStop:   r.media.OnStop,
+		SetLogLevel:   func(l string) error { return r.setLogLevel(l) },
+		CamsAck:       r.syncer.OnCamsAck,
+		MediaStart:    r.media.OnStart, // C3.20: media_start → publish sessiyasi
+		MediaStop:     r.media.OnStop,
+		MediaCodecFix: func(cf proto.CodecFix) { r.applyCodecFix(cf) },
 		RefreshMedia: func(mr proto.MediaRefresh) error {
 			r.media.OnRefresh(mr)
 			return nil
@@ -278,6 +279,38 @@ func ptrVal(p *int) int {
 		return 0
 	}
 	return *p
+}
+
+// applyCodecFix — §12.3: server codec_fix → state'dagi kodek maydonlarini
+// yangilash + qayta sync (cam_status). ONVIF orqali qo'llash C2.12'da
+// package darajasida testlangan; bu yerda holat yozuvi va xabarlashamiz.
+func (r *runtime) applyCodecFix(cf proto.CodecFix) {
+	changed := 0
+	r.mu.Lock()
+	for i := range r.st.Cameras {
+		c := &r.st.Cameras[i]
+		if !cf.ApplyAll && c.ID != cf.CameraID {
+			continue
+		}
+		if cf.Target.Profile == "sub" || cf.Target.Profile == "" {
+			c.CodecSub, c.BframeSub = cf.Target.Codec, cf.Target.NoBFrames
+		}
+		if cf.Target.Profile != "sub" {
+			c.CodecMain, c.BframeMain = cf.Target.Codec, cf.Target.NoBFrames
+		}
+		changed++
+	}
+	r.mu.Unlock()
+	if changed == 0 {
+		r.log.Warn("codec_fix: kamera topilmadi", "camera_id", redact.String(cf.CameraID))
+		return
+	}
+	r.log.Info("codec_fix qo'llandi", "camera_id", redact.String(cf.CameraID),
+		"kodek", redact.String(cf.Target.Codec), "kameralar", changed)
+	if err := r.st.Save(); err != nil {
+		r.log.Error("state saqlanmadi", "err", redact.Err(err))
+	}
+	go r.runSync() // yangi kodek holatini serverga yuboramiz (§4.2)
 }
 
 // lookupCamera — state kamera ro'yxatidan ID bo'yicha (media.Manager uchun).
