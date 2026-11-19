@@ -155,6 +155,43 @@ func TestHandle_NomaolumTurShovqinsiz(t *testing.T) {
 	}
 }
 
+// C3.20: media_start/stop/codec_fix dispatch routing.
+func TestHandle_MediaRouting(t *testing.T) {
+	h, _ := testHandlers(t)
+	var gotStart proto.MediaStart
+	var gotStop proto.MediaStop
+	var gotFix proto.CodecFix
+	h.MediaStart = func(m proto.MediaStart) { gotStart = m }
+	h.MediaStop = func(m proto.MediaStop) { gotStop = m }
+	h.MediaCodecFix = func(m proto.CodecFix) { gotFix = m }
+
+	h.Handle(envOf(t, proto.MsgMediaStart, proto.MediaStart{
+		SessionID: "se_1", CameraID: "cam-7", Profile: "main", Kind: "play", TTLS: 60, Ingest: "whip"}))
+	h.Handle(envOf(t, proto.MsgMediaStop, proto.MediaStop{SessionID: "se_1", CameraID: "cam-7", Reason: "user_close"}))
+	h.Handle(envOf(t, proto.MsgCodecFix, proto.CodecFix{CameraID: "cam-7", Target: proto.CodecFixTarget{Codec: "h264"}}))
+
+	if gotStart.SessionID != "se_1" || gotStart.TTLS != 60 || gotStart.Ingest != "whip" {
+		t.Errorf("media_start: %+v", gotStart)
+	}
+	if gotStop.Reason != "user_close" {
+		t.Errorf("media_stop: %+v", gotStop)
+	}
+	if gotFix.CameraID != "cam-7" || gotFix.Target.Codec != "h264" {
+		t.Errorf("codec_fix: %+v", gotFix)
+	}
+}
+
+// Handler nil bo'lsa xabar shovqinsiz o'tkaziladi (§1 forward-compat).
+func TestHandle_MediaNilHandler(t *testing.T) {
+	h, sendCh := testHandlers(t)
+	h.Handle(envOf(t, proto.MsgMediaStart, proto.MediaStart{SessionID: "se_1"}))
+	select {
+	case e := <-sendCh:
+		t.Fatalf("nil handler javob yubordi: %q", e.Type)
+	default:
+	}
+}
+
 func TestSend_SessiyaYopiq(t *testing.T) {
 	s := NewSession(SessionConfig{ServerURL: "ws://x"})
 	if err := s.Send(proto.MsgHB, map[string]any{}); !errors.Is(err, ErrChannelClosed) {

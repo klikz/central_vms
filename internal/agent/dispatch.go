@@ -25,6 +25,10 @@ type Handlers struct {
 	CamsAck func(proto.CamsAck)
 	// CamsRequest — server ro'yxatni qayta so'radi (§5.1) → agent sync yuboradi.
 	CamsRequest func(proto.CamsRequest)
+	// MediaStart/MediaStop/MediaCodecFix — publish sessiyalari (§5.2, C3.20).
+	MediaStart    func(proto.MediaStart)
+	MediaStop     func(proto.MediaStop)
+	MediaCodecFix func(proto.CodecFix)
 }
 
 // Handle — xabar turiga qarab bo'lish. Noma'lum turlar jimgina o'tkaziladi (§1).
@@ -36,6 +40,24 @@ func (h *Handlers) Handle(env proto.Envelope) {
 		h.configPush(env)
 	case proto.MsgMediaRefresh:
 		h.mediaRefresh(env)
+	case proto.MsgMediaStart:
+		decodeRun[proto.MediaStart](h, env, "media_start", func(m proto.MediaStart) {
+			if h.MediaStart != nil {
+				h.MediaStart(m)
+			}
+		})
+	case proto.MsgMediaStop:
+		decodeRun[proto.MediaStop](h, env, "media_stop", func(m proto.MediaStop) {
+			if h.MediaStop != nil {
+				h.MediaStop(m)
+			}
+		})
+	case proto.MsgCodecFix:
+		decodeRun[proto.CodecFix](h, env, "codec_fix", func(m proto.CodecFix) {
+			if h.MediaCodecFix != nil {
+				h.MediaCodecFix(m)
+			}
+		})
 	case proto.MsgCamsAck:
 		if h.CamsAck == nil {
 			return
@@ -64,6 +86,16 @@ func (h *Handlers) Handle(env proto.Envelope) {
 	default:
 		// forward-compat: yangi turlar eski agentga kelganda xato bermaydi
 	}
+}
+
+// decodeRun — umumiy decode + warn (handler nil bo'lsa jimgina o'tkazadi).
+func decodeRun[T any](h *Handlers, env proto.Envelope, name string, fn func(T)) {
+	m, err := proto.Decode[T](env.Data)
+	if err != nil {
+		h.Log.Warn(name+" noto'g'ri", "err", redact.String(err.Error()))
+		return
+	}
+	fn(m)
 }
 
 // secretRotate — §5.6: yangi secretni keystore'ga atomik saqlash, keyin secret_rotated.
