@@ -1,7 +1,6 @@
-package main
+package media
 
 import (
-	"central-vms/client/internal/cams"
 	"central-vms/client/internal/proto"
 	"central-vms/client/internal/publish"
 	"central-vms/client/internal/redact"
@@ -9,10 +8,10 @@ import (
 )
 
 // C3.20: media hodisalarini WS orqali serverga yuborish (§4.6) va
-// registry callback'larini mediaMgr'ga bog'lash.
+// registry callback'larini Manager'ga bog'lash.
 
 // onReady — registry MarkReady hodisasi → media_ready (BIR marta, §9.1).
-func (m *mediaMgr) onReady(ev publish.ReadyEvent) {
+func (m *Manager) OnReady(ev publish.ReadyEvent) {
 	m.mu.Lock()
 	s := m.sess[ev.Key]
 	var st publish.Stat
@@ -29,7 +28,7 @@ func (m *mediaMgr) onReady(ev publish.ReadyEvent) {
 }
 
 // onStopped — registry yopilish hodisasi → transportni yopish + media_stopped.
-func (m *mediaMgr) onStopped(ev publish.StoppedEvent) {
+func (m *Manager) OnStopped(ev publish.StoppedEvent) {
 	m.closeSess(ev.Key)
 	m.sendWS(proto.MsgMediaStopped, proto.MediaStopped{
 		SessionID: m.sessionOf(ev.Key, ev.PublishID), CameraID: ev.Key.CameraID,
@@ -38,25 +37,22 @@ func (m *mediaMgr) onStopped(ev publish.StoppedEvent) {
 }
 
 // sendStopped — reestrda entry bo'lmagan rad etilgan holatlar (§5.2).
-func (m *mediaMgr) sendStopped(sessionID, cameraID, publishID, reason string) {
+func (m *Manager) sendStopped(sessionID, cameraID, publishID, reason string) {
 	m.sendWS(proto.MsgMediaStopped, proto.MediaStopped{
 		SessionID: sessionID, CameraID: cameraID, PublishID: publishID, Reason: reason})
 }
 
-func (m *mediaMgr) sendWS(typ string, data any) {
-	m.rt.mu.Lock()
-	sess := m.rt.sess
-	m.rt.mu.Unlock()
-	if sess == nil {
+func (m *Manager) sendWS(typ string, data any) {
+	if m.cfg.Send == nil {
 		return
 	}
-	if err := sess.Send(typ, data); err != nil {
-		m.rt.log.Warn("media hodisa yuborilmadi", "type", typ, "err", redact.String(err.Error()))
+	if err := m.cfg.Send(typ, data); err != nil {
+		m.cfg.Log.Warn("media hodisa yuborilmadi", "type", typ, "err", redact.String(err.Error()))
 	}
 }
 
 // sessionOf — media_stopped uchun session_id: oxirgi so'rovchi yoki bo'sh.
-func (m *mediaMgr) sessionOf(k publish.Key, publishID string) string {
+func (m *Manager) sessionOf(k publish.Key, publishID string) string {
 	m.mu.Lock()
 	s := m.sess[k]
 	m.mu.Unlock()
@@ -67,7 +63,7 @@ func (m *mediaMgr) sessionOf(k publish.Key, publishID string) string {
 }
 
 // backend — transport backend belgisi (§4.6: go-whip | go-rtsp | ffmpeg).
-func (s *mediaSess) backend() string {
+func (s *sess) backend() string {
 	switch s.plan.Ingest {
 	case "whip":
 		return "go-whip"
@@ -78,18 +74,8 @@ func (s *mediaSess) backend() string {
 	}
 }
 
-// camRTSPUser — kamera RTSP foydalanuvchisi (default "admin"; ONVIF
-// foydalanuvchisi sozlamada parameter sifatida beriladi).
-func camRTSPUser(c cams.Camera) string {
-	if c.OnvifXAddr != "" {
-		// ONVIF sozlangan kameralarda odatiy admin hisob ishlatiladi (§16).
-		return "admin"
-	}
-	return "admin"
-}
-
 // statsSource — media_stats manbai: transport hisoblagichlari (§4.6).
-func (m *mediaMgr) statsSource(k publish.Key) publish.Stat {
+func (m *Manager) StatsSource(k publish.Key) publish.Stat {
 	m.mu.Lock()
 	s := m.sess[k]
 	m.mu.Unlock()
@@ -100,6 +86,6 @@ func (m *mediaMgr) statsSource(k publish.Key) publish.Stat {
 }
 
 // statsEmit — media_stats'ni WS'ga yuborish.
-func (m *mediaMgr) statsEmit(st proto.MediaStats) {
+func (m *Manager) StatsEmit(st proto.MediaStats) {
 	m.sendWS(proto.MsgMediaStats, st)
 }

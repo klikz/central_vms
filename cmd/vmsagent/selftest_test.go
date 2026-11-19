@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"central-vms/client/internal/cams"
+	"central-vms/client/internal/media"
 )
 
 func TestMediaHost(t *testing.T) {
@@ -20,11 +21,11 @@ func TestMediaHost(t *testing.T) {
 
 func TestCamRTSPURL(t *testing.T) {
 	c := cams.Camera{Host: "10.0.0.7", Port: 0, MainPath: "/Streaming/Channels/101"}
-	if got := camRTSPURL(c); got != "rtsp://10.0.0.7:554/Streaming/Channels/101" {
+	if got := media.CamRTSPURL(c); got != "rtsp://10.0.0.7:554/Streaming/Channels/101" {
 		t.Errorf("got %q", got)
 	}
 	c2 := cams.Camera{Host: "h", Port: 8554, MainPath: ""}
-	if got := camRTSPURL(c2); got != "rtsp://h:8554/" {
+	if got := media.CamRTSPURL(c2); got != "rtsp://h:8554/" {
 		t.Errorf("got %q", got)
 	}
 }

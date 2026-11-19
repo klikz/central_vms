@@ -1,4 +1,4 @@
-package main
+package media
 
 import (
 	"bytes"
@@ -16,7 +16,7 @@ import (
 // C3.20: haqiqiy transportlar — whip (pion) va rtsp_tcp (o'z rtspclient).
 // §8.1: H.264→WHIP; H.265→RTSP/TCP (yoki server/client transcode).
 
-func openTransport(ctx context.Context, plan publish.StartPlan, cam cams.Camera, pass string) (transport, error) {
+func openTransport(ctx context.Context, plan publish.StartPlan, cam cams.Camera, pass string) (Transport, error) {
 	switch plan.Ingest {
 	case "whip":
 		return openWhipTransport(ctx, plan)
@@ -34,7 +34,7 @@ type whipT struct {
 	sent int64
 }
 
-func openWhipTransport(ctx context.Context, plan publish.StartPlan) (transport, error) {
+func openWhipTransport(ctx context.Context, plan publish.StartPlan) (Transport, error) {
 	w, err := publish.NewWhip(ctx, plan)
 	if err != nil {
 		return nil, err
@@ -76,7 +76,7 @@ type rtspT struct {
 	sent int64
 }
 
-func openRtspTransport(ctx context.Context, plan publish.StartPlan, cam cams.Camera) (transport, error) {
+func openRtspTransport(ctx context.Context, plan publish.StartPlan, cam cams.Camera) (Transport, error) {
 	conn, err := publish.DialRtsp(ctx, plan)
 	if err != nil {
 		return nil, err
@@ -129,4 +129,17 @@ func announceSDP(codec string) string {
 		"c=IN IP4 0.0.0.0\r\nt=0 0\r\nm=video 0 RTP/AVP/UDP %s\r\n"+
 		"a=rtpmap:%s %s\r\n%s"+
 		"a=control:trackID=1\r\na=recvonly\r\n", pt, pt, rtpmap, fmtp)
+}
+
+// CamRTSPURL — kamera modelidan RTSP manzil (parol YO'Q — §10.2).
+func CamRTSPURL(c cams.Camera) string {
+	port := c.Port
+	if port == 0 {
+		port = 554
+	}
+	path := c.MainPath
+	if path == "" {
+		path = "/"
+	}
+	return fmt.Sprintf("rtsp://%s:%d%s", c.Host, port, path)
 }

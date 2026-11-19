@@ -14,12 +14,14 @@ import (
 	"time"
 
 	"central-vms/client/internal/agent"
+	"central-vms/client/internal/cams"
 	"central-vms/client/internal/caps"
 	"central-vms/client/internal/config"
 	"central-vms/client/internal/keystore"
 	"central-vms/client/internal/localui"
 	"central-vms/client/internal/logbuf"
 	"central-vms/client/internal/logx"
+	"central-vms/client/internal/media"
 	"central-vms/client/internal/proto"
 	"central-vms/client/internal/publish"
 	"central-vms/client/internal/redact"
@@ -39,7 +41,7 @@ type runtime struct {
 
 	sess      *agent.Session
 	publishes *publish.Registry // §4.10 hb publishes + §9.1 refcount
-	media     *mediaMgr         // C3.20 media sessiyalari
+	media     *media.Manager    // C3.20 media sessiyalari
 	selftest  *selftest.Runner  // C4.6 paneli
 
 	mu              sync.Mutex
@@ -276,6 +278,18 @@ func ptrVal(p *int) int {
 		return 0
 	}
 	return *p
+}
+
+// lookupCamera — state kamera ro'yxatidan ID bo'yicha (media.Manager uchun).
+func (r *runtime) lookupCamera(id string) (cams.Camera, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, c := range r.st.Cameras {
+		if c.ID == id {
+			return c, true
+		}
+	}
+	return cams.Camera{}, false
 }
 
 func (r *runtime) setError(err error) {

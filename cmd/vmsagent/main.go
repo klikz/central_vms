@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -19,6 +20,7 @@ import (
 	"central-vms/client/internal/localui"
 	"central-vms/client/internal/logbuf"
 	"central-vms/client/internal/logx"
+	"central-vms/client/internal/media"
 	"central-vms/client/internal/publish"
 	"central-vms/client/internal/redact"
 	"central-vms/client/internal/selftest"
@@ -152,9 +154,22 @@ func run(ctx context.Context, log *slog.Logger, cfgPath, enrollCode string,
 	rt := &runtime{cfg: cfg, log: log, ring: ring}
 	rt.selftest = rt.newSelftest() // C4.6 paneli (deps'lar lazy o'qiydi)
 	// C3.20: registry + media boshqaruvchisi (hodisalar o'zaro bog'langan).
-	rt.media = newMediaMgr(rt, nil)
-	rt.publishes = publish.New(clockReal(), rt.log, rt.media.onReady, rt.media.onStopped)
-	rt.media.reg = rt.publishes
+	rt.media = media.New(media.Config{
+		Log:          rt.log,
+		LookupCamera: rt.lookupCamera,
+		LookupSecret: func(ref string) (string, bool) { return rt.ks.Get(ref) },
+		Send: func(typ string, data any) error {
+			rt.mu.Lock()
+			sess := rt.sess
+			rt.mu.Unlock()
+			if sess == nil {
+				return errors.New("sessiya yo'q")
+			}
+			return sess.Send(typ, data)
+		},
+	})
+	rt.publishes = publish.New(clockReal(), rt.log, rt.media.OnReady, rt.media.OnStopped)
+	rt.media.SetRegistry(rt.publishes)
 	if err := rt.bootstrap(ctx, enrollCode); err != nil {
 		return err
 	}
@@ -178,7 +193,7 @@ func run(ctx context.Context, log *slog.Logger, cfgPath, enrollCode string,
 	sessStop := rt.startSession(ctx)
 	defer sessStop()
 	// §4.6: media_stats — 10 s'da bir faol publish'larni yig'adi (C3.15).
-	stats := publish.NewStats(rt.publishes, clockReal(), rt.media.statsSource, rt.media.statsEmit)
+	stats := publish.NewStats(rt.publishes, clockReal(), rt.media.StatsSource, rt.media.StatsEmit)
 	go stats.Run(ctx)
 
 	for {

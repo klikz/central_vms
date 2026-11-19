@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"central-vms/client/internal/cams"
+	"central-vms/client/internal/media"
 	"central-vms/client/internal/rtspclient"
 	"central-vms/client/internal/selftest"
 )
@@ -75,7 +76,7 @@ func (r *runtime) newSelftest() *selftest.Runner {
 			defer r.mu.Unlock()
 			out := make([]selftest.CamSpec, 0, len(r.st.Cameras))
 			for _, c := range r.st.Cameras {
-				out = append(out, selftest.CamSpec{ID: c.ID, URL: camRTSPURL(c)})
+				out = append(out, selftest.CamSpec{ID: c.ID, URL: media.CamRTSPURL(c)})
 			}
 			return out
 		},
@@ -116,19 +117,6 @@ func (r *runtime) newSelftest() *selftest.Runner {
 		FFmpeg: ffProcs,
 	}
 	return selftest.New(deps)
-}
-
-// camRTSPURL — kamera modelidan RTSP manzil (parol YO'Q — §10.2).
-func camRTSPURL(c cams.Camera) string {
-	port := c.Port
-	if port == 0 {
-		port = 554
-	}
-	path := c.MainPath
-	if path == "" {
-		path = "/"
-	}
-	return fmt.Sprintf("rtsp://%s:%d%s", c.Host, port, path)
 }
 
 // stunProbe — UDP 8189 STUN Binding so'rovi (WHIP ICE UDP yo'l-echar).

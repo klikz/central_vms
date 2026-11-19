@@ -1,4 +1,4 @@
-package main
+package media
 
 import (
 	"context"
@@ -13,7 +13,6 @@ import (
 	"central-vms/client/internal/clock"
 	"central-vms/client/internal/proto"
 	"central-vms/client/internal/publish"
-	"central-vms/client/internal/statestore"
 )
 
 // C3.20: mediaMgr — fake transport/pull bilan boshqaruv mantiqi.
@@ -36,17 +35,17 @@ func (t *fakeTr) BytesSent() int64  { return t.written.Load() * 100 }
 func (t *fakeTr) Transport() string { return t.transport }
 func (t *fakeTr) Close() error      { t.closed.Store(true); return nil }
 
-func testMediaMgr(t *testing.T) (*mediaMgr, *publish.Registry, *fakeTr, chan publish.StoppedEvent) {
+func testManager(t *testing.T) (*Manager, *publish.Registry, *fakeTr, chan publish.StoppedEvent) {
 	t.Helper()
-	rt := &runtime{
-		log: slog.New(slog.NewTextHandler(discard{}, nil)),
-		st: &statestore.State{Cameras: []cams.Camera{{
-			ID: "cam-7", Host: "10.0.0.7", MainPath: "/media", CodecMain: "h264",
-		}}},
+	camsList := map[string]cams.Camera{
+		"cam-7": {ID: "cam-7", Host: "10.0.0.7", MainPath: "/media", CodecMain: "h264"},
 	}
-	m := newMediaMgr(rt, nil)
+	m := New(Config{
+		Log:          slog.New(slog.NewTextHandler(discard{}, nil)),
+		LookupCamera: func(id string) (cams.Camera, bool) { c, ok := camsList[id]; return c, ok },
+	})
 	tr := &fakeTr{transport: "udp"}
-	m.openFn = func(context.Context, publish.StartPlan, cams.Camera, string) (transport, error) {
+	m.openFn = func(context.Context, publish.StartPlan, cams.Camera, string) (Transport, error) {
 		return tr, nil
 	}
 	m.pullFn = func(ctx context.Context, _ cams.PullOptions, sink func(cams.AU) error) error {
@@ -59,8 +58,8 @@ func testMediaMgr(t *testing.T) (*mediaMgr, *publish.Registry, *fakeTr, chan pub
 		return ctx.Err()
 	}
 	stopped := make(chan publish.StoppedEvent, 4)
-	reg := publish.New(clock.Real{}, nil, m.onReady, func(ev publish.StoppedEvent) {
-		m.onStopped(ev) // avval transport yopilsin, keyin signal
+	reg := publish.New(clock.Real{}, nil, m.OnReady, func(ev publish.StoppedEvent) {
+		m.OnStopped(ev) // avval transport yopilsin, keyin signal
 		stopped <- ev
 	})
 	m.reg = reg
@@ -98,7 +97,7 @@ func msStart() proto.MediaStart {
 }
 
 func TestMediaMgr_StartFeedsTransport(t *testing.T) {
-	m, reg, tr, _ := testMediaMgr(t)
+	m, reg, tr, _ := testManager(t)
 	m.OnStart(msStart())
 	waitWritten(t, tr, 2)
 	if tr.written.Load() < 2 {
@@ -110,8 +109,8 @@ func TestMediaMgr_StartFeedsTransport(t *testing.T) {
 }
 
 func TestMediaMgr_OpenFailPublishFailed(t *testing.T) {
-	m, reg, _, stopped := testMediaMgr(t)
-	m.openFn = func(context.Context, publish.StartPlan, cams.Camera, string) (transport, error) {
+	m, reg, _, stopped := testManager(t)
+	m.openFn = func(context.Context, publish.StartPlan, cams.Camera, string) (Transport, error) {
 		return nil, errors.New("whip 401")
 	}
 	m.OnStart(msStart())
@@ -124,7 +123,7 @@ func TestMediaMgr_OpenFailPublishFailed(t *testing.T) {
 }
 
 func TestMediaMgr_PullFailCameraOffline(t *testing.T) {
-	m, _, _, stopped := testMediaMgr(t)
+	m, _, _, stopped := testManager(t)
 	m.pullFn = func(context.Context, cams.PullOptions, func(cams.AU) error) error {
 		return cams.ErrCameraOffline
 	}
@@ -135,7 +134,7 @@ func TestMediaMgr_PullFailCameraOffline(t *testing.T) {
 }
 
 func TestMediaMgr_StopClosesTransport(t *testing.T) {
-	m, _, tr, stopped := testMediaMgr(t)
+	m, _, tr, stopped := testManager(t)
 	m.OnStart(msStart())
 	waitWritten(t, tr, 1)
 	m.OnStop(proto.MediaStop{SessionID: "se_1", CameraID: "cam-7", Reason: publish.ReasonUserClose})
