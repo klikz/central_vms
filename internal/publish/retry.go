@@ -3,7 +3,6 @@ package publish
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 
 	"central-vms/client/internal/clock"
@@ -20,9 +19,19 @@ const (
 )
 
 // ErrPublishFailed — barcha urinishlar tugadi (§13 reason: publish_failed).
-// Oxirgi sabab %w bilan saqlanadi (token_rejected kabi aniqroq reasonlar
-// uchun §13 matritsasi keyinchalik shundan tanlaydi).
+// Aniq turdagi xato: Cause orqali oxirgi sabab saqlanadi (§13 matritsasi
+// uni o'qib token_rejected kabi aniqroq reason tanlaydi).
 var ErrPublishFailed = errors.New("publish: ochib bo'lmadi")
+
+// PublishError — retry tugaganda qaytadi; Is(ErrPublishFailed) true,
+// Unwrap → oxirgi haqiqiy sabab.
+type PublishError struct{ Cause error }
+
+func (e *PublishError) Error() string {
+	return "publish: ochib bo'lmadi: " + e.Cause.Error()
+}
+func (e *PublishError) Unwrap() error        { return e.Cause }
+func (e *PublishError) Is(target error) bool { return target == ErrPublishFailed }
 
 // retryDelay — eksponensial: base<<attempt, 24 soatga qadar.
 func retryDelay(base time.Duration, attempt int) time.Duration {
@@ -68,5 +77,5 @@ func openWithRetry(ctx context.Context, clk clock.Clock, log *slog.Logger, base 
 			return ctx.Err()
 		}
 	}
-	return fmt.Errorf("%w: %w", ErrPublishFailed, last)
+	return &PublishError{Cause: last}
 }
