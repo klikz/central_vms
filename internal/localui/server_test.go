@@ -22,7 +22,8 @@ func newTestServer(t *testing.T, pin string) *httptest.Server {
 	s, err := NewServer(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), "test-ver", Deps{
 		Status: func() Status {
 			return Status{Version: "test-ver", CamsTotal: 100, CamsOnline: 97, Publishes: 3, CamsEpoch: 7,
-				LastError: "kamera javob bermayapti (cam-7)", LastErrorAt: "2026-11-19T10:00:00Z", LastHeartbeat: "2026-11-19T10:00:05Z"}
+				LastError: "kamera javob bermayapti (cam-7)", LastErrorAt: "2026-11-19T10:00:00Z", LastHeartbeat: "2026-11-19T10:00:05Z",
+				VersionMismatch: true, ServerVersion: "2.0", ProtoMin: 2, ProtoMax: 3}
 		},
 		LogLines: func(limit int) []string {
 			all := []string{"qator-1", "qator-2", "qator-3"}
@@ -106,6 +107,9 @@ func TestStatusEndpoint(t *testing.T) {
 	// §17: holat chizig'i oxirgi xato va heartbeat'ni ko'rsatadi.
 	if st.LastError == "" || st.LastErrorAt == "" || st.LastHeartbeat == "" {
 		t.Errorf("last_error/last_heartbeat yo'q: %+v", st)
+	}
+	if !st.VersionMismatch || st.ProtoMin != 2 || st.ProtoMax != 3 {
+		t.Errorf("C4.7 versiya-banneri maydonlari yo'q: %+v", st)
 	}
 
 	// GET dan boshqa metod rad etiladi

@@ -39,14 +39,18 @@ type runtime struct {
 	sess      *agent.Session
 	publishes *publish.Registry // §4.10 hb publishes; C3 ulaniganda to'ladi
 
-	mu        sync.Mutex
-	online    bool
-	lastHB    time.Time
-	lastErr   string
-	lastError time.Time
-	caps      proto.Caps
-	welcome   proto.Welcome
-	syncer    *agent.Syncer
+	mu              sync.Mutex
+	online          bool
+	versionMismatch bool
+	serverVer       string
+	protoMin        int
+	protoMax        int
+	lastHB          time.Time
+	lastErr         string
+	lastError       time.Time
+	caps            proto.Caps
+	welcome         proto.Welcome
+	syncer          *agent.Syncer
 }
 
 // hintPerm — ruxsat xatosiga amaliy maslahat qo'shadi: `/etc/vmsagent` va
@@ -146,6 +150,33 @@ func (r *runtime) newSession() *agent.Session {
 			r.online = false
 			r.mu.Unlock()
 		},
+		OnCompat: func(w proto.Welcome) { // §1: versiya mos emas — C4.7 banneri
+			r.mu.Lock()
+			r.versionMismatch = true
+			r.online = false
+			if w.Compat.ServerVersion != nil {
+				r.serverVer = *w.Compat.ServerVersion
+			}
+			if w.Compat.MinSupported != nil {
+				r.protoMin = *w.Compat.MinSupported
+			}
+			if w.Compat.MaxSupported != nil {
+				r.protoMax = *w.Compat.MaxSupported
+			}
+			r.mu.Unlock()
+			r.log.Error("PROTOKOL VERSIYASI MOS EMAS", "server", redact.String(fmt.Sprint(w.Compat.ServerVersion)),
+				"oralik", fmt.Sprintf("%d..%d", ptrVal(w.Compat.MinSupported), ptrVal(w.Compat.MaxSupported)))
+		},
+		OnWelcome: func(w proto.Welcome) {
+			r.mu.Lock()
+			r.online, r.welcome = true, w
+			r.versionMismatch = false // muvaffaqiyatli qo'l berish — banner o'chadi
+			r.mu.Unlock()
+			r.log.Info("welcome qabul qilindi", "server_version", w.ServerVersion,
+				"needs_full_sync", w.NeedsFullSync, "cams_epoch", w.CamsEpoch)
+			// §6.5: epoch farq yoki needs_full_sync → to'liq cams_sync
+			go r.runSync()
+		},
 		OnHeartbeat: func(now time.Time) {
 			r.mu.Lock()
 			r.lastHB = now
@@ -162,15 +193,6 @@ func (r *runtime) newSession() *agent.Session {
 			}
 			r.mu.Unlock()
 			return map[string]any{"mem_mb": int64(ms.Alloc / (1024 * 1024)), "publishes": int64(pub)}
-		},
-		OnWelcome: func(w proto.Welcome) {
-			r.mu.Lock()
-			r.online, r.welcome = true, w
-			r.mu.Unlock()
-			r.log.Info("welcome qabul qilindi", "server_version", w.ServerVersion,
-				"needs_full_sync", w.NeedsFullSync, "cams_epoch", w.CamsEpoch)
-			// §6.5: epoch farq yoki needs_full_sync → to'liq cams_sync
-			go r.runSync()
 		},
 	}
 	sess := agent.NewSession(cfg)
@@ -217,6 +239,11 @@ func (r *runtime) statusFn() localui.Status {
 		FFmpegOK: r.caps.FFmpegVersion != "",
 	}
 	// §17 holat chizig'i: oxirgi heartbeat + oxirgi xato (redaktor orqali).
+	if r.versionMismatch {
+		st.VersionMismatch = true
+		st.ServerVersion = r.serverVer
+		st.ProtoMin, st.ProtoMax = r.protoMin, r.protoMax
+	}
 	if !r.lastHB.IsZero() {
 		st.LastHeartbeat = r.lastHB.UTC().Format(time.RFC3339)
 	}
@@ -232,6 +259,14 @@ func (r *runtime) statusFn() localui.Status {
 		}
 	}
 	return st
+}
+
+// ptrVal — nil xavfsiz o'qish (compat maydonlari uchun).
+func ptrVal(p *int) int {
+	if p == nil {
+		return 0
+	}
+	return *p
 }
 
 func (r *runtime) setError(err error) {

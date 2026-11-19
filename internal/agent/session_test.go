@@ -134,12 +134,21 @@ func TestRunOnce_BadSecret(t *testing.T) {
 
 func TestRunOnce_VersionMismatch(t *testing.T) {
 	// Server faqat 2..3 versiyalarni qo'llab-quvvatlaydi → agent (v1) mos emas
-	env := startDev(t, devserver.Options{MinVersion: 2, MaxVersion: 3})
+	env := startDev(t, devserver.Options{MinVersion: 2, MaxVersion: 3, ServerVer: "1.9.0"})
 	cfg := baseCfg(env, clock.NewFake(time.Now()))
+	var compat *proto.Welcome
+	cfg.OnCompat = func(w proto.Welcome) { compat = &w } // C4.7: UI banneri ma'lumoti
 
 	_, err := NewSession(cfg).RunOnce(context.Background())
 	if !errors.Is(err, ErrCompat) {
 		t.Fatalf("xato: %v, kutilgan ErrCompat", err)
+	}
+	if compat == nil || compat.Compat.OK {
+		t.Fatal("OnCompat chaqirilmadi — banner ma'lumoti yo'q")
+	}
+	if compat.Compat.MinSupported == nil || *compat.Compat.MinSupported != 2 ||
+		compat.Compat.MaxSupported == nil || *compat.Compat.MaxSupported != 3 {
+		t.Errorf("compat oralig'i noto'g'ri: %+v", compat.Compat)
 	}
 	if p := profileForError(err); p != ProfileVersion {
 		t.Fatalf("profil=%v, kutilgan ProfileVersion", p)

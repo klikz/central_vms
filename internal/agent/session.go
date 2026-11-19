@@ -64,6 +64,8 @@ type SessionConfig struct {
 	OnMessage func(proto.Envelope)
 	// OnWelcome — welcome qabul qilinganda chaqiriladi (epoch/limits saqlash uchun).
 	OnWelcome func(proto.Welcome)
+	// OnCompat — welcome.compat.ok=false bo'lsa chaqiriladi (§1, C4.7 banner).
+	OnCompat func(proto.Welcome)
 	// OnHeartbeat — har hb yuborilganda chaqiriladi (UI holat chizig'i, §17).
 	OnHeartbeat func(now time.Time)
 	// Stats — hb'ga qo'shimcha maydonlar (§4.10: mem_mb, publishes). nil → faqat uptime_s.
@@ -192,7 +194,10 @@ func (s *Session) RunOnce(ctx context.Context) (*proto.Welcome, error) {
 		return nil, err
 	}
 	if !wel.Compat.OK {
-		// §1: server 4001 bilan yopadi — biz ham darhol chiqamiz
+		// §1: server 4001 bilan yopadi — UI banneri uchun ma'lumot beramiz (C4.7)
+		if s.cfg.OnCompat != nil {
+			s.cfg.OnCompat(wel)
+		}
 		return &wel, ErrCompat
 	}
 	if s.cfg.OnWelcome != nil {

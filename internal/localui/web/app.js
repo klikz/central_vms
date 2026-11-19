@@ -77,6 +77,16 @@ function renderStatusCards(st) {
   ];
   cards.innerHTML = items.map((it) =>
     `<div class="card"><b>${esc(it[1])}</b><span>${esc(it[0])}</span></div>`).join("");
+  const vb = $("#ver-banner");
+  if (vb) {
+    if (st.version_mismatch) {
+      vb.hidden = false;
+      vb.textContent = "Protokol versiyasi mos emas: server " + (st.server_version || "?") +
+        " (qo'llab-quvvatlangan " + st.proto_min + ".." + st.proto_max + ") — agentni yangilang";
+    } else {
+      vb.hidden = true;
+    }
+  }
   const banner = $("#last-error");
   if (banner) {
     if (st.last_error) {

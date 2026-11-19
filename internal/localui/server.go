@@ -46,9 +46,14 @@ type Status struct {
 	CamsEpoch    int64  `json:"cams_epoch"`
 	FFmpegOK     bool   `json:"ffmpeg_ok"`
 	// §17 holat chizig'i: oxirgi heartbeat va oxirgi xato (redaktorlangan).
-	LastHeartbeat string `json:"last_heartbeat,omitempty"`
-	LastError     string `json:"last_error,omitempty"`
-	LastErrorAt   string `json:"last_error_at,omitempty"`
+	// §1/C4.7: protokol versiyasi mos kelmasa — UI banneri.
+	VersionMismatch bool   `json:"version_mismatch,omitempty"`
+	ServerVersion   string `json:"server_version,omitempty"`
+	ProtoMin        int    `json:"proto_min,omitempty"`
+	ProtoMax        int    `json:"proto_max,omitempty"`
+	LastHeartbeat   string `json:"last_heartbeat,omitempty"`
+	LastError       string `json:"last_error,omitempty"`
+	LastErrorAt     string `json:"last_error_at,omitempty"`
 }
 
 // Settings — UI'da ko'rinadigan/qayta yoziladigan sozlamalar (C1 davomida to'liq bo'ladi).

@@ -179,6 +179,10 @@ func (s *Session) connectAndServe(ctx context.Context) error {
 		return err
 	}
 	if !wel.Compat.OK {
+		// §1/C4.7: versiya mos emas — UI banneri uchun ma'lumot beramiz.
+		if s.cfg.OnCompat != nil {
+			s.cfg.OnCompat(wel)
+		}
 		return ErrCompat
 	}
 	s.seq.Store(wel.LastSeq) // seq serverda qayerda qolgani bilan davom etadi (§2)
