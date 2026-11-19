@@ -19,6 +19,9 @@ import (
 // chidamli).
 const gracePeriod = time.Second
 
+// defaultTTL — media_start ttl_s bo'lmasa (§9.2 default 60 s).
+const defaultTTL = 60 * time.Second
+
 // ErrClosed — registry yopilgan (Shutdown), amallar bajarilmaydi.
 var ErrClosed = errors.New("publish: registry yopilgan")
 
@@ -57,20 +60,23 @@ const (
 	cmdStop
 	cmdReady
 	cmdCount
+	cmdRefresh
 )
 
 type cmd struct {
 	kind  cmdKind
 	key   Key
 	sess  string
-	reply chan any // buffered(1): StartResult|error | int | nil
+	ttl   time.Duration // start/refresh uchun (§9.2)
+	reply chan any      // buffered(1): StartResult|error | int | nil
 }
 
 type entry struct {
-	publishID string
-	sessions  map[string]struct{}
-	closeAt   time.Time // zero → grace yo'q; dol bo'lsa yopish (§9.1)
-	readySent bool
+	publishID   string
+	sessions    map[string]struct{}
+	closeAt     time.Time // zero → grace yo'q; dol bo'lsa yopish (§9.1)
+	ttlDeadline time.Time // §9.2: muddat o'tsa → media_stopped{ttl_expired}
+	readySent   bool
 }
 
 // Registry — refcount jadvali + grace yopish.
@@ -139,6 +145,7 @@ func (r *Registry) handle(entries map[Key]*entry, c cmd) any {
 		}
 		e.closeAt = time.Time{} // grace bekor qilindi (§9.1)
 		e.sessions[c.sess] = struct{}{}
+		r.extendTTL(e, c.ttl) // yangi media_start deadline'ni uzaytiradi (§9.2)
 		return StartResult{PublishID: e.publishID, New: isNew, Refcount: len(e.sessions)}
 	case cmdStop:
 		e, ok := entries[c.key]
@@ -164,32 +171,60 @@ func (r *Registry) handle(entries map[Key]*entry, c cmd) any {
 			return 0
 		}
 		return len(e.sessions)
+	case cmdRefresh:
+		e, ok := entries[c.key]
+		if !ok {
+			return nil
+		}
+		r.extendTTL(e, c.ttl) // media_refresh deadline'ni siljitadi (§9.2)
+		return nil
 	}
 	return nil
 }
 
-// expire — muddati yetgan grace'larni yopadi → media_stopped{no_viewers}.
+// extendTTL — deadline = max(mavjud, now+ttl).
+func (r *Registry) extendTTL(e *entry, ttl time.Duration) {
+	if ttl <= 0 {
+		ttl = defaultTTL
+	}
+	want := r.clk.Now().Add(ttl)
+	if e.ttlDeadline.IsZero() || want.After(e.ttlDeadline) {
+		e.ttlDeadline = want
+	}
+}
+
+// expire — muddati yetgan grace/TTL'larni yopadi.
+// §9.1: refcount 0 + grace o'tsa → no_viewers.
+// §9.2: TTL muddati o'tsa (tomoshibi bo'lsa ham) → ttl_expired.
 func (r *Registry) expire(entries map[Key]*entry) {
 	now := r.clk.Now()
 	for k, e := range entries {
-		if len(e.sessions) == 0 && !e.closeAt.IsZero() && !now.Before(e.closeAt) {
+		switch {
+		case len(e.sessions) == 0 && !e.closeAt.IsZero() && !now.Before(e.closeAt):
 			delete(entries, k)
 			r.onStopped(StoppedEvent{PublishID: e.publishID, Key: k, Reason: "no_viewers"})
+		case !e.ttlDeadline.IsZero() && !now.Before(e.ttlDeadline):
+			delete(entries, k)
+			r.onStopped(StoppedEvent{PublishID: e.publishID, Key: k, Reason: "ttl_expired"})
 		}
 	}
 }
 
-// arm — keyingi yopish muddatigacha taymer (nil → kutilayotgan yo'q).
+// arm — keyingi yopish/TTL muddatigacha taymer (nil → kutilayotgan yo'q).
 func (r *Registry) arm(entries map[Key]*entry) <-chan time.Time {
 	now := r.clk.Now()
 	var next time.Time
+	consider := func(t time.Time) {
+		if t.IsZero() {
+			return
+		}
+		if next.IsZero() || t.Before(next) {
+			next = t
+		}
+	}
 	for _, e := range entries {
-		if e.closeAt.IsZero() {
-			continue
-		}
-		if next.IsZero() || e.closeAt.Before(next) {
-			next = e.closeAt
-		}
+		consider(e.closeAt)
+		consider(e.ttlDeadline)
 	}
 	if next.IsZero() {
 		return nil
@@ -217,14 +252,35 @@ func (r *Registry) send(c cmd) (any, error) {
 	}
 }
 
-// Start — media_start: sessiyani qo'shadi. New=true bo'lsa chaqiruvchi
-// transport ochadi va MarkReady chaqiradi (§9.1).
+// Start — media_start (default TTL, §9.2).
 func (r *Registry) Start(sess string, k Key, kind string) (StartResult, error) {
-	v, err := r.send(cmd{kind: cmdStart, key: k, sess: sess})
+	return r.StartWithTTL(sess, k, kind, 0)
+}
+
+// StartWithTTL — media_start: sessiyani qo'shadi. New=true bo'lsa chaqiruvchi
+// transport ochadi va MarkReady chaqiradi (§9.1). ttlS — sekundlarda
+// (media_start.ttl_s, §9.2); ≤0 → default 60 s.
+func (r *Registry) StartWithTTL(sess string, k Key, kind string, ttlS int) (StartResult, error) {
+	ttl := time.Duration(ttlS) * time.Second
+	if ttl <= 0 {
+		ttl = defaultTTL
+	}
+	v, err := r.send(cmd{kind: cmdStart, key: k, sess: sess, ttl: ttl})
 	if err != nil {
 		return StartResult{}, err
 	}
 	return v.(StartResult), nil
+}
+
+// Refresh — media_refresh: deadline'ni now+extendS'ga siljitadi (§9.2).
+// extendS sekundlarda (media_refresh.extend_s). Watchdog WS'dan mustaqil:
+// uzilishda ham o'z vaqtida yopadi.
+func (r *Registry) Refresh(k Key, extendS int) {
+	ttl := time.Duration(extendS) * time.Second
+	if ttl <= 0 {
+		ttl = defaultTTL
+	}
+	_, _ = r.send(cmd{kind: cmdRefresh, key: k, ttl: ttl})
 }
 
 // Stop — media_stop: sessiyani oladi. Qaytgan refcount 0 bo'lsa 1 s grace
