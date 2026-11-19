@@ -16,8 +16,9 @@ import (
 // DiscoveryService — skan boshqaruvi (agent tomonda real implementatsiya;
 // nil bo'lsa endpoint'lar 501 qaytaradi).
 type DiscoveryService interface {
-	StartScan() (int, error)          // WS-Discovery + RTSP port-scan; skanlangan host soni
-	Results() []discovery.MergeResult // oxirgi skan natijalari (birlashtirilgan)
+	StartScan() error                 // skanni FONDA boshlaydi (darhol qaytadi)
+	Progress() discovery.Progress     // jarayon holati (UI poll uchun)
+	Results() []discovery.MergeResult // hozirgacha topilganlar (jonli o'sib boradi)
 	AddSelected(keys []string, in discovery.BulkAddInput) (discovery.BulkAddReport, error)
 }
 
@@ -64,12 +65,12 @@ func (s *Server) handleDiscoveryScan(w http.ResponseWriter, r *http.Request) {
 		pinErr(w)
 		return
 	}
-	n, err := s.discovery.StartScan()
-	if err != nil {
+	if err := s.discovery.StartScan(); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "scan_failed", "detail": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"scanned": n})
+	// 202: skan fonda yuradi — natijalar GET /results'dan jonli o'qiladi.
+	writeJSON(w, http.StatusAccepted, map[string]any{"started": true})
 }
 
 func (s *Server) handleDiscoveryResults(w http.ResponseWriter, r *http.Request) {
@@ -77,6 +78,7 @@ func (s *Server) handleDiscoveryResults(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	res := s.discovery.Results()
+	prog := s.discovery.Progress()
 	devs := make([]uiDevice, 0, len(res))
 	for _, m := range res {
 		devs = append(devs, uiDevice{
@@ -91,7 +93,8 @@ func (s *Server) handleDiscoveryResults(w http.ResponseWriter, r *http.Request) 
 			ExistingID:   m.ExistingID,
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"devices": devs, "count": len(devs)})
+	writeJSON(w, http.StatusOK, map[string]any{"devices": devs, "count": len(devs),
+		"progress": prog})
 }
 
 func (s *Server) handleDiscoveryAdd(w http.ResponseWriter, r *http.Request) {

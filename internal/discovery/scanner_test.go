@@ -17,6 +17,17 @@ func (f *fakeCreator) Create(c cams.Camera, secret string) (cams.Camera, error) 
 	return c, nil
 }
 
+func waitScan(t *testing.T, sc *Scanner) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) && sc.Progress().Running {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if sc.Progress().Running {
+		t.Fatal("skan tugamadi")
+	}
+}
+
 func testCfg(probe HostProbe) ScannerConfig {
 	return ScannerConfig{
 		CIDRs: []string{"127.0.0.1/32"}, Ports: []int{554},
@@ -30,12 +41,12 @@ func TestScanner_ScanAndAdd(t *testing.T) {
 	probe := func(ctx context.Context, host string, port int) bool { return port == 554 }
 	fc := &fakeCreator{}
 	sc := NewScanner(fc, func() []Known { return nil }, testCfg(probe))
-	n, err := sc.StartScan()
-	if err != nil {
+	if err := sc.StartScan(); err != nil {
 		t.Fatal(err)
 	}
-	if n != 1 {
-		t.Errorf("scanned=%d, 1 kutilardi", n)
+	waitScan(t, sc)
+	if p := sc.Progress(); p.Scanned != 1 || p.Total != 1 || p.Found != 1 {
+		t.Errorf("progress: %+v", p)
 	}
 	res := sc.Results()
 	if len(res) != 1 || res[0].IP != "127.0.0.1" || res[0].AlreadyKnown {
@@ -50,15 +61,41 @@ func TestScanner_ScanAndAdd(t *testing.T) {
 	}
 }
 
+func TestScanner_Incremental(t *testing.T) {
+	// Probe sekin: skan ketayotganda Results() allaqachon topilganlarni
+	// ko'rsatishi kerak (UI jonli ro'yxat shunga tayanadi).
+	gate := make(chan struct{})
+	probe := func(ctx context.Context, host string, port int) bool {
+		<-gate
+		return true
+	}
+	sc := NewScanner(&fakeCreator{}, nil, testCfg(probe))
+	if err := sc.StartScan(); err != nil {
+		t.Fatal(err)
+	}
+	if !sc.Progress().Running {
+		t.Fatal("skan ishlashi kerak")
+	}
+	if len(sc.Results()) != 0 {
+		t.Fatal("hozircha bo'sh bo'lishi kerak edi")
+	}
+	close(gate)
+	waitScan(t, sc)
+	if len(sc.Results()) != 1 {
+		t.Fatalf("tugagach 1 ta kutilardi: %+v", sc.Results())
+	}
+}
+
 func TestScanner_KnownFiltered(t *testing.T) {
 	probe := func(ctx context.Context, host string, port int) bool { return true }
 	fc := &fakeCreator{}
 	sc := NewScanner(fc, func() []Known {
 		return []Known{{ID: "old1", IP: "127.0.0.1", Port: 554}}
 	}, testCfg(probe))
-	if _, err := sc.StartScan(); err != nil {
+	if err := sc.StartScan(); err != nil {
 		t.Fatal(err)
 	}
+	waitScan(t, sc)
 	res := sc.Results()
 	if len(res) != 1 || !res[0].AlreadyKnown || res[0].ExistingID != "old1" {
 		t.Fatalf("already_known kutilardi: %+v", res)
@@ -72,27 +109,52 @@ func TestScanner_KnownFiltered(t *testing.T) {
 	}
 }
 
-func TestScanner_ProbeNilUsesTCP(t *testing.T) {
-	// 554 band bo'lmasa TCP probe false → natija bo'sh, xato emas.
+func TestScanner_ClosedPortNoResult(t *testing.T) {
 	sc := NewScanner(&fakeCreator{}, nil, ScannerConfig{
 		CIDRs: []string{"127.0.0.1/32"}, Ports: []int{1},
 		MaxHosts: 2, HostTimeout: 50 * time.Millisecond, WsddTimeout: 20 * time.Millisecond,
 		Wsdd: func(time.Duration) []Device { return nil },
 	})
-	if _, err := sc.StartScan(); err != nil {
+	if err := sc.StartScan(); err != nil {
 		t.Fatal(err)
 	}
+	waitScan(t, sc)
 	if len(sc.Results()) != 0 {
 		t.Errorf("yopiq port natija bermasligi kerak")
 	}
 }
 
-func TestLocalNetsSane(t *testing.T) {
-	nets := localNets()
-	for _, n := range nets {
-		if n.IP.IsLoopback() || n.IP.IsLinkLocalUnicast() {
-			t.Errorf("tashlanishi kerak edi: %v", n)
+func TestScanner_BannerEnrich(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for { // probe + banner: bir nechta ulanish qabul qilinadi
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			b := make([]byte, 512)
+			_, _ = c.Read(b)
+			_, _ = c.Write([]byte("RTSP/1.0 200 OK\r\nCSeq: 1\r\nServer: TestCam-9000\r\n\r\n"))
+			_ = c.Close()
 		}
+	}()
+	port := ln.Addr().(*net.TCPAddr).Port
+	sc := NewScanner(&fakeCreator{}, nil, ScannerConfig{
+		CIDRs: []string{"127.0.0.1/32"}, Ports: []int{port}, MaxHosts: 2,
+		HostTimeout: 300 * time.Millisecond, WsddTimeout: 20 * time.Millisecond,
+		Wsdd: func(time.Duration) []Device { return nil },
+	})
+	if err := sc.StartScan(); err != nil {
+		t.Fatal(err)
+	}
+	waitScan(t, sc)
+	res := sc.Results()
+	if len(res) != 1 || res[0].Model != "TestCam-9000" {
+		t.Fatalf("banner orqali nom kutilardi: %+v", res)
 	}
 }
 
@@ -122,29 +184,20 @@ func TestMarkKnownByIP(t *testing.T) {
 	}
 }
 
-func TestEnrichRTSP(t *testing.T) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+func TestIpLess(t *testing.T) {
+	if ipLess("10.0.0.10", "10.0.0.9") {
+		t.Error("son tartibi buzildi")
 	}
-	defer ln.Close()
-	go func() {
-		c, err := ln.Accept()
-		if err != nil {
-			return
+	if !ipLess("10.0.0.9", "10.0.0.10") || !ipLess("10.0.0.0", "192.168.0.1") {
+		t.Error("tartib noto'g'ri")
+	}
+}
+
+func TestLocalNetsSane(t *testing.T) {
+	nets := localNets()
+	for _, n := range nets {
+		if n.IP.IsLoopback() || n.IP.IsLinkLocalUnicast() {
+			t.Errorf("tashlanishi kerak edi: %v", n)
 		}
-		defer c.Close()
-		b := make([]byte, 512)
-		_, _ = c.Read(b)
-		_, _ = c.Write([]byte("RTSP/1.0 200 OK\r\nCSeq: 1\r\nServer: TestCam-9000\r\nPublic: OPTIONS\r\n\r\n"))
-	}()
-	port := ln.Addr().(*net.TCPAddr).Port
-	devs := []Device{{IP: "127.0.0.1", Port: port}, {IP: "10.9.9.9", Port: 554}}
-	enrichRTSP(context.Background(), devs, 300*time.Millisecond, 2)
-	if devs[0].Model != "TestCam-9000" {
-		t.Errorf("banner o'qilmadi: %+v", devs[0])
-	}
-	if devs[1].Model != "" {
-		t.Errorf("yopiq host model olmasligi kerak: %+v", devs[1])
 	}
 }

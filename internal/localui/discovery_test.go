@@ -25,7 +25,10 @@ type fakeDiscovery struct {
 	gotInput  discovery.BulkAddInput
 }
 
-func (f *fakeDiscovery) StartScan() (int, error)          { return f.scanned, f.scanErr }
+func (f *fakeDiscovery) StartScan() error { return f.scanErr }
+func (f *fakeDiscovery) Progress() discovery.Progress {
+	return discovery.Progress{Scanned: f.scanned, Total: f.scanned}
+}
 func (f *fakeDiscovery) Results() []discovery.MergeResult { return f.results }
 func (f *fakeDiscovery) AddSelected(keys []string, in discovery.BulkAddInput) (discovery.BulkAddReport, error) {
 	f.gotKeys = keys
@@ -61,13 +64,13 @@ func TestDiscovery_ScanStart(t *testing.T) {
 	svc := &fakeDiscovery{scanned: 1024}
 	s := newDiscServer(t, svc, "1234")
 	rec := doReq(s, "POST", "/api/ui/discovery/scan", "", "1234")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("kod = %d, 200 kutilardi: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("kod = %d, 202 kutilardi: %s", rec.Code, rec.Body.String())
 	}
 	var out map[string]any
 	_ = json.Unmarshal(rec.Body.Bytes(), &out)
-	if int(out["scanned"].(float64)) != 1024 {
-		t.Errorf("scanned = %v", out["scanned"])
+	if out["started"] != true {
+		t.Errorf("started kutilardi: %v", out)
 	}
 }
 

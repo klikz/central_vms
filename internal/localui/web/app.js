@@ -285,16 +285,20 @@ document.addEventListener("click", async (ev) => {
 });
 
 // --- Discovery (C2.18): scan, results table, checkbox, bulk add ---
-let scanDevices = []; // last results (selection keyed by device key)
+let scanDevices = [];      // oxirgi natijalar (jonli o'sib boradi)
+let scanSel = new Set();   // tanlangan kalitlar (qayta render'da saqlanadi)
+let scanPoll = null;
 
-async function loadDiscovery() {
+function discoveryVisible() {
+  const el = document.querySelector('[data-screen="discovery"]');
+  return el && !el.hidden;
+}
+
+function renderScanTable() {
   const body = $("#scan-body");
   if (!body) return;
-  let r = null;
-  try { r = await api("/api/ui/discovery/results"); } catch (e) { r = null; }
-  scanDevices = (r && r.devices) || [];
   if (!scanDevices.length) {
-    body.innerHTML = '<tr><td colspan="8" class="empty">No scan results — press "Start scan".</td></tr>';
+    body.innerHTML = '<tr><td colspan="8" class="empty">Nothing found yet — press "Start scan".</td></tr>';
     return;
   }
   body.innerHTML = scanDevices.map((d) => {
@@ -302,7 +306,7 @@ async function loadDiscovery() {
       ? '<span class="badge badge-warn">added</span>'
       : '<span class="badge badge-ok">new</span>';
     const check = d.already_known ? "" :
-      `<input type="checkbox" class="scan-check" value="${esc(d.key)}">`;
+      `<input type="checkbox" class="scan-check" value="${esc(d.key)}"${scanSel.has(d.key) ? " checked" : ""}>`;
     return `<tr>
       <td class="col-check">${check}</td>
       <td class="mono">${esc(d.ip)}:${esc(d.port)}</td>
@@ -316,15 +320,56 @@ async function loadDiscovery() {
   }).join("");
 }
 
-async function startScan() {
-  toast("Scan started…");
-  try {
-    const r = await api("/api/ui/discovery/scan", { method: "POST" });
-    if (r) toast(`Scan finished: ${r.scanned} host(s) checked`, "ok");
-    await loadDiscovery();
-  } catch (e) {
-    toast("Scan failed", "err");
+function setScanProgress(prog) {
+  const el = $("#scan-progress");
+  if (!el) return;
+  const btn = document.querySelector('[data-act="scan-start"]');
+  if (prog.running) {
+    el.className = "scan-progress run";
+    el.textContent = `scanning… ${prog.scanned}/${prog.total} · ${prog.found} found`;
+    if (btn) btn.disabled = true;
+  } else if (prog.total) {
+    el.className = "scan-progress done";
+    el.textContent = `done: ${prog.scanned}/${prog.total} · ${prog.found} found`;
+    if (btn) btn.disabled = false;
+  } else {
+    el.className = "scan-progress";
+    el.textContent = "";
+    if (btn) btn.disabled = false;
   }
+}
+
+async function loadDiscovery() {
+  const body = $("#scan-body");
+  if (!body) return;
+  let r = null;
+  try { r = await api("/api/ui/discovery/results"); } catch (e) { r = null; }
+  scanDevices = (r && r.devices) || [];
+  renderScanTable();
+  const prog = (r && r.progress) || {};
+  setScanProgress(prog);
+  clearTimeout(scanPoll);
+  if (prog.running) {
+    // skan tugaguncha ~1.2 s interval bilan yangilab boramiz
+    scanPoll = setTimeout(() => { if (discoveryVisible()) loadDiscovery(); }, 1200);
+  }
+}
+
+document.addEventListener("change", (ev) => {
+  if (ev.target.classList && ev.target.classList.contains("scan-check")) {
+    if (ev.target.checked) scanSel.add(ev.target.value); else scanSel.delete(ev.target.value);
+  }
+});
+
+async function startScan() {
+  scanSel.clear();
+  try {
+    await api("/api/ui/discovery/scan", { method: "POST" });
+    toast("Scanning started — results appear as they are found", "ok");
+  } catch (e) {
+    toast("Scan could not start", "err");
+  }
+  await loadDiscovery();
 }
 
 async function addSelected() {

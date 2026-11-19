@@ -169,6 +169,12 @@ h1::after { content: ""; display: block; width: 46px; height: 2px; background: v
 .btn kbd { background: transparent; border-color: currentColor; opacity: .65; }
 .btn-primary kbd { color: var(--accent-ink); border-color: rgba(26,18,0,.5); background: rgba(26,18,0,.12); }
 
+/* ---------- discovery progress ---------- */
+.scan-progress { font: 500 11px/1 var(--mono); letter-spacing: .06em; color: var(--ink-dim);
+  align-self: center; margin-right: 6px; }
+.scan-progress.run { color: var(--accent); }
+.scan-progress.done { color: var(--ok); }
+
 /* ---------- preview ---------- */
 .thumb { width: 104px; height: 58px; object-fit: cover; display: block;
   border: 1px solid var(--line); border-radius: 4px; background: var(--bg-deep);

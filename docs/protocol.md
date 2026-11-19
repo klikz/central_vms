@@ -539,7 +539,7 @@ MediaMTX yuboradi (rasmiy maydonlar):
    Kameralarda **ONVIF auth** so'ralsa, UI'dan beriladigan umumiy user/parol bilan
    `GetDeviceInformation` + `GetProfiles/GetStreamUri` qayta tekshiriladi.
 2. **RTSP port-scan** (ONVIF bo'lmagan Dahua uchun zaxira): `discovery.cidrs` bo'yicha
-   TCP `554` connect (25 parallel, timeout 500 ms) + anonim `DESCRIBE`
+   TCP `554` connect (64 parallel, timeout 500 ms) + anonim `DESCRIBE`
    (`/cam/realmonitor?channel=1&subtype=0|1`) → javob kelsa kamera topilgan.
 
 ### 16.2 Natijalar va birlashtirish
