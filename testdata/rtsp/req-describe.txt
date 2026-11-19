@@ -1,0 +1,6 @@
+DESCRIBE rtsp://192.168.1.108:554/cam/realmonitor?channel=1&subtype=0 RTSP/1.0
+Accept: application/sdp
+CSeq: 3
+Session: 12345678
+User-Agent: vmsagent/1.0
+

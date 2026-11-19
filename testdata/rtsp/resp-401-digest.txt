@@ -1,0 +1,4 @@
+RTSP/1.0 401 Unauthorized
+CSeq: 1
+WWW-Authenticate: Digest realm="Dahua", nonce="5f4dcc3b5aa765d61d832efdeb8f7b3a", stale=false, qop="auth", algorithm=MD5
+
