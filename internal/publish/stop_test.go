@@ -1,0 +1,96 @@
+package publish
+
+import (
+	"runtime"
+	"testing"
+	"time"
+
+	"central-vms/client/internal/clock"
+)
+
+// C3.10 (§9.1): media_stop → refcount 0 → 1 s grace → yopilish; tezkor
+// qayta ochish (1 s ichida) publish'ni uzmaydi.
+func TestStop_GraceWindowProtectsQuickReopen(t *testing.T) {
+	clk := clock.NewFake(time.Unix(0, 0))
+	ev := newEvLog()
+	r := New(clk, nil, ev.onReady, ev.onStopped)
+	defer r.Shutdown()
+
+	k := Key{CameraID: "cam1", Profile: "main", Ingest: "whip"}
+	first, _ := r.Start("u1", k, "play")
+	r.MarkReady(k)
+	<-ev.ch
+
+	if rc := r.Stop("u1", k); rc != 0 {
+		t.Fatalf("refcount = %d, 0 kutilardi", rc)
+	}
+	// 1 s ichida boshqa user ochadi — publish uzilmasligi kerak.
+	clk.Advance(700 * time.Millisecond)
+	again, err := r.Start("u2", k, "play")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.New || again.PublishID != first.PublishID {
+		t.Errorf("grace ichida yangi publish ochildi: %+v", again)
+	}
+	clk.Advance(2 * time.Second)
+	runtime.Gosched()
+	if ev.nStopped() != 0 {
+		t.Errorf("publish yopildi: %+v", ev.lastStopped())
+	}
+}
+
+func TestStop_LastViewerClosesAfterOneSecond(t *testing.T) {
+	clk := clock.NewFake(time.Unix(0, 0))
+	ev := newEvLog()
+	r := New(clk, nil, ev.onReady, ev.onStopped)
+	defer r.Shutdown()
+
+	k := Key{CameraID: "cam1", Profile: "main", Ingest: "whip"}
+	r.Start("u1", k, "play")
+	r.MarkReady(k)
+	<-ev.ch
+	r.Stop("u1", k)
+
+	for i := 0; i < 20 && ev.nStopped() == 0; i++ {
+		clk.Advance(500 * time.Millisecond)
+		runtime.Gosched()
+	}
+	if ev.nStopped() != 1 {
+		t.Fatalf("1 s'dan keyin yopilishi kerak edi")
+	}
+	if st := ev.lastStopped(); st.Reason != "no_viewers" {
+		t.Errorf("reason = %q, no_viewers kutilardi", st.Reason)
+	}
+}
+
+// C3.19 (root §8.2): play + preview → BITTA publish, 2 session —
+// qo'shimcha upload yo'q.
+func TestPreview_Play_SinglePublishTwoSessions(t *testing.T) {
+	clk := clock.NewFake(time.Unix(0, 0))
+	ev := newEvLog()
+	r := New(clk, nil, ev.onReady, ev.onStopped)
+	defer r.Shutdown()
+
+	k := Key{CameraID: "cam1", Profile: "sub", Ingest: "whip"}
+	play, _ := r.Start("se_play", k, "play")
+	prev, _ := r.Start("se_prev", k, "preview")
+	if prev.New {
+		t.Error("preview uchun qo'shimcha publish ochildi (§9.1)")
+	}
+	if play.PublishID != prev.PublishID {
+		t.Errorf("publish_id'lar xil: %q / %q", play.PublishID, prev.PublishID)
+	}
+	if n := r.Refcount(k); n != 2 {
+		t.Errorf("refcount = %d, 2 kutilardi", n)
+	}
+	r.MarkReady(k)
+	select {
+	case <-ev.ch:
+	case <-time.After(2 * time.Second):
+		t.Fatal("media_ready kelmadi")
+	}
+	if ev.nReady() != 1 {
+		t.Errorf("media_ready = %d, 1 kutilardi (bitta upload)", ev.nReady())
+	}
+}
