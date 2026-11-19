@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
+            xmlns:a="http://www.w3.org/2005/08/addressing"
+            xmlns:senv="http://www.w3.org/2003/05/soap-envelope">
+  <s:Body>
+    <senv:Fault>
+      <senv:Code><senv:Value>senv:Sender</senv:Value>
+        <senv:Subcode><senv:Value>a:NotAuthorized</senv:Value></senv:Subcode>
+      </senv:Code>
+      <senv:Reason><senv:Text xml:lang="en">Invalid username or password</senv:Text></senv:Reason>
+    </senv:Fault>
+  </s:Body>
+</s:Envelope>

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
+            xmlns:trt="http://www.onvif.org/ver10/media/wsdl"
+            xmlns:tt="http://www.onvif.org/ver10/schema">
+  <s:Body>
+    <trt:GetProfilesResponse>
+      <trt:Profiles fixed="true" token="Profile_0000">
+        <tt:Name>Profile_0_Media1</tt:Name>
+        <tt:VideoEncoderConfiguration token="VideoEncoderConfig_0000">
+          <tt:Encoding>H264</tt:Encoding>
+        </tt:VideoEncoderConfiguration>
+      </trt:Profiles>
+      <trt:Profiles fixed="true" token="Profile_0001">
+        <tt:Name>Profile_1_Media2</tt:Name>
+        <tt:VideoEncoderConfiguration token="VideoEncoderConfig_0001">
+          <tt:Encoding>H264</tt:Encoding>
+        </tt:VideoEncoderConfiguration>
+      </trt:Profiles>
+    </trt:GetProfilesResponse>
+  </s:Body>
+</s:Envelope>
