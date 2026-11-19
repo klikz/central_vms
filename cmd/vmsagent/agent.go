@@ -18,6 +18,7 @@ import (
 	"central-vms/client/internal/keystore"
 	"central-vms/client/internal/localui"
 	"central-vms/client/internal/logbuf"
+	"central-vms/client/internal/logx"
 	"central-vms/client/internal/proto"
 	"central-vms/client/internal/redact"
 	"central-vms/client/internal/statestore"
@@ -28,6 +29,7 @@ type runtime struct {
 	cfg  config.Config
 	log  *slog.Logger
 	ring *logbuf.Ring
+	logw *logx.Writer // alohida CLIENT log fayli (nil → faqat terminal)
 
 	ks *keystore.Store
 	st *statestore.State
@@ -215,7 +217,7 @@ func (r *runtime) setLogLevel(l string) error {
 	r.mu.Lock()
 	r.cfg.LogLevel = l
 	r.mu.Unlock()
-	r.log = newLogger(l, r.ring)
+	r.log = newLogger(l, r.ring, r.logw)
 	return nil
 }
 

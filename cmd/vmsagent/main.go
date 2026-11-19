@@ -6,6 +6,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -17,6 +18,7 @@ import (
 	"central-vms/client/internal/config"
 	"central-vms/client/internal/localui"
 	"central-vms/client/internal/logbuf"
+	"central-vms/client/internal/logx"
 	"central-vms/client/internal/redact"
 )
 
@@ -48,7 +50,7 @@ func main() {
 
 	// Jurnal ekrani uchun oxirgi 500 qator xotirada (§17).
 	ring := logbuf.New(500)
-	log := newLogger("info", ring)
+	log := newLogger("info", ring, nil)
 	log.Info("vmsagent ishga tushmoqda", "version", version, "commit", commit, "config", *cfgPath)
 
 	// SIGINT/SIGTERM — graceful shutdown; SIGHUP — config reload (§9.4).
@@ -65,14 +67,43 @@ func main() {
 }
 
 // newLogger — yozuvlar: avval redaktor (§10.2), keyin bufer (Jurnal ekrani),
-// keyin stderr. Tartib muhim: buferga YASHIRILGAN qator tushadi.
-func newLogger(level string, ring *logbuf.Ring) *slog.Logger {
+// keyin stderr + (bor bo'lsa) ALLOHIDA log fayli. Tartib muhim: buferga va
+// faylga YASHIRILGAN qator tushadi. file==nil → faqat terminal.
+// Barcha xatolar (level=error ham) ikkala joyga ham yoziladi — level
+// filtridan error har doim o'tadi.
+func newLogger(level string, ring *logbuf.Ring, file *logx.Writer) *slog.Logger {
 	var lvl slog.Level
 	if err := lvl.UnmarshalText([]byte(level)); err != nil {
 		lvl = slog.LevelInfo
 	}
-	text := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lvl})
+	out := io.Writer(os.Stderr)
+	if file != nil && file.Enabled() {
+		out = io.MultiWriter(os.Stderr, file)
+	}
+	text := slog.NewTextHandler(out, &slog.HandlerOptions{Level: lvl})
 	return slog.New(redact.NewHandlerWithNext(logbuf.NewHandler(text, ring)))
+}
+
+// defaultLogFile — config o'qilmagan holatda ham xatolar tushadigan
+// standart CLIENT log yo'li.
+const defaultLogFile = "/var/log/vmsagent/vmsagent.log"
+
+// openLogFile — konfiguratsiyadagi CLIENT log faylini ochadi.
+// Xato bo'lsa: terminalga BATAFSIL xato + joriy katalogda zaxira urinish.
+func openLogFile(cfg *config.Config) (*logx.Writer, error) {
+	w, err := logx.New(cfg.LogFile, cfg.LogMaxMB, cfg.LogKeep)
+	if err == nil {
+		return w, nil
+	}
+	fallback := "logs/vmsagent.log"
+	if cfg.LogFile == fallback {
+		return nil, err
+	}
+	w2, err2 := logx.New(fallback, cfg.LogMaxMB, cfg.LogKeep)
+	if err2 != nil {
+		return nil, fmt.Errorf("%w (zaxira %s ham: %v)", err, fallback, err2)
+	}
+	return w2, err // zaxira ochildi; asosiy xato bilan qaytamiz
 }
 
 func run(ctx context.Context, log *slog.Logger, cfgPath, enrollCode string,
@@ -80,9 +111,27 @@ func run(ctx context.Context, log *slog.Logger, cfgPath, enrollCode string,
 
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
+		// BARCHA xatolar faylga ham tushishi kerak: config buzuq bo'lsa
+		// ham — standart CLIENT log yo'liga yozamiz (sozlab bo'lmaydi).
+		if fw, ferr := logx.New(defaultLogFile, 4, 5); ferr == nil {
+			defer fw.Close()
+			dlog := newLogger("info", ring, fw)
+			dlog.Error("KONFIGURATSIYA O'QILMADI", "path", cfgPath, "err", redact.Err(err))
+		}
 		return err
 	}
-	log = newLogger(cfg.LogLevel, ring)
+	logw, lerr := openLogFile(&cfg)
+	if lerr != nil {
+		log.Error("LOG FAYLI OCHILMADI — xatolar faylga yozilmayapti",
+			"path", cfg.LogFile, "err", redact.Err(lerr))
+	}
+	if logw != nil {
+		defer logw.Close()
+	}
+	log = newLogger(cfg.LogLevel, ring, logw)
+	if logw != nil && logw.Enabled() {
+		log.Info("log fayli", "path", logw.Path(), "max_mb", cfg.LogMaxMB, "keep", cfg.LogKeep)
+	}
 
 	rt := &runtime{cfg: cfg, log: log, ring: ring}
 	if err := rt.bootstrap(ctx, enrollCode); err != nil {
@@ -128,7 +177,19 @@ func run(ctx context.Context, log *slog.Logger, cfgPath, enrollCode string,
 			serverChanged := nc.ServerURL != rt.cfg.ServerURL
 			rt.cfg = nc
 			rt.mu.Unlock()
-			rt.log = newLogger(nc.LogLevel, ring)
+			if nc.LogFile != cfg.LogFile || nc.LogMaxMB != cfg.LogMaxMB || nc.LogKeep != cfg.LogKeep {
+				if nw, werr := openLogFile(&nc); werr != nil {
+					log.Error("SIGHUP: log fayli qayta ochilmadi", "path", nc.LogFile, "err", redact.Err(werr))
+				} else {
+					old := rt.logw
+					rt.logw = nw
+					if old != nil {
+						_ = old.Close()
+					}
+					logw = nw
+				}
+			}
+			rt.log = newLogger(nc.LogLevel, ring, logw)
 			log.Info("config qayta o'qildi", "log_level", nc.LogLevel, "server_url", redact.String(nc.ServerURL))
 			if serverChanged && rt.st != nil {
 				rt.st.ServerURL = nc.ServerURL
