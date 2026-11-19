@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -127,8 +128,16 @@ func (s *Session) Run(ctx context.Context) error {
 			bo = NewBackoff(p, nil)
 		}
 		d := bo.Next()
-		s.cfg.Log.Warn("server bilan aloqa uzildi, qayta uriniladi",
-			"kutish", d.String(), "urinish", bo.Attempt(), "err", redact.String(err.Error()))
+		att := bo.Attempt()
+		// Talab (2026-11-19): barcha xatolar ko'rinishi kerak — 3 ta
+		// ketma-ket muvaffaqiyatsiz urinishda holat ERROR darajasiga
+		// ko'tariladi (spam qilmaslik uchun bir marta), keyin WARN.
+		msg, lvl := "server bilan aloqa uzildi, qayta uriniladi", slog.LevelWarn
+		if att == 3 {
+			msg, lvl = "server bilan aloqa uzildi — 3 urinish muvaffaqiyatsiz", slog.LevelError
+		}
+		s.cfg.Log.Log(ctx, lvl, msg,
+			"kutish", d.String(), "urinish", att, "err", redact.String(err.Error()))
 
 		select {
 		case <-ctx.Done():

@@ -59,8 +59,9 @@ func main() {
 	sighup := make(chan os.Signal, 1)
 	signal.Notify(sighup, syscall.SIGHUP)
 
+	// run() xatoni o'zi loglaydi — FAYL ham ulangan logger orqali
+	// (main'dagi log hali faylsiz: yo'l konfigdan bilinadi).
 	if err := run(ctx, log, *cfgPath, *enrollCode, sighup, ring); err != nil {
-		log.Error("agent ishi tugadi", "err", redact.Err(err))
 		os.Exit(1)
 	}
 	log.Info("vmsagent to'xtatildi")
@@ -112,7 +113,15 @@ func openLogFile(cfg *config.Config) (*logx.Writer, error) {
 }
 
 func run(ctx context.Context, log *slog.Logger, cfgPath, enrollCode string,
-	sighup <-chan os.Signal, ring *logbuf.Ring) error {
+	sighup <-chan os.Signal, ring *logbuf.Ring) (runErr error) {
+
+	// BARCHA xatolar terminal + faylga: chiqish nuqtasida bir marta,
+	// fayl ulangan logger bilan yoziladi (detailed: err zanjiri).
+	defer func() {
+		if runErr != nil {
+			log.Error("agent ishi tugadi", "err", redact.Err(runErr))
+		}
+	}()
 
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
@@ -120,10 +129,10 @@ func run(ctx context.Context, log *slog.Logger, cfgPath, enrollCode string,
 		// ham — standart CLIENT log yo'liga yozamiz (sozlab bo'lmaydi).
 		if fw, ferr := logx.New(defaultLogFile, 4, 5); ferr == nil {
 			defer fw.Close()
-			dlog := newLogger("info", ring, fw)
-			dlog.Error("KONFIGURATSIYA O'QILMADI", "path", cfgPath, "err", redact.Err(err))
+			log = newLogger("info", ring, fw) // defer ham faylli loggerni ishlatadi
+			log.Error("KONFIGURATSIYA O'QILMADI", "path", cfgPath, "err", redact.Err(err))
 		}
-		return err
+		return fmt.Errorf("konfiguratsiya: %w", err)
 	}
 	logw, lerr := openLogFile(&cfg)
 	if lerr != nil {
