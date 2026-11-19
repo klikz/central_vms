@@ -24,9 +24,14 @@ case "$SCENARIO" in
     echo "== C1: enroll → ulanish → secret_rotate → uzilish → qayta ulanish =="
     go test ./tests/integration -run TestC1 -race -count=1 -timeout 120s
     ;;
-  c2|c3_h264_whip|c3_h265_rtsp|c3_udp_blocked|c3_client_transcode|c3_bframes|\
+  c2)
+    echo "== C2: cams_sync chunk'lash + epoch drift + stale_epoch + discovery merge/bulkadd =="
+    go test ./tests/integration -run TestC2 -race -count=1 -timeout 180s
+    go test ./internal/discovery ./internal/cams ./internal/agent -run "Watcher|CodecProbe|CodecFix|BFrame|ONVIF|WSDD|Merge|Scan|BulkAdd|Status|Sync|Epoch" -race -count=1 -timeout 180s
+    ;;
+  c3_h264_whip|c3_h265_rtsp|c3_udp_blocked|c3_client_transcode|c3_bframes|\
   c3_remux|c3_ffmpeg_fallback|c3_codec_change|c3|shutdown|restore|version_mismatch|all)
-    echo "SSSENARIY '$SCENARIO' hali qo'shilmagan — C1.14 / C3.20 da qo'shiladi."
+    echo "SSSENARIY '$SCENARIO' hali qo'shilmagan — C3.20 da qo'shiladi."
     echo "Ro'yxat: docs/protocol.md §18"
     exit 2
     ;;
