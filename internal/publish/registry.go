@@ -61,7 +61,15 @@ const (
 	cmdReady
 	cmdCount
 	cmdRefresh
+	cmdList
 )
+
+// PublishRef — faol publish'ning ko'rsatkichi (stats/status uchun).
+type PublishRef struct {
+	PublishID string
+	Key       Key
+	Sessions  int
+}
 
 type cmd struct {
 	kind  cmdKind
@@ -178,6 +186,12 @@ func (r *Registry) handle(entries map[Key]*entry, c cmd) any {
 		}
 		r.extendTTL(e, c.ttl) // media_refresh deadline'ni siljitadi (§9.2)
 		return nil
+	case cmdList:
+		refs := make([]PublishRef, 0, len(entries))
+		for k, e := range entries {
+			refs = append(refs, PublishRef{PublishID: e.publishID, Key: k, Sessions: len(e.sessions)})
+		}
+		return refs
 	}
 	return nil
 }
@@ -307,6 +321,15 @@ func (r *Registry) Refcount(k Key) int {
 		return -1
 	}
 	return v.(int)
+}
+
+// List — faol publish'lar snapshot'i (media_stats, §4.6).
+func (r *Registry) List() []PublishRef {
+	v, err := r.send(cmd{kind: cmdList})
+	if err != nil {
+		return nil
+	}
+	return v.([]PublishRef)
 }
 
 // Shutdown — yozuvchi goroutine'ni to'xtatadi.
