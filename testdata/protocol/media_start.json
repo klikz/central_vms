@@ -1,0 +1,33 @@
+{
+  "session_id": "se_7c1f",
+  "camera_id": "6f0f1f2a-0000-4000-8000-000000000001",
+  "profile": "sub",
+  "kind": "play",
+  "ttl_s": 60,
+  "ingest": "whip",
+  "publish": {
+    "token": "Zm9vYmFyYmF6cXV1eTEyMzQ1Njc4OTA",
+    "urls": {
+      "whip": "http://192.168.1.10:8889/cam/ag_9f2c1a7e/6f0f/whip",
+      "rtsp": "rtsp://192.168.1.10:8554/cam/ag_9f2c1a7e/6f0f",
+      "rtsp_tc": "rtsp://192.168.1.10:8554/tc/ag_9f2c1a7e/6f0f"
+    },
+    "header_name": "Authorization",
+    "query_name": "token"
+  },
+  "transcode": {
+    "mode": "auto",
+    "by": "server",
+    "backend": "gpu",
+    "params": {
+      "width": 1280,
+      "height": 720,
+      "fps": 10,
+      "bitrate_kbps": 800,
+      "maxrate_kbps": 1000,
+      "gop_s": 2,
+      "profile": "baseline"
+    }
+  },
+  "reason": "user_open"
+}

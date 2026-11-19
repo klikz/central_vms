@@ -1,0 +1,15 @@
+# Build chiqishi (root REJA §4.3)
+build/
+coverage.out
+
+# Maxfiy sozlamalar va parol store (hech qachon git'ga kirmaydi)
+config/*.local.yaml
+*.key
+agent.key
+secrets.bin
+state.json
+/var/
+
+# Node/venv yo'q (client UI go:embed), lekin ehtimol uchun
+node_modules/
+.DS_Store

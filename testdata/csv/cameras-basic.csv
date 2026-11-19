@@ -1,0 +1,4 @@
+name,host,port,main_path,sub_path,user,pass
+Kirish-01,192.168.10.31,554,/cam/realmonitor?channel=1&subtype=0,/cam/realmonitor?channel=1&subtype=1,admin,dahua123
+Kirish-02,192.168.10.32,554,/cam/realmonitor?channel=1&subtype=0,/cam/realmonitor?channel=1&subtype=1,admin,dahua123
+Sari-01,192.168.10.33,554,/cam/realmonitor?channel=1&subtype=0,/cam/realmonitor?channel=1&subtype=1,admin,dahua123

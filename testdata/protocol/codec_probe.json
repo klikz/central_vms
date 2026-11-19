@@ -1,0 +1,17 @@
+{
+  "camera_id": "6f0f1f2a-0000-4000-8000-000000000001",
+  "codecs": {
+    "main": "h264",
+    "sub": "h265"
+  },
+  "bframe": {
+    "main": true,
+    "sub": false
+  },
+  "profiles_sdp": {
+    "main": "High",
+    "sub": "Baseline"
+  },
+  "onvif_switch_ok": false,
+  "reason": null
+}

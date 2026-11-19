@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
+            xmlns:d="http://schemas.xmlsoap.org/ws/2005/04/discovery">
+  <s:Body>
+    <d:ProbeMatches/>
+  </s:Body>
+</s:Envelope>

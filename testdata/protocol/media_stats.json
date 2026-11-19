@@ -1,0 +1,14 @@
+{
+  "publishes": [
+    {
+      "publish_id": "pu_1",
+      "camera_id": "6f0f1f2a-0000-4000-8000-000000000001",
+      "bytes_sent": 1048576,
+      "fps": 9.8,
+      "bitrate_kbps": 690,
+      "rtt_ms": 18,
+      "packet_loss_pct": 0.2,
+      "transport": "udp"
+    }
+  ]
+}

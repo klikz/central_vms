@@ -1,0 +1,31 @@
+{
+  "epoch": 8,
+  "full": true,
+  "seq_no": 1,
+  "chunk_count": 2,
+  "done": false,
+  "cameras": [
+    {
+      "op": "upsert",
+      "id": "6f0f1f2a-0000-4000-8000-000000000001",
+      "name": "Kirish-01",
+      "rtsp_masked": "rtsp://192.168.10.31:554/cam/realmonitor?channel=1&subtype=0 (user=***)",
+      "profiles": {
+        "main": "/cam/realmonitor?channel=1&subtype=0",
+        "sub": "/cam/realmonitor?channel=1&subtype=1"
+      },
+      "codecs": {
+        "main": "h264",
+        "sub": "h264"
+      },
+      "bframe": {
+        "main": false,
+        "sub": false
+      },
+      "onvif_ok": true,
+      "status": "online",
+      "position": 12,
+      "enabled": true
+    }
+  ]
+}

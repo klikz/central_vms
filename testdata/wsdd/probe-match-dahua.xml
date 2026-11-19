@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
+            xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing"
+            xmlns:d="http://schemas.xmlsoap.org/ws/2005/04/discovery"
+            xmlns:ds="http://www.onvif.org/ver10/network/wsdl">
+  <s:Header>
+    <a:MessageID>urn:uuid:11111111-2222-3333-4444-555555555555</a:MessageID>
+    <a:RelatesTo>urn:uuid:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee</a:RelatesTo>
+    <a:To d:InstanceMatch="false">http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</a:To>
+    <a:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/ProbeMatches</a:Action>
+    <d:AppSequence MessageID="urn:uuid:11111111-2222-3333-4444-555555555555"
+                   InstanceId="123456" SequenceId="urn:uuid:99999999-8888-7777-6666-555555555555"/>
+  </s:Header>
+  <s:Body>
+    <d:ProbeMatches>
+      <d:ProbeMatch>
+        <a:EndpointReference>
+          <a:Address>urn:uuid:0000aaaa-bbbb-cccc-dddd-eeeeeeeeeeee</a:Address>
+        </a:EndpointReference>
+        <d:Types>dn:NetworkVideoTransmitter tds:Device</d:Types>
+        <d:Scopes>http://www.onvif.org/ver10/network/wsdl/DiscoveryLookupDevice
+urn:uuid:0000aaaa-bbbb-cccc-dddd-eeeeeeeeeeee
+onvif://www.onvif.org/name/Dahua
+onvif://www.onvif.org/hardware/IPC-HFW1230S
+onvif://www.onvif.org/type/network_video_transmitter</d:Scopes>
+        <d:XAddrs>http://192.168.10.31:80/onvif/device_service</d:XAddrs>
+        <d:MetadataVersion>1</d:MetadataVersion>
+      </d:ProbeMatch>
+    </d:ProbeMatches>
+  </s:Body>
+</s:Envelope>

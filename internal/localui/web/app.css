@@ -1,0 +1,148 @@
+/* vmsagent lokal UI — dizayn tizimi (docs/protocol.md §17).
+   Zamonaviy, ixcham, qorong'i; sichqoncha harakati minimal. */
+
+:root {
+  --bg: #0f1115;
+  --panel: #171a21;
+  --panel-2: #1d222b;
+  --line: #262c38;
+  --text: #e6e9ef;
+  --muted: #8b93a3;
+  --accent: #3b82f6;
+  --ok: #22c55e;
+  --warn: #f59e0b;
+  --err: #ef4444;
+  --radius: 8px;
+  --row: 28px;
+  --rail: 56px;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 13px/1.45 var(--font);
+  display: grid;
+  grid-template-columns: var(--rail) 1fr;
+  grid-template-rows: 40px 1fr;
+  grid-template-areas: "rail topbar" "rail main";
+}
+.skip { position: absolute; left: -9999px; }
+.skip:focus { left: 8px; top: 8px; z-index: 50; background: var(--panel); padding: 4px 8px; }
+.mono { font-family: var(--mono); font-size: 12px; }
+
+/* --- chap ikonka paneli (56 px) --- */
+.rail {
+  grid-area: rail; background: var(--panel); border-right: 1px solid var(--line);
+  display: flex; flex-direction: column; align-items: center; padding: 6px 0; gap: 2px;
+}
+/* `hidden` atributi class display'idan yengilmasligi kerak */
+[hidden] { display: none !important; }
+
+
+  width: 48px; padding: 6px 2px; border-radius: var(--radius);
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  color: var(--muted); text-decoration: none; font-size: 10px;
+}
+.rail-item span {
+  max-width: 56px; text-align: center; line-height: 1.15;
+  font-size: 10px; letter-spacing: .02em;
+}
+/* Parol saqlanganligi belgisi (nom yonida) — §10.2: parol ko'rsatilmaydi */
+.lock {
+  margin-left: 6px; font-size: 10px; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 999px; padding: 1px 6px;
+}
+.dim { color: var(--muted); }
+.rail-item svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.rail-item:hover { background: var(--panel-2); color: var(--text); }
+.rail-item.active { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+.rail-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* --- yuqori status chizig'i --- */
+.topbar {
+  grid-area: topbar; display: flex; align-items: center; gap: 12px;
+  padding: 0 12px; background: var(--panel); border-bottom: 1px solid var(--line);
+}
+.brand { font-weight: 600; letter-spacing: .2px; }
+.statusline { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.statusline .sep { width: 1px; height: 14px; background: var(--line); }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dot-ok { background: var(--ok); }
+.dot-off { background: var(--muted); }
+.dot-err { background: var(--err); }
+.dot-warn { background: var(--warn); }
+.dot-unknown { background: var(--line); }
+.topbar-actions { margin-left: auto; }
+.filter {
+  background: var(--bg); color: var(--text); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 4px 8px; width: 220px;
+}
+.filter:focus { outline: none; border-color: var(--accent); }
+
+/* --- asosiy maydon --- */
+main { grid-area: main; padding: 12px; overflow: auto; }
+.screen-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.screen-head h1 { font-size: 15px; margin: 0; font-weight: 600; }
+.actions { margin-left: auto; display: flex; gap: 6px; }
+
+.btn {
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 5px 10px; cursor: pointer; font: inherit;
+}
+.btn:hover { border-color: var(--accent); }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+kbd {
+  font-family: var(--mono); font-size: 10px; background: var(--bg);
+  border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; margin-left: 4px;
+}
+
+/* --- zich jadval (28 px qator) --- */
+.grid { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.grid th, .grid td { height: var(--row); padding: 0 8px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.grid th { background: var(--panel-2); color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .3px; }
+.grid tbody tr:hover { background: var(--panel-2); }
+.grid tbody tr.selected { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.grid .col-check { width: 28px; text-align: center; }
+.empty { color: var(--muted); text-align: center; height: 64px; }
+
+.badge {
+  display: inline-block; padding: 1px 6px; border-radius: 999px; font-size: 11px;
+  border: 1px solid var(--line); color: var(--muted); font-family: var(--mono);
+}
+.badge-ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--line)); }
+.badge-warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); }
+.badge-err { color: var(--err); border-color: color-mix(in srgb, var(--err) 40%, var(--line)); }
+
+/* --- formalar --- */
+.row, .form { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+.field { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); }
+.field input, .field select {
+  background: var(--bg); color: var(--text); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 5px 8px; min-width: 180px; font: inherit;
+}
+.field input:focus, .field select:focus { outline: none; border-color: var(--accent); }
+
+.cards { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; min-width: 140px; }
+.card b { display: block; font-size: 16px; font-family: var(--mono); }
+.card span { color: var(--muted); font-size: 11px; }
+
+.log { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; min-height: 240px; overflow: auto; }
+
+/* --- toast va modal --- */
+.toasts { position: fixed; right: 12px; bottom: 12px; display: flex; flex-direction: column; gap: 6px; z-index: 40; }
+.toast { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--accent);
+  border-radius: var(--radius); padding: 8px 10px; min-width: 240px; box-shadow: none; }
+.toast.err { border-left-color: var(--err); }
+.toast.ok { border-left-color: var(--ok); }
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 45; }
+.modal-box { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; min-width: 320px; max-width: 720px; }
+
+@media (max-width: 1100px) {
+  .grid .col-codec, .grid .col-pos { display: none; }
+  .filter { width: 140px; }
+}

@@ -1,0 +1,11 @@
+v=0
+o=- 0 0 IN IP4 127.0.0.1
+s=Video
+c=IN IP4 127.0.0.1
+t=0 0
+a=range:npt=now-
+m=video 0 RTP/AVP 96
+b=AS:1200
+a=rtpmap:96 H265/90000
+a=fmtp:96 profile-id=1;sprop-max-smp-width-d=4096;sprop-max-smp-height-d=2160;sprop-vps=QAEMAf//AWAAAAMAkAAAAwAAAwBdkoCQ;sprop-sps=QgEBAWAAAAMAkAAAAwAAAwBdoAKAgC0WWSpJMrwFoCAAAH0AAATiAQ==;sprop-pps=RAHBcrRiQA==
+a=control:trackID=0

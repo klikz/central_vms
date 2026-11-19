@@ -1,0 +1,37 @@
+# vmsagent konfiguratsiyasi — to'liq sxema: docs/protocol.md §11
+# DIQQAT: quyidagi state_dir/key_file yo'llari production uchun (root huquqi kerak).
+# Bu mashinada sinash uchun: `cp config/client.yaml.example config/client.local.yaml`
+# va yo'llarni ./var/… ga o'zgartiring (yoki `make run` / `make dev`),
+# serverga o'rnatish uchun: `sudo make install`.
+# Maxfiy fayllar (agent parollari, agent.key) git'ga kirmaydi (§4.3).
+
+server_url: ws://192.168.1.10:8081      # ws:// yoki wss:// (host:port majburiy)
+ui_bind: 127.0.0.1:8082                 # LAN manzili qo'yilsa ui_pin MAJBURIY (§10.3)
+ui_pin: ""                              # bo'sh = PIN yo'q (faqat localhost holatida ruxsat)
+state_dir: /var/lib/vmsagent
+key_file: /etc/vmsagent/agent.key
+log_level: info                         # debug|info|warn|error
+
+probe:
+  status_parallel: 5                    # pacing: bir vaqtda nechta probe (§16.4)
+  status_keepalive: auto                # auto|get_parameter|options|describe (§12.1)
+  codec_probe_interval_h: 24            # to'liq kodek probe oralig'i (§12.3)
+  full_probe_on_publish_fail: true      # publish xatosida darhol qayta probe (§12.3)
+
+limits:
+  max_uploads: 8                        # server config_push bilan yangilanadi (§5.7)
+  max_local_transcodes: 4               # GPU bo'lsa 8, CPU-only 4 (§10.4)
+
+onvif:
+  enabled: true                         # ixtiyoriy modul (Dahua RTSP-only ishlashi mumkin)
+  switch_codec: true                    # SetVideoEncoderConfiguration urinishi (§8.1-3)
+
+discovery:
+  cidrs: ["192.168.10.0/24"]            # rtsp_scan uchun; /22 dan keng rad etiladi (§16.4)
+  onvif_timeout_s: 10
+  rtsp_scan_ports: [554]
+  max_hosts: 1024
+
+publish:
+  whip_fallback: rtsp_tcp               # WHIP UDP ishlamasa (§8.1)
+  ffmpeg_fallback: true                 # Go yo'li interop xatosida (§8.1)

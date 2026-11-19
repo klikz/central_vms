@@ -1,0 +1,28 @@
+[Unit]
+Description=Central VMS agent (vmsagent) - joydagi kamera agenti
+Documentation=https://example.internal/central_vms/client
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/vmsagent/vmsagent -config /etc/vmsagent/client.yaml
+EnvironmentFile=-/etc/vmsagent/env
+
+# C0.11: asosiy qoidalar. To'liq qotirish C4.3 da (ProtectSystem=strict va h.k.).
+Restart=always
+RestartSec=5
+TimeoutStopSec=10
+NoNewPrivileges=true
+LimitNOFILE=4096
+
+User=vmsagent
+Group=vmsagent
+ReadWritePaths=/var/lib/vmsagent
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vmsagent
+
+[Install]
+WantedBy=multi-user.target

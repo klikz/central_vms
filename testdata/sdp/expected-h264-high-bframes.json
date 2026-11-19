@@ -1,0 +1,10 @@
+[
+  {
+    "codec": "h264",
+    "profile": "high",
+    "bframes": true,
+    "payload_type": 96,
+    "control": "trackID=0",
+    "sps_parsed": true
+  }
+]

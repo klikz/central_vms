@@ -1,0 +1,14 @@
+{
+  "camera_id": "6f0f1f2a-0000-4000-8000-000000000001",
+  "target": {
+    "profile": "sub",
+    "codec": "h264",
+    "no_bframes": true,
+    "width": 1280,
+    "height": 720,
+    "fps": 10,
+    "bitrate_kbps": 700,
+    "gop_s": 2
+  },
+  "apply_all": false
+}
