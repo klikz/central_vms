@@ -132,7 +132,6 @@ window.addEventListener("hashchange", () => showScreen((location.hash || "#/cams
 document.addEventListener("click", (ev) => {
   const btn = ev.target.closest("[data-act]");
   if (btn && btn.dataset.act === "new") { openNewCamModal(); return; }
-  if (btn && btn.dataset.act === "export") { window.location = "/api/ui/cams/export"; return; }
   if (!btn) return;
   const act = btn.dataset.act;
   if (act === "save") {
