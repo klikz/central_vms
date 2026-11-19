@@ -127,9 +127,9 @@ func announceSDP(codec string) string {
 		rtpmap, fmtp = "H265/90000", ""
 	}
 	return fmt.Sprintf("v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=vmsagent\r\n"+
-		"c=IN IP4 0.0.0.0\r\nt=0 0\r\nm=video 0 RTP/AVP/UDP %s\r\n"+
+		"c=IN IP4 0.0.0.0\r\nt=0 0\r\nm=video 0 RTP/AVP %s\r\n"+
 		"a=rtpmap:%s %s\r\n%s"+
-		"a=control:trackID=1\r\na=recvonly\r\n", pt, pt, rtpmap, fmtp)
+		"a=control:trackID=0\r\n", pt, pt, rtpmap, fmtp)
 }
 
 // CamRTSPURL — kamera modelidan RTSP manzil (parol YO'Q — §10.2).

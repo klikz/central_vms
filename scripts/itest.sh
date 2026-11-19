@@ -34,6 +34,10 @@ case "$SCENARIO" in
     # media_stop → media_stopped (MediaMTX o'rniga fake ingest).
     go test ./tests/integration -run "TestC3_" -race -v -timeout 120s
     ;;
+  c3_mtx)
+    # C3.20 qism: JONLI MediaMTX (127.0.0.1:8554) bilan RTSP publish e2e.
+    MTX=1 go test ./tests/integration -run "TestC3_Mtx" -race -v -timeout 120s
+    ;;
   c3_h264_whip)
     # C3.20 o'lchovi (mock): H.264 → WHIP ochilishi ≤1.5 s (pion ICE loopback).
     go test ./tests/integration -run "TestC3_H264Whip" -race -v -timeout 120s

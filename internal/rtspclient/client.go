@@ -150,6 +150,9 @@ func (c *Conn) doOnce(ctx context.Context, method string, headers Headers, body 
 	c.cseq++
 	h := Headers{}
 	for k, v := range headers {
+		if v == "" {
+			continue // bo'sh sarlavha yuborilmaydi (gortsplib qat'iy: "Session:" xato)
+		}
 		h[k] = v
 	}
 	h["user-agent"] = c.opts.userAgent()

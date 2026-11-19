@@ -30,7 +30,10 @@ func (c *Conn) SetupInterleaved(ctx context.Context, trackIdx int, rtpCh, rtcpCh
 	if trackIdx >= 0 {
 		url = fmt.Sprintf("%s/trackID=%d", c.uri, trackIdx)
 	}
-	tr := fmt.Sprintf("interleaved=%d-%d", rtpCh, rtcpCh)
+	// To'liq transport specifikatsiyasi + mode=record — gortsplib/MediaMTX
+	// publish SETUP'ni shu ko'rinishda qabul qiladi (jonli MediaMTX bilan
+	// tekshirildi: mode'siz 400 qaytadi).
+	tr := fmt.Sprintf("RTP/AVP/TCP;unicast;interleaved=%d-%d;mode=record", rtpCh, rtcpCh)
 	resp, err := c.doAt(ctx, "SETUP", url, Headers{"transport": tr, "session": c.session}, nil)
 	if err != nil {
 		return 0, 0, err
