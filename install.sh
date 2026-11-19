@@ -73,8 +73,8 @@ else
   log "kalit allaqachon mavjud: $ETC_DIR/agent.key"
 fi
 
+mkdir -p "$LOG_DIR"
 if [[ -z "$DESTDIR" ]]; then
-  mkdir -p "$LOG_DIR"
   chown -R vmsagent:vmsagent "$VAR_DIR" "$LOG_DIR"
   chown root:vmsagent "$ETC_DIR/client.yaml" "$ETC_DIR/agent.key" 2>/dev/null || true
   chmod 0640 "$ETC_DIR/client.yaml" || true
