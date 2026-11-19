@@ -166,3 +166,46 @@ func TestRegistry_StructuredLogFields(t *testing.T) {
 		}
 	}
 }
+
+// §13: media_stop server reason'i grace yopilishga meros bo'ladi.
+func TestStopReason_PropagatesToStoppedEvent(t *testing.T) {
+	clk := clock.NewFake(time.Unix(0, 0))
+	ev := newEvLog()
+	r := New(clk, nil, ev.onReady, ev.onStopped)
+	defer r.Shutdown()
+
+	k := Key{CameraID: "c1", Profile: "main", Ingest: "whip"}
+	r.Start("u1", k, "play")
+	if rc := r.StopReason("u1", k, ReasonUserClose); rc != 0 {
+		t.Fatalf("refcount = %d, 0 kutilardi", rc)
+	}
+	clk.Advance(2 * time.Second) // grace o'tadi
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && ev.nStopped() == 0 {
+		runtime.Gosched()
+	}
+	if st := ev.lastStopped(); st.Reason != ReasonUserClose {
+		t.Errorf("reason = %q, %q kutilardi", st.Reason, ReasonUserClose)
+	}
+}
+
+// §9.3: Remove — transport ochilmaganda entry darhol yopiladi.
+func TestRemove_ImmediateWithReason(t *testing.T) {
+	clk := clock.NewFake(time.Unix(0, 0))
+	ev := newEvLog()
+	r := New(clk, nil, ev.onReady, ev.onStopped)
+	defer r.Shutdown()
+
+	k := Key{CameraID: "c1", Profile: "main", Ingest: "whip"}
+	r.Start("u1", k, "play")
+	r.Remove(k, ReasonPublishFailed)
+	if ev.nStopped() != 1 {
+		t.Fatalf("stopped = %d, 1 kutilardi", ev.nStopped())
+	}
+	if st := ev.lastStopped(); st.Reason != ReasonPublishFailed {
+		t.Errorf("reason = %q", st.Reason)
+	}
+	if n := len(r.List()); n != 0 {
+		t.Errorf("List = %d, 0 kutilardi", n)
+	}
+}

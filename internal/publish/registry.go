@@ -65,6 +65,7 @@ const (
 	cmdList
 	cmdSetLimits
 	cmdCloseAll
+	cmdRemove
 )
 
 // PublishRef — faol publish'ning ko'rsatkichi (stats/status uchun).
@@ -89,6 +90,7 @@ type entry struct {
 	sessions    map[string]struct{}
 	closeAt     time.Time // zero → grace yo'q; dol bo'lsa yopish (§9.1)
 	ttlDeadline time.Time // §9.2: muddat o'tsa → media_stopped{ttl_expired}
+	stopReason  string    // grace yopilishida ishlatiladigan reason (serverdan)
 	readySent   bool
 }
 
@@ -179,6 +181,9 @@ func (r *Registry) handle(st *wstate, c cmd) any {
 		delete(e.sessions, c.sess)
 		if len(e.sessions) == 0 {
 			e.closeAt = now.Add(r.grace)
+			if c.reason != "" {
+				e.stopReason = c.reason // user_close/server_stop… (§13)
+			}
 		}
 		return len(e.sessions)
 	case cmdReady:
@@ -215,6 +220,15 @@ func (r *Registry) handle(st *wstate, c cmd) any {
 	case cmdSetLimits:
 		st.maxUploads = c.n
 		return nil
+	case cmdRemove:
+		if e, ok := entries[c.key]; ok {
+			delete(entries, c.key)
+			se := StoppedEvent{PublishID: e.publishID, Key: c.key, Reason: c.reason}
+			r.log.Warn("media_stopped", "camera_id", se.Key.CameraID, "profile", se.Key.Profile,
+				"publish_id", se.PublishID, "reason", se.Reason)
+			r.onStopped(se)
+		}
+		return nil
 	case cmdCloseAll:
 		// §9.4: barcha publish'larni belgilangan reason bilan yopish.
 		for k, e := range entries {
@@ -250,7 +264,11 @@ func (r *Registry) expire(st *wstate) {
 		switch {
 		case len(e.sessions) == 0 && !e.closeAt.IsZero() && !now.Before(e.closeAt):
 			delete(entries, k)
-			se := StoppedEvent{PublishID: e.publishID, Key: k, Reason: "no_viewers"}
+			reason := e.stopReason
+			if reason == "" {
+				reason = "no_viewers"
+			}
+			se := StoppedEvent{PublishID: e.publishID, Key: k, Reason: reason}
 			r.log.Info("media_stopped", "camera_id", se.Key.CameraID, "profile", se.Key.Profile,
 				"publish_id", se.PublishID, "reason", se.Reason)
 			r.onStopped(se)
@@ -347,11 +365,23 @@ func (r *Registry) Refresh(k Key, extendS int) {
 // Stop — media_stop: sessiyani oladi. Qaytgan refcount 0 bo'lsa 1 s grace
 // boshlanadi (§9.1).
 func (r *Registry) Stop(sess string, k Key) int {
-	v, err := r.send(cmd{kind: cmdStop, key: k, sess: sess})
+	return r.StopReason(sess, k, "no_viewers")
+}
+
+// StopReason — media_stop: sessiyani ayiradi; refcount 0 bo'lsa grace'dan
+// keyin yopilishda serverdan kelgan reason (user_close/server_stop…) ishlatiladi.
+func (r *Registry) StopReason(sess string, k Key, reason string) int {
+	v, err := r.send(cmd{kind: cmdStop, key: k, sess: sess, reason: reason})
 	if err != nil {
 		return -1
 	}
 	return v.(int)
+}
+
+// Remove — transport ochilmadi: entryni darhol yopadi va berilgan reason
+// bilan media_stopped yuboradi (grace kutish yo'q — §9.3 xato yo'li).
+func (r *Registry) Remove(k Key, reason string) {
+	_, _ = r.send(cmd{kind: cmdRemove, key: k, reason: reason})
 }
 
 // MarkReady — transport muvaffaqiyatli ochildi: media_ready BIR marta
