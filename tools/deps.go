@@ -10,9 +10,11 @@
 package tools
 
 import (
-	_ "github.com/bluenviron/gortsplib/v4"
-	_ "github.com/bluenviron/mediacommon/pkg/codecs/h264"
-	_ "github.com/bluenviron/mediacommon/pkg/codecs/h265"
+	// 2026-11-19: bluenviron/gortsplib va mediacommon — tarmoq intercepti
+	// tufayli faqat BO'SH taqilgan paketlarni qaytaradi (proxy ham, git clone
+	// ham); haqiqiy manbaga e'rib bo'lmadi. RTSP yozuvi o'z `internal/rtspclient`
+	//imizda, H.265/zaxira yo'llari FFmpeg orqali (TASKS.md "C2 holati").
+	// Tarmoq ruxsat etilganda bu importlar qayta qo'shiladi.
 	_ "github.com/google/uuid"
 	_ "github.com/gorilla/websocket"
 	_ "github.com/pion/interceptor"
