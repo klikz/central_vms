@@ -45,6 +45,10 @@ type Status struct {
 	Publishes    int    `json:"publishes"`
 	CamsEpoch    int64  `json:"cams_epoch"`
 	FFmpegOK     bool   `json:"ffmpeg_ok"`
+	// §17 holat chizig'i: oxirgi heartbeat va oxirgi xato (redaktorlangan).
+	LastHeartbeat string `json:"last_heartbeat,omitempty"`
+	LastError     string `json:"last_error,omitempty"`
+	LastErrorAt   string `json:"last_error_at,omitempty"`
 }
 
 // Settings — UI'da ko'rinadigan/qayta yoziladigan sozlamalar (C1 davomida to'liq bo'ladi).

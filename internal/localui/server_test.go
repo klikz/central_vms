@@ -21,7 +21,8 @@ func newTestServer(t *testing.T, pin string) *httptest.Server {
 	cfg.UIPin = pin
 	s, err := NewServer(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), "test-ver", Deps{
 		Status: func() Status {
-			return Status{Version: "test-ver", CamsTotal: 100, CamsOnline: 97, Publishes: 3, CamsEpoch: 7}
+			return Status{Version: "test-ver", CamsTotal: 100, CamsOnline: 97, Publishes: 3, CamsEpoch: 7,
+				LastError: "kamera javob bermayapti (cam-7)", LastErrorAt: "2026-11-19T10:00:00Z", LastHeartbeat: "2026-11-19T10:00:05Z"}
 		},
 		LogLines: func(limit int) []string {
 			all := []string{"qator-1", "qator-2", "qator-3"}
@@ -101,6 +102,10 @@ func TestStatusEndpoint(t *testing.T) {
 	}
 	if st.CamsTotal != 100 || st.CamsOnline != 97 || st.Publishes != 3 || st.CamsEpoch != 7 {
 		t.Fatalf("status noto'g'ri: %+v", st)
+	}
+	// §17: holat chizig'i oxirgi xato va heartbeat'ni ko'rsatadi.
+	if st.LastError == "" || st.LastErrorAt == "" || st.LastHeartbeat == "" {
+		t.Errorf("last_error/last_heartbeat yo'q: %+v", st)
 	}
 
 	// GET dan boshqa metod rad etiladi

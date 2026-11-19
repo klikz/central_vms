@@ -146,3 +146,8 @@ kbd {
   .grid .col-codec, .grid .col-pos { display: none; }
   .filter { width: 140px; }
 }
+
+/* §17 holat chizig'i: oxirgi xato banneri (C1.13) */
+.banner { padding: 10px 12px; border-radius: 6px; margin: 8px 0; font-size: 14px; }
+.banner-err { background: #5a1e1e; color: #ffd7d7; border: 1px solid #8a3030; }
+.banner-err .when { color: #e0a5a5; font-size: 12px; margin-left: 8px; }

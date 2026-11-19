@@ -55,9 +55,37 @@ async function loadStatus() {
     const dot = $("#dot-server");
     dot.className = "dot " + (st.server_online ? "dot-ok" : "dot-off");
     $("#txt-server").textContent = st.server_online ? I18N.serverOnline : I18N.serverOffline;
+    renderStatusCards(st);
   } catch (e) {
     $("#dot-server").className = "dot dot-err";
     $("#txt-server").textContent = I18N.serverOffline;
+  }
+}
+
+// §17: Holat ekrani — server/heartbeat/kamera kartochkalari + oxirgi xato banneri.
+function renderStatusCards(st) {
+  const cards = $("#status-cards");
+  if (!cards) return;
+  const hb = st.last_heartbeat ? st.last_heartbeat : "—";
+  const items = [
+    ["Server", st.server_online ? "jonli" : "uzilgan", st.server_online ? "ok" : "err"],
+    ["Oxirgi heartbeat", hb, ""],
+    ["Kameralar", `${st.cams_online ?? 0}/${st.cams_total ?? 0}`, ""],
+    ["Publish'lar", String(st.publishes ?? 0), ""],
+    ["cams_epoch", String(st.cams_epoch ?? 0), ""],
+    ["FFmpeg", st.ffmpeg_ok ? "topildi" : "YO'Q", st.ffmpeg_ok ? "ok" : "warn"],
+  ];
+  cards.innerHTML = items.map((it) =>
+    `<div class="card"><b>${esc(it[1])}</b><span>${esc(it[0])}</span></div>`).join("");
+  const banner = $("#last-error");
+  if (banner) {
+    if (st.last_error) {
+      banner.hidden = false;
+      banner.innerHTML = "Oxirgi xato: " + esc(st.last_error) +
+        (st.last_error_at ? `<span class="when">${esc(st.last_error_at)}</span>` : "");
+    } else {
+      banner.hidden = true;
+    }
   }
 }
 

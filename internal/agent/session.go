@@ -64,6 +64,10 @@ type SessionConfig struct {
 	OnMessage func(proto.Envelope)
 	// OnWelcome — welcome qabul qilinganda chaqiriladi (epoch/limits saqlash uchun).
 	OnWelcome func(proto.Welcome)
+	// OnHeartbeat — har hb yuborilganda chaqiriladi (UI holat chizig'i, §17).
+	OnHeartbeat func(now time.Time)
+	// Stats — hb'ga qo'shimcha maydonlar (§4.10: mem_mb, publishes). nil → faqat uptime_s.
+	Stats func() map[string]any
 }
 
 func (c *SessionConfig) withDefaults() {

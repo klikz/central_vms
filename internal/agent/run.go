@@ -96,7 +96,14 @@ func (s *Session) serve(ctx context.Context, conn *websocket.Conn) error {
 			s.closeSendCh(sendCh)
 			return err
 		case <-tick.C():
-			env, err := proto.NewEnvelope(proto.MsgHB, s.nextSeq(), map[string]int64{"uptime_s": int64(s.cfg.Clock.Now().Sub(s.cfg.StartedAt).Seconds())})
+			now := s.cfg.Clock.Now()
+			data := map[string]any{"uptime_s": int64(now.Sub(s.cfg.StartedAt).Seconds())}
+			if s.cfg.Stats != nil { // §4.10: mem_mb, publishes — hb ichida
+				for k, v := range s.cfg.Stats() {
+					data[k] = v
+				}
+			}
+			env, err := proto.NewEnvelope(proto.MsgHB, s.nextSeq(), data)
 			if err != nil {
 				s.closeSendCh(sendCh)
 				return err
@@ -104,6 +111,9 @@ func (s *Session) serve(ctx context.Context, conn *websocket.Conn) error {
 			if err := s.trySend(env); err != nil { // navbat to'lgan — uzilish deb hisoblaymiz
 				s.closeSendCh(sendCh)
 				return errors.New("heartbeat navbati to'ldi")
+			}
+			if s.cfg.OnHeartbeat != nil {
+				s.cfg.OnHeartbeat(now)
 			}
 		}
 	}

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"central-vms/client/internal/logbuf"
 	"central-vms/client/internal/logx"
 	"central-vms/client/internal/proto"
+	"central-vms/client/internal/publish"
 	"central-vms/client/internal/redact"
 	"central-vms/client/internal/statestore"
 )
@@ -34,10 +36,12 @@ type runtime struct {
 	ks *keystore.Store
 	st *statestore.State
 
-	sess *agent.Session
+	sess      *agent.Session
+	publishes *publish.Registry // §4.10 hb publishes; C3 ulaniganda to'ladi
 
 	mu        sync.Mutex
 	online    bool
+	lastHB    time.Time
 	lastErr   string
 	lastError time.Time
 	caps      proto.Caps
@@ -142,6 +146,23 @@ func (r *runtime) newSession() *agent.Session {
 			r.online = false
 			r.mu.Unlock()
 		},
+		OnHeartbeat: func(now time.Time) {
+			r.mu.Lock()
+			r.lastHB = now
+			r.online = true
+			r.mu.Unlock()
+		},
+		Stats: func() map[string]any { // §4.10: hb'da mem_mb, publishes
+			var ms goruntime.MemStats
+			goruntime.ReadMemStats(&ms)
+			pub := 0
+			r.mu.Lock()
+			if r.publishes != nil {
+				pub = len(r.publishes.List())
+			}
+			r.mu.Unlock()
+			return map[string]any{"mem_mb": int64(ms.Alloc / (1024 * 1024)), "publishes": int64(pub)}
+		},
 		OnWelcome: func(w proto.Welcome) {
 			r.mu.Lock()
 			r.online, r.welcome = true, w
@@ -194,6 +215,16 @@ func (r *runtime) statusFn() localui.Status {
 		Version: version, ServerOnline: r.online,
 		CamsTotal: len(r.st.Cameras), Publishes: 0, CamsEpoch: r.st.CamsEpoch,
 		FFmpegOK: r.caps.FFmpegVersion != "",
+	}
+	// §17 holat chizig'i: oxirgi heartbeat + oxirgi xato (redaktor orqali).
+	if !r.lastHB.IsZero() {
+		st.LastHeartbeat = r.lastHB.UTC().Format(time.RFC3339)
+	}
+	if r.lastErr != "" {
+		st.LastError = r.lastErr
+		if !r.lastError.IsZero() {
+			st.LastErrorAt = r.lastError.UTC().Format(time.RFC3339)
+		}
 	}
 	for _, c := range r.st.Cameras {
 		if c.Status == "online" {
