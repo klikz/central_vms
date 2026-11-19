@@ -57,11 +57,12 @@ func (e *StatusError) Error() string {
 // Conn — bitta RTSP/TCP ulanishi. Bir vaqtda bitta goroutine ishlatadi
 // (single-writer); parallel probe uchun har kamera o'z Conn'ini ochadi.
 type Conn struct {
-	conn net.Conn
-	br   *bufio.Reader
-	uri  string // so'rov URI'si (kredsiz, to'liq rtsp://)
-	opts Options
-	cseq int
+	conn    net.Conn
+	br      *bufio.Reader
+	uri     string // so'rov URI'si (kredsiz, to'liq rtsp://)
+	opts    Options
+	cseq    int
+	session string // SETUP javobidagi Session (publish yo'li)
 }
 
 // Dial — TCP ulanish ochadi. URL'dagi kreds opts'ga ko'chiriladi,
@@ -132,6 +133,14 @@ func (c *Conn) Do(ctx context.Context, method string, headers Headers, body []by
 		return c.doOnce(ctx, method, h2, body)
 	}
 	return resp, nil
+}
+
+// doAt — doOnce, lekin boshqa URI bilan (SETUP trackID=... uchun).
+func (c *Conn) doAt(ctx context.Context, method, uri string, headers Headers, body []byte) (*Response, error) {
+	saved := c.uri
+	c.uri = uri
+	defer func() { c.uri = saved }()
+	return c.doOnce(ctx, method, headers, body)
 }
 
 func (c *Conn) doOnce(ctx context.Context, method string, headers Headers, body []byte) (*Response, error) {
