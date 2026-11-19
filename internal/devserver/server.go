@@ -76,6 +76,8 @@ type stored struct {
 type Server struct {
 	o Options
 
+	onWelcome func(agentID string) // skenariy hook'i (C1.14)
+
 	mu       sync.Mutex
 	codes    map[string]time.Time
 	enrolled map[string]stored
@@ -357,6 +359,52 @@ func (s *Server) SetCamsEpoch(agentID string, epoch int64) {
 // Send — faol agentga server tomonidan xabar yuborish (cams_request, media_start,
 // codec_fix, secret_rotate, … — C1.14/C2/C3 testlarida ishlatiladi).
 // Yagona yozuvchi goroutine navbatiga qo'yadi (bir vaqtda ikki yozuv race bo'lardi).
+// OnWelcome — welcome yuborilgandan keyin chaqiriladi (skenariy skripti, C1.14).
+// Server so'ng media_start/config_push/secret_rotate kabilarni yuborishi mumkin.
+func (s *Server) SetOnWelcome(fn func(agentID string)) {
+	s.mu.Lock()
+	s.onWelcome = fn
+	s.mu.Unlock()
+}
+
+// --- C1.14: server→agent xabar yordamchilari (sketch sxemalari §5) ---
+
+func (s *Server) SendMediaStart(agentID string, m proto.MediaStart) error {
+	return s.Send(agentID, proto.MsgMediaStart, m)
+}
+func (s *Server) SendMediaStop(agentID string, m proto.MediaStop) error {
+	return s.Send(agentID, proto.MsgMediaStop, m)
+}
+func (s *Server) SendMediaRefresh(agentID string, m proto.MediaRefresh) error {
+	return s.Send(agentID, proto.MsgMediaRefresh, m)
+}
+func (s *Server) SendCodecFix(agentID string, m proto.CodecFix) error {
+	return s.Send(agentID, proto.MsgCodecFix, m)
+}
+func (s *Server) SendConfigPush(agentID string, m proto.ConfigPush) error {
+	return s.Send(agentID, proto.MsgConfigPush, m)
+}
+func (s *Server) SendSecretRotate(agentID string, m proto.SecretRotate) error {
+	return s.Send(agentID, proto.MsgSecretRotate, m)
+}
+
+// CloseAfter — taymaut/uzilish simulyatsiyasi: agent d o'tgach kod bilan
+// uziladi (§18: uzilish holatlari).
+func (s *Server) CloseAfter(agentID string, d time.Duration, code int, reason string) {
+	time.AfterFunc(d, func() {
+		s.mu.Lock()
+		ac := s.conns[agentID]
+		s.mu.Unlock()
+		if ac == nil || !ac.alive() {
+			return
+		}
+		_ = ac.conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+		_ = ac.conn.WriteControl(websocket.CloseMessage,
+			websocket.FormatCloseMessage(code, reason), time.Now().Add(2*time.Second))
+		_ = ac.conn.Close()
+	})
+}
+
 func (s *Server) Send(agentID, typ string, data any) error {
 	env, err := proto.NewEnvelope(typ, 0, data)
 	if err != nil {

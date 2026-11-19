@@ -77,7 +77,9 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		wel := s.welcome(hello)
 		wel.Compat = proto.Compat{OK: false, ServerVersion: ptr(s.o.ServerVer),
 			MinSupported: ptr(s.o.MinVersion), MaxSupported: ptr(s.o.MaxVersion)}
-		_ = s.writeEnvelope(conn, proto.MsgWelcome, wel)
+		if err := s.writeEnvelope(conn, proto.MsgWelcome, wel); err != nil {
+			return
+		}
 		s.closeConn(conn, CloseVersionMismatch, "protocol_version mos emas")
 		return
 	}
@@ -93,6 +95,14 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 	ac.out <- outMsg{env: &welEnv}
 	s.setConn(auth.AgentID, ac)
+	// C1.14: skenariy hook'i — welcome navbatga qo'yilgach server→agent
+	// xabarlarini (media_start/config_push/secret_rotate…) yuborish mumkin.
+	s.mu.Lock()
+	hook := s.onWelcome
+	s.mu.Unlock()
+	if hook != nil {
+		hook(auth.AgentID)
+	}
 	defer func() {
 		ac.aliveFlag.Store(false)
 		close(ac.done)
