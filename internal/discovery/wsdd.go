@@ -22,6 +22,7 @@ type Device struct {
 	MAC         string   // scope .../mac_address/ (bo'lsa)
 	Serial      string   // scope .../serial/ (bo'lsa)
 	IP          string   // XAddrs[0] host (bo'lsa)
+	Port        int      // RTSP porti (0 → 554; port-scan C2.16 to'ldiradi)
 }
 
 // soapEnvelope — WS-Discovery javob konverti (local-name bo'yicha moslash).
