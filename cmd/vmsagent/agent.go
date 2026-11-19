@@ -22,6 +22,7 @@ import (
 	"central-vms/client/internal/logbuf"
 	"central-vms/client/internal/logx"
 	"central-vms/client/internal/media"
+	"central-vms/client/internal/preview"
 	"central-vms/client/internal/proto"
 	"central-vms/client/internal/publish"
 	"central-vms/client/internal/redact"
@@ -43,6 +44,9 @@ type runtime struct {
 	publishes *publish.Registry // §4.10 hb publishes + §9.1 refcount
 	media     *media.Manager    // C3.20 media sessiyalari
 	selftest  *selftest.Runner  // C4.6 paneli
+
+	previews *preview.Store    // <state_dir>/previews/<camID>.jpg
+	snap     *preview.Capturer // ffmpeg orqali 1 kadr
 
 	mu              sync.Mutex
 	online          bool
@@ -96,6 +100,14 @@ func (r *runtime) bootstrap(ctx context.Context, enrollCode string) error {
 		return err
 	}
 	r.st = st
+
+	pstore, err := preview.NewStore(filepath.Join(r.cfg.StateDir, "previews"))
+	if err != nil {
+		return err
+	}
+	r.previews = pstore
+	r.snap = &preview.Capturer{Store: pstore, Log: r.log}
+
 	if st.ServerURL == "" {
 		st.ServerURL = r.cfg.ServerURL
 	}

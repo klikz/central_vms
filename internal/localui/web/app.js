@@ -145,6 +145,8 @@ document.addEventListener("click", (ev) => {
     startScan();
   } else if (act === "scan-add") {
     addSelected();
+  } else if (act === "delete-sel") {
+    confirmDeleteSelected();
   }
 });
 
@@ -185,6 +187,35 @@ showScreen((location.hash || "#/cams").slice(2));
 setInterval(loadStatus, 5000);
 
 // --- Cameras (C2.3): list, add, delete ---
+document.addEventListener("change", (ev) => {
+  if (ev.target.id === "sel-all") {
+    $$("#cams-body input[data-cam]").forEach((c) => { c.checked = ev.target.checked; });
+  }
+});
+
+function confirmDeleteSelected() {
+  const ids = $$("#cams-body input[data-cam]:checked").map((c) => c.dataset.cam);
+  if (!ids.length) { toast("Select cameras first", "warn"); return; }
+  const box = $("#modal-box");
+  box.innerHTML = `<h2>Delete ${ids.length} camera(s)?</h2>
+    <p class="dim">Stored passwords are also removed from the keystore. This cannot be undone.</p>
+    <div class="row" style="margin-top:10px">
+      <button class="btn btn-danger" id="d-ok">Delete</button>
+      <button class="btn" id="d-cancel">Cancel</button>
+    </div>`;
+  $("#modal").hidden = false;
+  $("#d-ok").onclick = async () => {
+    try {
+      const r = await api("/api/ui/cams", { method: "DELETE", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }) });
+      toast(`Deleted: ${r ? r.deleted : 0}`, "ok");
+      $("#modal").hidden = true;
+      await loadCams();
+    } catch (e) { toast("Delete failed: " + e.message, "err"); }
+  };
+  $("#d-cancel").onclick = () => { $("#modal").hidden = true; };
+}
+
 function esc(v) {
   // No regex literal: scripts/jscheck.py (no node in this env) confuses quotes
   // inside regexes. split/join gives identical results.
@@ -224,10 +255,35 @@ async function loadCams() {
       <td>${profiles}</td>
       <td class="mono">${esc(codec)}</td>
       <td><span class="${badgeClass(c.status)}">${esc(c.status || "unknown")}</span></td>
-      <td class="dim" title="live stream controls arrive in the next phase">—</td>
+      <td>${previewCell(c)}</td>
     </tr>`;
   }).join("");
 }
+
+// Preview: snapshot bir marta olinadi (qo'shish/holat o'zgarishi);
+// rasmga bosish darhol yangilaydi.
+function previewCell(c) {
+  if (c.snapshot_at) {
+    const v = encodeURIComponent(c.snapshot_at);
+    return `<img class="thumb" data-snap="${esc(c.id)}" title="Click to refresh"
+      src="/api/ui/cams/${encodeURIComponent(c.id)}/snapshot?v=${v}" alt="preview of ${esc(c.name || c.id)}">`;
+  }
+  return `<span class="noimg" data-snap="${esc(c.id)}">no image — click</span>`;
+}
+
+document.addEventListener("click", async (ev) => {
+  const el = ev.target.closest("[data-snap]");
+  if (!el) return;
+  const id = el.dataset.snap;
+  el.classList.add("busy");
+  try {
+    await api(`/api/ui/cams/${encodeURIComponent(id)}/snapshot`, { method: "POST" });
+    toast("Snapshot updated", "ok");
+  } catch (e) {
+    toast("Camera unreachable — no new frame", "warn");
+  }
+  await loadCams();
+});
 
 // --- Discovery (C2.18): scan, results table, checkbox, bulk add ---
 let scanDevices = []; // last results (selection keyed by device key)

@@ -52,7 +52,7 @@ func (s *Server) handleCamsList(w http.ResponseWriter, r *http.Request) {
 	if list == nil {
 		list = []cams.Camera{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"cams": list, "count": len(list)})
+	writeJSON(w, http.StatusOK, map[string]any{"cams": s.decorateCams(list), "count": len(list)})
 }
 
 func (s *Server) handleCamsCreate(w http.ResponseWriter, r *http.Request) {
@@ -121,7 +121,13 @@ func (s *Server) handleCamsDelete(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "ids_empty"})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"deleted": s.cams.Delete(in.IDs)})
+	n := s.cams.Delete(in.IDs)
+	if s.snap != nil {
+		for _, id := range in.IDs {
+			s.snap.Remove(id)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": n})
 }
 
 func (s *Server) handleCamsImport(w http.ResponseWriter, r *http.Request) {

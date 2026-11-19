@@ -177,11 +177,14 @@ func run(ctx context.Context, log *slog.Logger, cfgPath, enrollCode string,
 
 	// UI (§17): holat chizig'i sessiya holatini ko'rsatadi (C1.13)
 	cs := camsvc.New(rt.st, rt.ks)
+	pv := newPreviewSvc(cs, rt.ks, rt.previews, rt.snap, rt.log)
+	go pv.Run(ctx)
 	ui, err := localui.NewServer(cfg, log, version, localui.Deps{
 		Status:       rt.statusFn,
 		LogLines:     func(limit int) []string { return ring.Recent(limit) },
 		Cams:         cs,
 		Discovery:    newDiscoverySvc(cs, cfg),
+		Snapshots:    pv,
 		SelftestRun:  func(ctx context.Context) []selftest.Result { return rt.selftest.Run(ctx) },
 		SelftestLast: func() []selftest.Result { return rt.selftest.Last() },
 	})

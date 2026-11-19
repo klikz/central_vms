@@ -11,11 +11,15 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"time"
 
 	"central-vms/client/internal/cams"
 	"central-vms/client/internal/keystore"
 	"central-vms/client/internal/statestore"
 )
+
+// ErrNotFound — kamera topilmadi (localui 404'ga map qiladi).
+var ErrNotFound = errors.New("camera not found")
 
 // Service — kamera operatsiyalari.
 type Service struct {
@@ -52,7 +56,7 @@ func (s *Service) Create(c cams.Camera, secret string) (cams.Camera, error) {
 		c.ID = cams.NewID()
 	}
 	if _, exists := s.Get(c.ID); exists {
-		return cams.Camera{}, fmt.Errorf("kamera %s allaqachon mavjud", c.ID)
+		return cams.Camera{}, fmt.Errorf("camera %s already exists", c.ID)
 	}
 	if err := c.Valid(); err != nil {
 		return cams.Camera{}, err
@@ -109,7 +113,22 @@ func (s *Service) Update(id string, patch cams.Camera, secret *string) (cams.Cam
 		}
 		return patch, nil
 	}
-	return cams.Camera{}, fmt.Errorf("kamera %s topilmadi", id)
+	return cams.Camera{}, fmt.Errorf("%w: %s", ErrNotFound, id)
+}
+
+// SetStatus — kamera holatini yangilaydi (probe sikli natijasi).
+// cams_epoch O'SMAYDI: holat agent-ichki kuzatuv (§12.2); serverga
+// cam_status hodisasi alohida yuboriladi.
+func (s *Service) SetStatus(id string, st cams.Status, at time.Time) error {
+	for i := range s.St.Cameras {
+		if s.St.Cameras[i].ID == id {
+			s.St.Cameras[i].Status = st
+			t := at
+			s.St.Cameras[i].LastCheckAt = &t
+			return s.St.Save()
+		}
+	}
+	return fmt.Errorf("%w: %s", ErrNotFound, id)
 }
 
 // Delete — bir nechta kamerani o'chirish; parollar ham tozalanadi (§10.1).
@@ -186,10 +205,10 @@ func (s *Service) ImportCSV(r io.Reader, withSecrets bool) (CSVReport, error) {
 	rd.FieldsPerRecord = -1
 	rows, err := rd.ReadAll()
 	if err != nil {
-		return rep, fmt.Errorf("CSV o'qilmadi: %w", err)
+		return rep, fmt.Errorf("cannot read CSV: %w", err)
 	}
 	if len(rows) == 0 {
-		return rep, errors.New("CSV bo'sh")
+		return rep, errors.New("empty CSV")
 	}
 	header := normalizeHeader(rows[0])
 	for i, row := range rows[1:] {
@@ -244,7 +263,7 @@ func rowToCamera(h map[string]int, row []string, withSecrets bool) (cams.Camera,
 	c.Name = field(h, row, "name")
 	c.Host = field(h, row, "host")
 	if c.Host == "" {
-		return c, "", "", errors.New("host bo'sh")
+		return c, "", "", errors.New("host is empty")
 	}
 	if p := field(h, row, "port"); p != "" {
 		n, err := strconv.Atoi(p)

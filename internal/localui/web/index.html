@@ -70,12 +70,13 @@
         <button class="btn" data-act="scan">Discover <kbd>d</kbd></button>
         <button class="btn" data-act="import">Import CSV</button>
         <button class="btn" data-act="export">Export</button>
+        <button class="btn btn-danger" data-act="delete-sel">Delete</button>
       </div>
     </div>
     <table class="grid" id="cams-table">
       <thead><tr>
         <th class="col-check"><input type="checkbox" id="sel-all" aria-label="Select all"></th>
-        <th>Name</th><th>Address</th><th>Profiles</th><th>Codec</th><th>Status</th><th>Stream</th>
+        <th>Name</th><th>Address</th><th>Profiles</th><th>Codec</th><th>Status</th><th>Preview</th>
       </tr></thead>
       <tbody id="cams-body">
         <tr><td colspan="7" class="empty">No cameras yet — press <kbd>n</kbd> to add one or <kbd>d</kbd> to discover.</td></tr>

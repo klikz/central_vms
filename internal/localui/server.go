@@ -81,6 +81,7 @@ type Deps struct {
 	LogLines  func(limit int) []string
 	Cams      CamService
 	Discovery DiscoveryService
+	Snapshots SnapshotSource
 	// C4.6: self-test paneli — Run barcha tekshiruvlarni bajaradi, Last
 	// oxirgi natijalarni qaytaradi (ikkalari nil bo'lsa endpoint 501).
 	SelftestRun  func(ctx context.Context) []selftest.Result
@@ -98,6 +99,7 @@ type Server struct {
 	logLines     func(limit int) []string
 	cams         CamService
 	discovery    DiscoveryService
+	snap         SnapshotSource
 	mux          *http.ServeMux
 }
 
@@ -114,7 +116,7 @@ func NewServer(cfg config.Config, log *slog.Logger, version string, d Deps) (*Se
 	}
 	s := &Server{cfg: cfg, log: log, version: version, status: d.Status,
 		selftestRun: d.SelftestRun, selftestLast: d.SelftestLast,
-		logLines: d.LogLines, cams: d.Cams, discovery: d.Discovery, mux: http.NewServeMux()}
+		logLines: d.LogLines, cams: d.Cams, discovery: d.Discovery, snap: d.Snapshots, mux: http.NewServeMux()}
 	s.routes()
 	return s, nil
 }
@@ -141,6 +143,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/ui/selftest", s.handleSelftest)
 	s.camRoutes()
 	s.discoveryRoutes()
+	s.snapshotRoutes()
 
 	// Jurnal ekrani (§17): oxirgi N ta YASHIRILGAN log qatori (logbuf buferi).
 	s.mux.HandleFunc("/api/ui/log", func(w http.ResponseWriter, r *http.Request) {

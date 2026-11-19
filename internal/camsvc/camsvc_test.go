@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"central-vms/client/internal/cams"
 	"central-vms/client/internal/keystore"
@@ -225,3 +226,25 @@ func TestListSortedByPosition(t *testing.T) {
 }
 
 func strp(v string) *string { return &v }
+
+func TestSetStatus(t *testing.T) {
+	svc := newSvc(t)
+	c, err := svc.Create(cams.Camera{Name: "k", Host: "1.2.3.4", Port: 554, Enabled: true}, "pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ep0 := svc.St.CamsEpoch
+	if err := svc.SetStatus(c.ID, cams.StatusOnline, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := svc.Get(c.ID)
+	if got.Status != cams.StatusOnline || got.LastCheckAt == nil {
+		t.Fatalf("status: %+v", got)
+	}
+	if svc.St.CamsEpoch != ep0 {
+		t.Errorf("epoch o'shadi: %d → %d", ep0, svc.St.CamsEpoch)
+	}
+	if err := svc.SetStatus("yoq", cams.StatusOffline, time.Now()); err == nil {
+		t.Error("noma'lum idda xato kutilardi")
+	}
+}

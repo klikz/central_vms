@@ -164,8 +164,23 @@ h1::after { content: ""; display: block; width: 46px; height: 2px; background: v
   box-shadow: 0 2px 0 #b37c00;
 }
 .btn-primary:hover { background: #ffc233; border-color: #ffc233; color: var(--accent-ink); }
+.btn-danger { color: var(--err); border-color: color-mix(in srgb, var(--err) 45%, var(--line)); }
+.btn-danger:hover { background: var(--err); border-color: var(--err); color: #fff; }
 .btn kbd { background: transparent; border-color: currentColor; opacity: .65; }
 .btn-primary kbd { color: var(--accent-ink); border-color: rgba(26,18,0,.5); background: rgba(26,18,0,.12); }
+
+/* ---------- preview ---------- */
+.thumb { width: 104px; height: 58px; object-fit: cover; display: block;
+  border: 1px solid var(--line); border-radius: 4px; background: var(--bg-deep);
+  cursor: pointer; transition: border-color .12s; }
+.thumb:hover { border-color: var(--accent); }
+.thumb.busy { opacity: .45; cursor: wait; }
+.noimg { display: inline-block; width: 104px; height: 58px; line-height: 58px;
+  text-align: center; font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--ink-faint); border: 1px dashed var(--line); border-radius: 4px;
+  cursor: pointer; }
+.noimg:hover { border-color: var(--accent); color: var(--ink-dim); }
+.noimg.busy { opacity: .45; cursor: wait; }
 
 /* ---------- tables ---------- */
 table.grid { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); }
