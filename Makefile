@@ -39,7 +39,9 @@ STOP_PATTERNS := 'build/[v]msagent -config' 'exe/[v]msagent' 'go-build[^ ]*/[v]m
                  'exe/[d]evserver' 'go-build[^ ]*/[d]evserver' \
                  'go run ./cmd/[v]msagent' 'go run ./cmd/[d]evserver'
 
-.PHONY: all start dev build run install uninstall logs status test race cover gate \
+BACKUP_DIR ?= /var/backups/vmsagent
+
+.PHONY: all start dev build run install uninstall logs logs-err backup restore status test race cover gate \
         lint fmt vet fixtures deps deps-fetch devserver itest stress secretscan ui-lint ui-shot logs-err \
         package remote-update stop stop-service clean help
 
@@ -192,6 +194,13 @@ uninstall:
 logs: ## CLIENT logi: fayl bo'lsa undan, bo'lmasa journald (ikkalasi bir xil mazmundа)
 	@if [ -f /var/log/vmsagent/vmsagent.log ]; then tail -f /var/log/vmsagent/vmsagent.log; \
 	else journalctl -u $(BIN) -f; fi
+
+backup: ## §10.1/C4.5: agent holatini zaxiralash (agent.key+secrets.bin+state.json)
+	bash scripts/agent-backup.sh $(BACKUP_DIR)
+
+restore: ## zaxiradan tiklash: make restore ARCHIVE=vmsagent-state-*.tar.gz
+	@test -n "$(ARCHIVE)" || { echo "make restore ARCHIVE=<fayl.tar.gz>"; exit 1; }
+	bash scripts/agent-restore.sh "$(ARCHIVE)"
 
 logs-err: ## faqat xatolar (level=ERROR) — fayldan yoki journald'dan
 	@if [ -f /var/log/vmsagent/vmsagent.log ]; then grep --line-buffered "level=ERROR" /var/log/vmsagent/vmsagent.log | tail -f; \

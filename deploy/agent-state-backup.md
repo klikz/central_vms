@@ -1,4 +1,9 @@
-# Agent holatini zaxiralash va tiklash (C2.20, docs/protocol.md §10.1)
+# Agent holatini zaxiralash
+
+> **Tayyor skriptlar (C4.5):** `sudo make backup` va
+> `sudo make restore ARCHIVE=<fayl.tar.gz>` — quyidagi qo'llanma bilan bir xil
+> ishlarni avtomat bajaradi (xizmatni to'xtatadi, 3 faylni oladi, tiklashda
+> `*.pre-restore-<TS>` zaxira qoldiradi, egalik/ruhsatni tiklaydi). va tiklash (C2.20, docs/protocol.md §10.1)
 
 Agentning **barcha holati** uchta faylda saqlanadi. Ular **uchala birga**
 olinganida qayta tiklanadi — bittasi yo'q bo'lsa, qolganlari behuda (parollar
