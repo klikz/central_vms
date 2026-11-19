@@ -23,6 +23,7 @@ import (
 	"central-vms/client/internal/proto"
 	"central-vms/client/internal/publish"
 	"central-vms/client/internal/redact"
+	"central-vms/client/internal/selftest"
 	"central-vms/client/internal/statestore"
 )
 
@@ -38,6 +39,7 @@ type runtime struct {
 
 	sess      *agent.Session
 	publishes *publish.Registry // §4.10 hb publishes; C3 ulaniganda to'ladi
+	selftest  *selftest.Runner  // C4.6 paneli
 
 	mu              sync.Mutex
 	online          bool

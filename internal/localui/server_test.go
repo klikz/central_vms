@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"central-vms/client/internal/config"
+	"central-vms/client/internal/selftest"
 )
 
 func newTestServer(t *testing.T, pin string) *httptest.Server {
@@ -376,4 +377,56 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// C4.6: self-test endpointi — POST bajaradi, GET oxirgisini qaytaradi.
+func TestSelftestEndpoint(t *testing.T) {
+	cfg := config.Default()
+	var ran int
+	s, err := NewServer(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), "v", Deps{
+		Status: func() Status { return Status{} },
+		SelftestRun: func(context.Context) []selftest.Result {
+			ran++
+			return []selftest.Result{{Name: "server WS RTT", OK: true, MS: 12, Detail: "12 ms"}}
+		},
+		SelftestLast: func() []selftest.Result {
+			return []selftest.Result{{Name: "server WS RTT", OK: true, MS: 12}}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(s.mux)
+	defer ts.Close()
+
+	res, err := ts.Client().Post(ts.URL+"/api/ui/selftest", "application/json", strings.NewReader("{}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var out struct {
+		Results []selftest.Result `json:"results"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if ran != 1 || len(out.Results) != 1 || !out.Results[0].OK {
+		t.Fatalf("POST natijasi: ran=%d %+v", ran, out.Results)
+	}
+
+	// GET — bajarilmaydi, faqat saqlangan.
+	res2, err := ts.Client().Get(ts.URL + "/api/ui/selftest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res2.Body.Close()
+	var out2 struct {
+		Results []selftest.Result `json:"results"`
+	}
+	if err := json.NewDecoder(res2.Body).Decode(&out2); err != nil {
+		t.Fatal(err)
+	}
+	if ran != 1 || len(out2.Results) != 1 {
+		t.Fatalf("GET natijasi: ran=%d %+v", ran, out2.Results)
+	}
 }

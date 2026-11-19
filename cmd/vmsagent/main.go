@@ -21,6 +21,7 @@ import (
 	"central-vms/client/internal/logx"
 	"central-vms/client/internal/publish"
 	"central-vms/client/internal/redact"
+	"central-vms/client/internal/selftest"
 )
 
 // Versiya ldflags orqali qo'yiladi (root REJA §4.3):
@@ -149,15 +150,18 @@ func run(ctx context.Context, log *slog.Logger, cfgPath, enrollCode string,
 	}
 
 	rt := &runtime{cfg: cfg, log: log, ring: ring}
+	rt.selftest = rt.newSelftest() // C4.6 paneli (deps'lar lazy o'qiydi)
 	if err := rt.bootstrap(ctx, enrollCode); err != nil {
 		return err
 	}
 
 	// UI (§17): holat chizig'i sessiya holatini ko'rsatadi (C1.13)
 	ui, err := localui.NewServer(cfg, log, version, localui.Deps{
-		Status:   rt.statusFn,
-		LogLines: func(limit int) []string { return ring.Recent(limit) },
-		Cams:     camsvc.New(rt.st, rt.ks),
+		Status:       rt.statusFn,
+		LogLines:     func(limit int) []string { return ring.Recent(limit) },
+		Cams:         camsvc.New(rt.st, rt.ks),
+		SelftestRun:  func(ctx context.Context) []selftest.Result { return rt.selftest.Run(ctx) },
+		SelftestLast: func() []selftest.Result { return rt.selftest.Last() },
 	})
 	if err != nil {
 		return fmt.Errorf("lokal UI: %w", err)

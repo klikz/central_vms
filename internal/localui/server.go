@@ -19,6 +19,7 @@ import (
 	"central-vms/client/internal/cams"
 	"central-vms/client/internal/camsvc"
 	"central-vms/client/internal/config"
+	"central-vms/client/internal/selftest"
 )
 
 //go:embed web
@@ -79,18 +80,24 @@ type Deps struct {
 	LogLines  func(limit int) []string
 	Cams      CamService
 	Discovery DiscoveryService
+	// C4.6: self-test paneli — Run barcha tekshiruvlarni bajaradi, Last
+	// oxirgi natijalarni qaytaradi (ikkalari nil bo'lsa endpoint 501).
+	SelftestRun  func(ctx context.Context) []selftest.Result
+	SelftestLast func() []selftest.Result
 }
 
 // Server — lokal UI (:8082). Faqat 127.0.0.1 bind qilinishi shart (§10.3).
 type Server struct {
-	cfg       config.Config
-	log       *slog.Logger
-	version   string
-	status    func() Status
-	logLines  func(limit int) []string
-	cams      CamService
-	discovery DiscoveryService
-	mux       *http.ServeMux
+	cfg          config.Config
+	log          *slog.Logger
+	version      string
+	status       func() Status
+	selftestRun  func(ctx context.Context) []selftest.Result
+	selftestLast func() []selftest.Result
+	logLines     func(limit int) []string
+	cams         CamService
+	discovery    DiscoveryService
+	mux          *http.ServeMux
 }
 
 // NewServer — UI serverini quradi. Deps maydonlari nil bo'lsa bo'sh natija qaytariladi.
@@ -105,6 +112,7 @@ func NewServer(cfg config.Config, log *slog.Logger, version string, d Deps) (*Se
 		d.LogLines = func(int) []string { return nil }
 	}
 	s := &Server{cfg: cfg, log: log, version: version, status: d.Status,
+		selftestRun: d.SelftestRun, selftestLast: d.SelftestLast,
 		logLines: d.LogLines, cams: d.Cams, discovery: d.Discovery, mux: http.NewServeMux()}
 	s.routes()
 	return s, nil
@@ -129,6 +137,7 @@ func (s *Server) routes() {
 		writeJSON(w, http.StatusOK, s.status())
 	})
 	s.mux.HandleFunc("/api/ui/settings", s.handleSettings)
+	s.mux.HandleFunc("/api/ui/selftest", s.handleSelftest)
 	s.camRoutes()
 	s.discoveryRoutes()
 
@@ -178,6 +187,29 @@ func redactPath(p string) string {
 		return p[:i]
 	}
 	return p
+}
+
+// handleSelftest — POST: barcha tekshiruvlarni qayta bajar; GET: oxirgisi.
+func (s *Server) handleSelftest(w http.ResponseWriter, r *http.Request) {
+	if s.selftestRun == nil && s.selftestLast == nil {
+		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "self-test sozlanmagan"})
+		return
+	}
+	var res []selftest.Result
+	switch r.Method {
+	case http.MethodPost:
+		if s.selftestRun != nil {
+			res = s.selftestRun(r.Context())
+		}
+	case http.MethodGet:
+		if s.selftestLast != nil {
+			res = s.selftestLast()
+		}
+	default:
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "GET yoki POST"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"results": res})
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {

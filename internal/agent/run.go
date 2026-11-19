@@ -46,7 +46,8 @@ func (s *Session) serve(ctx context.Context, conn *websocket.Conn) error {
 	sendCh := make(chan proto.Envelope, 64)
 	errCh := make(chan error, 2)
 	s.setSendCh(sendCh)
-	defer s.setSendCh(nil)
+	s.setConn(conn)
+	defer func() { s.setSendCh(nil); s.setConn(nil) }()
 
 	// Yagona yozuvchi goroutine (TASKS §0.3: murakkab mutex'lar yo'q)
 	go func() {

@@ -137,13 +137,44 @@ document.addEventListener("click", (ev) => {
       body: JSON.stringify({ server_url: $("#set-server").value, log_level: $("#set-loglevel").value }) })
       .then(() => toast(I18N.saved, "ok")).catch(() => toast(I18N.saveFailed, "err"));
   } else if (act === "selftest") {
-    toast("Self-test C4.6 da qo'shiladi");
+    runSelftest(btn);
   } else if (act === "scan-start") {
     startScan();
   } else if (act === "scan-add") {
     addSelected();
   }
 });
+
+// C4.6: self-test paneli — POST /api/ui/selftest, natijalar jadvali.
+async function runSelftest(btn) {
+  btn.disabled = true;
+  const old = btn.textContent;
+  btn.textContent = "Tekshirilmoqda…";
+  try {
+    const res = await api("/api/ui/selftest", { method: "POST" });
+    const body = $("#selftest-body");
+    if (body) {
+      body.innerHTML = (res.results || []).map((r) =>
+        `<tr><td>${esc(r.name)}</td><td>${r.ok ? "OK" : "XATO"}</td><td>${r.ms}</td></tr>`).join("") ||
+        '<tr><td colspan="3" class="empty">Tekshiruv topilmadi.</td></tr>';
+    }
+    toast("Self-test tugadi", "ok");
+  } catch (e) {
+    toast("Self-testda xato", "err");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
+}
+
+// Sahifa ochilganda saqlangan natijalarni ko'rsatamiz (GET).
+api("/api/ui/selftest").then((res) => {
+  const body = $("#selftest-body");
+  if (body && res && res.results && res.results.length) {
+    body.innerHTML = res.results.map((r) =>
+      `<tr><td>${esc(r.name)}</td><td>${r.ok ? "OK" : "XATO"}</td><td>${r.ms}</td></tr>`).join("");
+  }
+}).catch(() => {});
 
 showScreen((location.hash || "#/cams").slice(2));
 setInterval(loadStatus, 5000);

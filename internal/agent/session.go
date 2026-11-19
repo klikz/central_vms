@@ -118,6 +118,7 @@ type Session struct {
 	// sendMu: Send (dispatch goroutine'si) va serve (Run goroutine'si) uchun.
 	sendMu sync.Mutex
 	sendCh chan proto.Envelope
+	conn   *websocket.Conn // faol ulanish (PingRTT uchun, C4.6)
 }
 
 // setSendCh — serve boshlanishida/yopilishida chaqiriladi.
@@ -257,4 +258,45 @@ func (s *Session) readWelcome(conn *websocket.Conn) (proto.Welcome, error) {
 		return proto.Welcome{}, fmt.Errorf("%w: birinchi javob %q", ErrBadResponse, env.Type)
 	}
 	return proto.Decode[proto.Welcome](env.Data)
+}
+
+// setConn — faol ulanishni saqlash (PingRTT uchun).
+func (s *Session) setConn(c *websocket.Conn) {
+	s.sendMu.Lock()
+	s.conn = c
+	s.sendMu.Unlock()
+}
+
+// PingRTT — WS ping/pong RTT'si (§4.7 selftest). Ulash yo'q yoki pong
+// kelmasa xato.
+func (s *Session) PingRTT(ctx context.Context) (time.Duration, error) {
+	s.sendMu.Lock()
+	conn := s.conn
+	s.sendMu.Unlock()
+	if conn == nil {
+		return 0, errors.New("agent: faol ulanish yo'q")
+	}
+	pong := make(chan time.Time, 1)
+	prev := conn.PongHandler()
+	conn.SetPongHandler(func(appData string) error {
+		select {
+		case pong <- time.Now():
+		default:
+		}
+		if prev != nil {
+			return prev(appData)
+		}
+		return nil
+	})
+	start := s.cfg.Clock.Now()
+	if err := conn.WriteControl(websocket.PingMessage, []byte("selftest"),
+		time.Now().Add(3*time.Second)); err != nil {
+		return 0, err
+	}
+	select {
+	case t := <-pong:
+		return t.Sub(start), nil
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	}
 }
