@@ -64,6 +64,7 @@ async function loadStatus() {
 async function load(screen) {
   await loadStatus();
   if (screen === "cams") await loadCams();
+  if (screen === "discovery") await loadDiscovery();
   if (screen === "log") {
     try {
       const r = await api("/api/ui/log?limit=200");
@@ -100,7 +101,9 @@ document.addEventListener("click", (ev) => {
   } else if (act === "selftest") {
     toast("Self-test C4.6 da qo'shiladi");
   } else if (act === "scan-start") {
-    toast("Kashf etish C2.15–C2.19 da qo'shiladi");
+    startScan();
+  } else if (act === "scan-add") {
+    addSelected();
   }
 });
 
@@ -150,6 +153,68 @@ async function loadCams() {
       <td class="dim" title="Oqim holati C4 bosqichida to'ldiriladi">—</td>
     </tr>`;
   }).join("");
+}
+
+// --- Kashf etish (C2.18): skan, natija jadvali, checkbox, ommaviy qo'shish ---
+let scanDevices = []; // oxirgi natijalar (key bo'yicha tanlash uchun)
+
+async function loadDiscovery() {
+  const body = $("#scan-body");
+  if (!body) return;
+  let r = null;
+  try { r = await api("/api/ui/discovery/results"); } catch (e) { r = null; }
+  scanDevices = (r && r.devices) || [];
+  if (!scanDevices.length) {
+    body.innerHTML = '<tr><td colspan="8" class="empty">Skan natijasi yo\'q — «Skan boshlash» tugmasini bosing.</td></tr>';
+    return;
+  }
+  body.innerHTML = scanDevices.map((d) => {
+    const known = d.already_known
+      ? '<span class="badge badge-warn">qo\'shilgan</span>'
+      : '<span class="badge badge-ok">yangi</span>';
+    const check = d.already_known ? "" :
+      `<input type="checkbox" class="scan-check" value="${esc(d.key)}">`;
+    return `<tr>
+      <td class="col-check">${check}</td>
+      <td class="mono">${esc(d.ip)}:${esc(d.port)}</td>
+      <td>${esc(d.model || "—")}</td>
+      <td>${esc(d.name || "—")}</td>
+      <td>${d.has_onvif ? "bor" : "yo'q"}</td>
+      <td>${d.mac ? "bor" : "—"}</td>
+      <td class="dim">—</td>
+      <td>${known}</td>
+    </tr>`;
+  }).join("");
+}
+
+async function startScan() {
+  toast("Skan boshlandi…");
+  try {
+    const r = await api("/api/ui/discovery/scan", { method: "POST" });
+    if (r) toast(`Skan tugadi: ${r.scanned} host tekshirildi`, "ok");
+    await loadDiscovery();
+  } catch (e) {
+    toast("Skan xatosi", "err");
+  }
+}
+
+async function addSelected() {
+  const keys = Array.from(document.querySelectorAll(".scan-check:checked")).map((c) => c.value);
+  if (!keys.length) { toast("Hech narsa tanlanmagan", "err"); return; }
+  const in_ = {
+    keys: keys,
+    name_pattern: ($("#name-pattern") || {}).value || "",
+    password: ($("#scan-pass") || {}).value || "",
+    enabled: true,
+  };
+  try {
+    const r = await api("/api/ui/discovery/add", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(in_) });
+    if (r) toast(`Qo'shildi: ${r.added}, xato: ${r.failed}`, r.failed ? "warn" : "ok");
+    await loadDiscovery();
+  } catch (e) {
+    toast("Qo'shish xatosi", "err");
+  }
 }
 
 function openNewCamModal() {

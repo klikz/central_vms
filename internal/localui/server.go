@@ -66,20 +66,22 @@ type CamService interface {
 
 // Deps — UI serveriga kirish bog'lamalari (kengaytirish oson bo'lsin).
 type Deps struct {
-	Status   func() Status
-	LogLines func(limit int) []string
-	Cams     CamService
+	Status    func() Status
+	LogLines  func(limit int) []string
+	Cams      CamService
+	Discovery DiscoveryService
 }
 
 // Server — lokal UI (:8082). Faqat 127.0.0.1 bind qilinishi shart (§10.3).
 type Server struct {
-	cfg      config.Config
-	log      *slog.Logger
-	version  string
-	status   func() Status
-	logLines func(limit int) []string
-	cams     CamService
-	mux      *http.ServeMux
+	cfg       config.Config
+	log       *slog.Logger
+	version   string
+	status    func() Status
+	logLines  func(limit int) []string
+	cams      CamService
+	discovery DiscoveryService
+	mux       *http.ServeMux
 }
 
 // NewServer — UI serverini quradi. Deps maydonlari nil bo'lsa bo'sh natija qaytariladi.
@@ -94,7 +96,7 @@ func NewServer(cfg config.Config, log *slog.Logger, version string, d Deps) (*Se
 		d.LogLines = func(int) []string { return nil }
 	}
 	s := &Server{cfg: cfg, log: log, version: version, status: d.Status,
-		logLines: d.LogLines, cams: d.Cams, mux: http.NewServeMux()}
+		logLines: d.LogLines, cams: d.Cams, discovery: d.Discovery, mux: http.NewServeMux()}
 	s.routes()
 	return s, nil
 }
@@ -119,6 +121,7 @@ func (s *Server) routes() {
 	})
 	s.mux.HandleFunc("/api/ui/settings", s.handleSettings)
 	s.camRoutes()
+	s.discoveryRoutes()
 
 	// Jurnal ekrani (§17): oxirgi N ta YASHIRILGAN log qatori (logbuf buferi).
 	s.mux.HandleFunc("/api/ui/log", func(w http.ResponseWriter, r *http.Request) {
