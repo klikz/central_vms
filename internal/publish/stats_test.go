@@ -84,10 +84,11 @@ func TestStats_TickerEmitsAndStops(t *testing.T) {
 	go sc.Run(ctx)
 	<-sc.Started() // ticker o'rnatilgachina Advance qilamiz
 
-	// Kamida 2 tick yig'ilguncha Advance (goroutine navbati kechikishi mumkin).
+	// Kamida 2 tick yig'ilguncha Advance + sabrli yield (tick→List→emit
+	// zanjiri bir nechta scheduling hop talab qiladi; sleep yo'q §0.2).
 	for i := 0; i < 10 && nEmits() < 2; i++ {
 		clk.Advance(10 * time.Second)
-		runtime.Gosched()
+		yieldUntil(func() bool { return nEmits() >= 2 })
 	}
 	if n := nEmits(); n < 2 {
 		t.Fatalf("emits = %d, kamida 2 kutilardi", n)
@@ -97,20 +98,33 @@ func TestStats_TickerEmitsAndStops(t *testing.T) {
 	r.Stop("s1", k)
 	for i := 0; i < 10 && len(r.List()) > 0; i++ { // grace (1 s) tugashini kutamiz
 		clk.Advance(500 * time.Millisecond)
-		runtime.Gosched()
+		yieldUntil(func() bool { return len(r.List()) == 0 })
 	}
 	if len(r.List()) != 0 {
 		t.Fatal("publish yopilmadi")
+	}
+	for i := 0; i < 100; i++ { // ketma-ket emit'larni "bo'shatamiz"
+		runtime.Gosched()
 	}
 	n1 := nEmits()
 
 	// Yopilgandan keyin tick'lar — uzatmasligi kerak (bo'sh stats yo'q).
 	for i := 0; i < 4; i++ {
 		clk.Advance(10 * time.Second)
-		runtime.Gosched()
+		for j := 0; j < 100; j++ {
+			runtime.Gosched()
+		}
 	}
 	if extra := nEmits() - n1; extra != 0 {
 		t.Errorf("yopilgandan keyin %d qo'shimcha emit bo'ldi", extra)
+	}
+}
+
+// yieldUntil — sleep'siz sabr (Gosched halqasi): goroutine zanjirlari
+// (tick→List→writer→emit) bir nechta navbat almashinuvini talab qiladi.
+func yieldUntil(cond func() bool) {
+	for i := 0; i < 5000 && !cond(); i++ {
+		runtime.Gosched()
 	}
 }
 

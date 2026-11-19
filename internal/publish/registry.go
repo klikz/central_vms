@@ -62,6 +62,7 @@ const (
 	cmdCount
 	cmdRefresh
 	cmdList
+	cmdSetLimits
 )
 
 // PublishRef — faol publish'ning ko'rsatkichi (stats/status uchun).
@@ -76,6 +77,7 @@ type cmd struct {
 	key   Key
 	sess  string
 	ttl   time.Duration // start/refresh uchun (§9.2)
+	n     int           // cmdSetLimits uchun (§10.4)
 	reply chan any      // buffered(1): StartResult|error | int | nil
 }
 
@@ -120,33 +122,44 @@ func New(clk clock.Clock, log *slog.Logger, onReady func(ReadyEvent), onStopped 
 		clk: clk, log: log, onReady: onReady, onStopped: onStopped,
 		grace: gracePeriod,
 	}
-	go r.writer(map[Key]*entry{})
+	go r.writer(&wstate{entries: map[Key]*entry{}})
 	return r
 }
 
-// writer — yagona yozuvchi. entries faqat shu goroutine'ning ichida.
-func (r *Registry) writer(entries map[Key]*entry) {
+// wstate — yozuvchi goroutine'ning egalik qiladigan holati (§0.3).
+type wstate struct {
+	entries    map[Key]*entry
+	maxUploads int // §10.4; 0 → cheklov yo'q
+}
+
+// writer — yagona yozuvchi. st faqat shu goroutine'ning ichida.
+func (r *Registry) writer(st *wstate) {
 	var timer <-chan time.Time
 	for {
 		select {
 		case <-r.done:
 			return
 		case c := <-r.cmds:
-			c.reply <- r.handle(entries, c)
-			timer = r.arm(entries)
+			c.reply <- r.handle(st, c)
+			timer = r.arm(st)
 		case <-timer:
-			r.expire(entries)
-			timer = r.arm(entries)
+			r.expire(st)
+			timer = r.arm(st)
 		}
 	}
 }
 
-func (r *Registry) handle(entries map[Key]*entry, c cmd) any {
+func (r *Registry) handle(st *wstate, c cmd) any {
+	entries := st.entries
 	now := r.clk.Now()
 	switch c.kind {
 	case cmdStart:
 		e, ok := entries[c.key]
 		isNew := !ok
+		// §10.4: max_uploads — server limitidan mustaqil ikkinchi himoya.
+		if isNew && st.maxUploads > 0 && len(entries) >= st.maxUploads {
+			return ErrLimitExceeded
+		}
 		if !ok {
 			e = &entry{publishID: "pub_" + uuid.NewString()[:16], sessions: map[string]struct{}{}}
 			entries[c.key] = e
@@ -192,6 +205,9 @@ func (r *Registry) handle(entries map[Key]*entry, c cmd) any {
 			refs = append(refs, PublishRef{PublishID: e.publishID, Key: k, Sessions: len(e.sessions)})
 		}
 		return refs
+	case cmdSetLimits:
+		st.maxUploads = c.n
+		return nil
 	}
 	return nil
 }
@@ -210,7 +226,8 @@ func (r *Registry) extendTTL(e *entry, ttl time.Duration) {
 // expire — muddati yetgan grace/TTL'larni yopadi.
 // §9.1: refcount 0 + grace o'tsa → no_viewers.
 // §9.2: TTL muddati o'tsa (tomoshibi bo'lsa ham) → ttl_expired.
-func (r *Registry) expire(entries map[Key]*entry) {
+func (r *Registry) expire(st *wstate) {
+	entries := st.entries
 	now := r.clk.Now()
 	for k, e := range entries {
 		switch {
@@ -225,7 +242,8 @@ func (r *Registry) expire(entries map[Key]*entry) {
 }
 
 // arm — keyingi yopish/TTL muddatigacha taymer (nil → kutilayotgan yo'q).
-func (r *Registry) arm(entries map[Key]*entry) <-chan time.Time {
+func (r *Registry) arm(st *wstate) <-chan time.Time {
+	entries := st.entries
 	now := r.clk.Now()
 	var next time.Time
 	consider := func(t time.Time) {
@@ -283,7 +301,13 @@ func (r *Registry) StartWithTTL(sess string, k Key, kind string, ttlS int) (Star
 	if err != nil {
 		return StartResult{}, err
 	}
-	return v.(StartResult), nil
+	switch res := v.(type) {
+	case StartResult:
+		return res, nil
+	case error:
+		return StartResult{}, res
+	}
+	return StartResult{}, ErrClosed
 }
 
 // Refresh — media_refresh: deadline'ni now+extendS'ga siljitadi (§9.2).
@@ -321,6 +345,11 @@ func (r *Registry) Refcount(k Key) int {
 		return -1
 	}
 	return v.(int)
+}
+
+// SetMaxUploads — server config_push max_uploads (§10.4); 0 → cheksiz.
+func (r *Registry) SetMaxUploads(n int) {
+	_, _ = r.send(cmd{kind: cmdSetLimits, n: n})
 }
 
 // List — faol publish'lar snapshot'i (media_stats, §4.6).
