@@ -2,7 +2,9 @@ package devserver
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -120,6 +122,13 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 				continue
+			}
+			if m.close != nil {
+				code, _ := strconv.Atoi(m.close[0])
+				_ = conn.WriteControl(websocket.CloseMessage,
+					websocket.FormatCloseMessage(code, m.close[1]), time.Now().Add(2*time.Second))
+				writerErr <- fmt.Errorf("server tomonidan uzildi: %s", m.close[1])
+				return
 			}
 			if err := conn.WriteJSON(*m.env); err != nil {
 				writerErr <- err

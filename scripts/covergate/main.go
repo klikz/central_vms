@@ -19,7 +19,7 @@ func main() {
 	var (
 		coreTh   = flag.Int("core", 70, "yadro paketlar uchun minimal coverage (%)")
 		allTh    = flag.Int("all", 50, "qolgan paketlar uchun minimal coverage (%)")
-		coreList = flag.String("corepkgs", "proto,cams,publish", "yadro paketlar (vergul bilan)")
+		coreList = flag.String("corepkgs", "proto,cams,publish,media", "yadro paketlar (vergul bilan)")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "ishlatish: covergate [-core N] [-all N] coverage.out\n")

@@ -398,10 +398,13 @@ func (s *Server) CloseAfter(agentID string, d time.Duration, code int, reason st
 		if ac == nil || !ac.alive() {
 			return
 		}
-		_ = ac.conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
-		_ = ac.conn.WriteControl(websocket.CloseMessage,
-			websocket.FormatCloseMessage(code, reason), time.Now().Add(2*time.Second))
-		_ = ac.conn.Close()
+		// Yopilish xabari yagona yozuvchi goroutine navbatiga qo'yiladi —
+		// gorilla websocket'ga ikki gorindadan yozish race (§0.3).
+		select {
+		case ac.out <- outMsg{close: &[2]string{fmt.Sprint(code), reason}}:
+		default:
+			_ = ac.conn.Close() // navbat band — majburiy uzish ham yetarli
+		}
 	})
 }
 
@@ -474,8 +477,9 @@ type agentConn struct {
 }
 
 type outMsg struct {
-	env  *proto.Envelope
-	ping bool
+	env   *proto.Envelope
+	ping  bool
+	close *[2]string // [kod, sabab] — yagona yozuvchi orqali yopilish (race yo'q)
 }
 
 func (a *agentConn) alive() bool { return a.aliveFlag.Load() }
