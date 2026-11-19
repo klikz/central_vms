@@ -38,7 +38,8 @@ type runtime struct {
 	st *statestore.State
 
 	sess      *agent.Session
-	publishes *publish.Registry // §4.10 hb publishes; C3 ulaniganda to'ladi
+	publishes *publish.Registry // §4.10 hb publishes + §9.1 refcount
+	media     *mediaMgr         // C3.20 media sessiyalari
 	selftest  *selftest.Runner  // C4.6 paneli
 
 	mu              sync.Mutex
@@ -202,6 +203,12 @@ func (r *runtime) newSession() *agent.Session {
 	h := &agent.Handlers{KS: r.ks, St: r.st, Log: r.log, Sess: sess,
 		SetLogLevel: func(l string) error { return r.setLogLevel(l) },
 		CamsAck:     r.syncer.OnCamsAck,
+		MediaStart:  r.media.OnStart, // C3.20: media_start → publish sessiyasi
+		MediaStop:   r.media.OnStop,
+		RefreshMedia: func(mr proto.MediaRefresh) error {
+			r.media.OnRefresh(mr)
+			return nil
+		},
 		CamsRequest: func(req proto.CamsRequest) {
 			// §5.1: server so'roqi — to'liq yoki delta sync yuboramiz
 			if req.Full {

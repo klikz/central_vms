@@ -28,6 +28,7 @@ type AU struct {
 // PullOptions — pull sozlamalari.
 type PullOptions struct {
 	URL        string
+	User, Pass string        // kamera RTSP hisobi (§10.1: parol keystore'dan)
 	Clock      clock.Clock   // nil → Real (retry kutishlari uchun)
 	Retries    int           // ≤0 → 3 (§9.3)
 	RetryDelay time.Duration // ≤0 → 2 s (§9.3)
@@ -73,7 +74,7 @@ func Pull(ctx context.Context, o PullOptions, sink func(AU) error) error {
 }
 
 func pullOnce(ctx context.Context, o PullOptions, sink func(AU) error) error {
-	conn, err := rtspclient.Dial(ctx, o.URL, rtspclient.Options{})
+	conn, err := rtspclient.Dial(ctx, o.URL, rtspclient.Options{User: o.User, Pass: o.Pass})
 	if err != nil {
 		return err
 	}

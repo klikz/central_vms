@@ -151,6 +151,10 @@ func run(ctx context.Context, log *slog.Logger, cfgPath, enrollCode string,
 
 	rt := &runtime{cfg: cfg, log: log, ring: ring}
 	rt.selftest = rt.newSelftest() // C4.6 paneli (deps'lar lazy o'qiydi)
+	// C3.20: registry + media boshqaruvchisi (hodisalar o'zaro bog'langan).
+	rt.media = newMediaMgr(rt, nil)
+	rt.publishes = publish.New(clockReal(), rt.log, rt.media.onReady, rt.media.onStopped)
+	rt.media.reg = rt.publishes
 	if err := rt.bootstrap(ctx, enrollCode); err != nil {
 		return err
 	}
@@ -173,6 +177,9 @@ func run(ctx context.Context, log *slog.Logger, cfgPath, enrollCode string,
 	// Sessiya: uzilishda backoff bilan qayta ulanadi (§2, §3.3)
 	sessStop := rt.startSession(ctx)
 	defer sessStop()
+	// §4.6: media_stats — 10 s'da bir faol publish'larni yig'adi (C3.15).
+	stats := publish.NewStats(rt.publishes, clockReal(), rt.media.statsSource, rt.media.statsEmit)
+	go stats.Run(ctx)
 
 	for {
 		select {
