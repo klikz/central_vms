@@ -13,6 +13,7 @@ DESTDIR="${DESTDIR:-}"
 BIN_DIR="$DESTDIR/opt/vmsagent"
 ETC_DIR="$DESTDIR/etc/vmsagent"
 VAR_DIR="$DESTDIR/var/lib/vmsagent"
+LOG_DIR="$DESTDIR/var/log/vmsagent"
 RUN_SERVICE=1
 
 for arg in "$@"; do
@@ -73,7 +74,8 @@ else
 fi
 
 if [[ -z "$DESTDIR" ]]; then
-  chown -R vmsagent:vmsagent "$VAR_DIR"
+  mkdir -p "$LOG_DIR"
+  chown -R vmsagent:vmsagent "$VAR_DIR" "$LOG_DIR"
   chown root:vmsagent "$ETC_DIR/client.yaml" "$ETC_DIR/agent.key" 2>/dev/null || true
   chmod 0640 "$ETC_DIR/client.yaml" || true
   chmod 0600 "$ETC_DIR/agent.key" || true

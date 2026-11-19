@@ -89,7 +89,7 @@ func (s *Session) serve(ctx context.Context, conn *websocket.Conn) error {
 		case <-ctx.Done():
 			s.closeSendCh(sendCh)
 			_ = conn.WriteControl(websocket.CloseMessage,
-				websocket.FormatCloseMessage(websocket.CloseNormalClosure, "agent ishonchli to'xtadi"),
+				websocket.FormatCloseMessage(websocket.CloseGoingAway, "agent ishonchli to'xtadi"),
 				time.Now().Add(2*time.Second))
 			return context.Cause(ctx)
 		case err := <-errCh:

@@ -19,6 +19,7 @@ import (
 	"central-vms/client/internal/localui"
 	"central-vms/client/internal/logbuf"
 	"central-vms/client/internal/logx"
+	"central-vms/client/internal/publish"
 	"central-vms/client/internal/redact"
 )
 
@@ -172,8 +173,21 @@ func run(ctx context.Context, log *slog.Logger, cfgPath, enrollCode string,
 	for {
 		select {
 		case <-ctx.Done():
+			// §9.4 graceful shutdown tartibi: publish'lar (media_stopped
+			// {agent_restart}) → WS 1001 → state flush → chiqish.
 			log.Info("to'xtatish belgisi olindi, mayin chiqamiz")
-			sessStop()
+			rt.mu.Lock()
+			pub := rt.publishes
+			rt.mu.Unlock()
+			if pub != nil {
+				pub.CloseAll(publish.ReasonAgentRestart)
+			}
+			sessStop() // WS'ni 1001 (Going Away) bilan yopadi
+			if rt.st != nil {
+				if err := rt.st.Save(); err != nil {
+					log.Error("state flush qilinishi muvaffaqiyatsiz", "err", redact.Err(err))
+				}
+			}
 			return <-uiErr
 		case err := <-uiErr:
 			if err != nil {

@@ -57,12 +57,14 @@ type cmdKind int
 
 const (
 	cmdStart cmdKind = iota
+
 	cmdStop
 	cmdReady
 	cmdCount
 	cmdRefresh
 	cmdList
 	cmdSetLimits
+	cmdCloseAll
 )
 
 // PublishRef — faol publish'ning ko'rsatkichi (stats/status uchun).
@@ -73,12 +75,13 @@ type PublishRef struct {
 }
 
 type cmd struct {
-	kind  cmdKind
-	key   Key
-	sess  string
-	ttl   time.Duration // start/refresh uchun (§9.2)
-	n     int           // cmdSetLimits uchun (§10.4)
-	reply chan any      // buffered(1): StartResult|error | int | nil
+	kind   cmdKind
+	key    Key
+	sess   string
+	ttl    time.Duration // start/refresh uchun (§9.2)
+	n      int           // cmdSetLimits uchun (§10.4)
+	reason string        // cmdCloseAll uchun (§9.4)
+	reply  chan any      // buffered(1): StartResult|error | int | nil
 }
 
 type entry struct {
@@ -207,6 +210,13 @@ func (r *Registry) handle(st *wstate, c cmd) any {
 		return refs
 	case cmdSetLimits:
 		st.maxUploads = c.n
+		return nil
+	case cmdCloseAll:
+		// §9.4: barcha publish'larni belgilangan reason bilan yopish.
+		for k, e := range entries {
+			delete(entries, k)
+			r.onStopped(StoppedEvent{PublishID: e.publishID, Key: k, Reason: c.reason})
+		}
 		return nil
 	}
 	return nil
@@ -359,6 +369,12 @@ func (r *Registry) List() []PublishRef {
 		return nil
 	}
 	return v.([]PublishRef)
+}
+
+// CloseAll — barcha faol publish'larni reason bilan yopadi (§9.4:
+// agent_restart / shutdown). media_stopped hodisalari yuboriladi.
+func (r *Registry) CloseAll(reason string) {
+	_, _ = r.send(cmd{kind: cmdCloseAll, reason: reason})
 }
 
 // Shutdown — yozuvchi goroutine'ni to'xtatadi.

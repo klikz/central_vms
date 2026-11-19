@@ -94,3 +94,27 @@ func TestPreview_Play_SinglePublishTwoSessions(t *testing.T) {
 		t.Errorf("media_ready = %d, 1 kutilardi (bitta upload)", ev.nReady())
 	}
 }
+
+// §9.4: CloseAll — barcha publish'lar agent_restart bilan yopiladi.
+func TestCloseAll_AgentRestart(t *testing.T) {
+	clk := clock.NewFake(time.Unix(0, 0))
+	ev := newEvLog()
+	r := New(clk, nil, ev.onReady, ev.onStopped)
+	defer r.Shutdown()
+
+	r.Start("s1", Key{CameraID: "c1", Profile: "main", Ingest: "whip"}, "play")
+	r.Start("s2", Key{CameraID: "c2", Profile: "sub", Ingest: "rtsp_tcp"}, "play")
+	r.CloseAll(ReasonAgentRestart)
+
+	if n := len(r.List()); n != 0 {
+		t.Errorf("List = %d, 0 kutilardi", n)
+	}
+	if ev.nStopped() != 2 {
+		t.Fatalf("stopped = %d, 2 kutilardi", ev.nStopped())
+	}
+	for _, want := range []string{ReasonAgentRestart} {
+		if st := ev.lastStopped(); st.Reason != want {
+			t.Errorf("reason = %q, %q kutilardi", st.Reason, want)
+		}
+	}
+}

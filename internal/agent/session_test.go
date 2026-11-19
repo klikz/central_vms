@@ -248,13 +248,13 @@ func TestServe_HeartbeatAndGracefulClose(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("Run mayin to'xtamadi")
 	}
-	// Server tomonida yopinish kodi 1000 (mayin) bo'lishi kerak
+	// §9.4: agent mayin yopilganda WS kodi 1001 (Going Away) bo'ladi.
 	time.Sleep(100 * time.Millisecond)
 	mu.Lock()
 	code := closedCode
 	mu.Unlock()
-	if code != 1000 {
-		t.Fatalf("yopinish kodi=%d, kutilgan 1000", code)
+	if code != 1001 {
+		t.Fatalf("yopinish kodi=%d, kutilgan 1001 (§9.4)", code)
 	}
 }
 
