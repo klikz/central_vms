@@ -92,7 +92,7 @@ func applyScopes(d *Device) {
 			d.Name = v
 		case "hardware":
 			d.Model = v
-		case "mac_address":
+		case "mac_address", "MAC", "mac": // Hikvision "MAC/xx:.." yozadi
 			d.MAC = v
 		case "serial":
 			d.Serial = v

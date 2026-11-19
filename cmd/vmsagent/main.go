@@ -17,6 +17,7 @@ import (
 
 	"central-vms/client/internal/camsvc"
 	"central-vms/client/internal/config"
+	"central-vms/client/internal/discovery"
 	"central-vms/client/internal/localui"
 	"central-vms/client/internal/logbuf"
 	"central-vms/client/internal/logx"
@@ -175,10 +176,12 @@ func run(ctx context.Context, log *slog.Logger, cfgPath, enrollCode string,
 	}
 
 	// UI (§17): holat chizig'i sessiya holatini ko'rsatadi (C1.13)
+	cs := camsvc.New(rt.st, rt.ks)
 	ui, err := localui.NewServer(cfg, log, version, localui.Deps{
 		Status:       rt.statusFn,
 		LogLines:     func(limit int) []string { return ring.Recent(limit) },
-		Cams:         camsvc.New(rt.st, rt.ks),
+		Cams:         cs,
+		Discovery:    newDiscoverySvc(cs, cfg),
 		SelftestRun:  func(ctx context.Context) []selftest.Result { return rt.selftest.Run(ctx) },
 		SelftestLast: func() []selftest.Result { return rt.selftest.Last() },
 	})
@@ -282,4 +285,20 @@ func containsWhip(s string) bool {
 		}
 	}
 	return false
+}
+
+// newDiscoverySvc — §16.2: WS-Discovery + port-scan skaneri.
+// CIDRs sozlanmagan bo'lsa skaner faol interfeys tarmoqlarini oladi.
+func newDiscoverySvc(cs *camsvc.Service, cfg config.Config) *discovery.Scanner {
+	return discovery.NewScanner(cs, func() []discovery.Known {
+		var out []discovery.Known
+		for _, c := range cs.List() {
+			out = append(out, discovery.Known{ID: c.ID, IP: c.Host, Port: c.Port})
+		}
+		return out
+	}, discovery.ScannerConfig{
+		CIDRs:    cfg.Discovery.CIDRs,
+		Ports:    cfg.Discovery.RTSPScanPorts,
+		MaxHosts: cfg.Discovery.MaxHosts,
+	})
 }

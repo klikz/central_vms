@@ -164,3 +164,18 @@ func RTSPHostProbe(timeout time.Duration) HostProbe {
 		return len(sdp) > 0
 	}
 }
+
+// TCPHostProbe — port ochiqligini tekshiradi (TCP ulanish). Anonim
+// DESCRIBE talab qilinmaydi: parol so'raydigan (401) kameralar ham
+// ro'yxatga tushadi — parol qo'shish bosqichida so'raladi.
+func TCPHostProbe(timeout time.Duration) HostProbe {
+	return func(ctx context.Context, host string, port int) bool {
+		d := net.Dialer{Timeout: timeout}
+		c, err := d.DialContext(ctx, "tcp", net.JoinHostPort(host, strconv.Itoa(port)))
+		if err != nil {
+			return false
+		}
+		_ = c.Close()
+		return true
+	}
+}
