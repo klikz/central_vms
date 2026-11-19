@@ -466,7 +466,7 @@ onvif:
 discovery:
   cidrs: ["192.168.10.0/24"]            # rtsp_scan uchun; /22 dan keng bo'lsa rad etiladi
   onvif_timeout_s: 10
-  rtsp_scan_ports: [554]
+  rtsp_scan_ports: [554, 8554, 10554]   # RTSP bo'yicha qidiruv portlari
   max_hosts: 1024
 publish:
   whip_fallback: rtsp_tcp               # UDP ishlamasa

@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -178,4 +179,31 @@ func TCPHostProbe(timeout time.Duration) HostProbe {
 		_ = c.Close()
 		return true
 	}
+}
+
+// RTSPBanner — ochiq RTSP portga qisqa OPTIONS yuborib, "Server:" sarlavhasi
+// va autentifikatsiya talabini qaytaradi (§16.1: ONVIF bo'lmagan kameralarni
+// ham nomlash uchun). Xato → bo'sh satrlar (natijaga ta'sir qilmaydi).
+func RTSPBanner(ctx context.Context, ip string, port int, timeout time.Duration) (server string, needAuth bool) {
+	d := net.Dialer{Timeout: timeout}
+	c, err := d.DialContext(ctx, "tcp", net.JoinHostPort(ip, strconv.Itoa(port)))
+	if err != nil {
+		return "", false
+	}
+	defer c.Close()
+	if tc, ok := c.(*net.TCPConn); ok {
+		_ = tc.SetKeepAlive(false)
+	}
+	_ = c.SetDeadline(time.Now().Add(timeout))
+	fmt.Fprintf(c, "OPTIONS rtsp://%s/ RTSP/1.0\r\nCSeq: 1\r\nUser-Agent: vmsagent\r\n\r\n", ip)
+	buf := make([]byte, 1024)
+	n, _ := c.Read(buf)
+	resp := string(buf[:n])
+	for _, ln := range strings.Split(resp, "\r\n") {
+		if strings.HasPrefix(strings.ToLower(ln), "server:") {
+			server = strings.TrimSpace(ln[len("server:"):])
+		}
+	}
+	needAuth = strings.Contains(resp, "401")
+	return server, needAuth
 }

@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"net"
 	"testing"
 	"time"
 
@@ -118,5 +119,32 @@ func TestMarkKnownByIP(t *testing.T) {
 	markKnownByIP(res, []Known{{ID: "old", IP: "1.2.3.4", Port: 0}})
 	if !res[0].AlreadyKnown || res[0].ExistingID != "old" {
 		t.Fatalf("IP bo'yicha known bo'lishi kerak edi: %+v", res[0])
+	}
+}
+
+func TestEnrichRTSP(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		b := make([]byte, 512)
+		_, _ = c.Read(b)
+		_, _ = c.Write([]byte("RTSP/1.0 200 OK\r\nCSeq: 1\r\nServer: TestCam-9000\r\nPublic: OPTIONS\r\n\r\n"))
+	}()
+	port := ln.Addr().(*net.TCPAddr).Port
+	devs := []Device{{IP: "127.0.0.1", Port: port}, {IP: "10.9.9.9", Port: 554}}
+	enrichRTSP(context.Background(), devs, 300*time.Millisecond, 2)
+	if devs[0].Model != "TestCam-9000" {
+		t.Errorf("banner o'qilmadi: %+v", devs[0])
+	}
+	if devs[1].Model != "" {
+		t.Errorf("yopiq host model olmasligi kerak: %+v", devs[1])
 	}
 }

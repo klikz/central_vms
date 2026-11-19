@@ -14,14 +14,15 @@ import (
 
 // ScannerConfig — skan parametrlari (config.Discovery'dan).
 type ScannerConfig struct {
-	CIDRs       []string                     // bo'sh → faol interfeys tarmoqlari
-	Ports       []int                        // default [554]
-	MaxHosts    int                          // default 1024 (§16.4)
-	Parallel    int                          // default 25 (§16.1)
-	HostTimeout time.Duration                // bitta host (default 500 ms)
-	WsddTimeout time.Duration                // multicast kutish (default 3 s)
-	Probe       HostProbe                    // nil → TCPHostProbe (port ochiqligi)
-	Wsdd        func(time.Duration) []Device // nil → wsddDevices (test uchun inject)
+	CIDRs         []string                     // bo'sh → faol interfeys tarmoqlari
+	Ports         []int                        // default [554]
+	MaxHosts      int                          // default 1024 (§16.4)
+	Parallel      int                          // default 25 (§16.1)
+	HostTimeout   time.Duration                // bitta host (default 500 ms)
+	WsddTimeout   time.Duration                // multicast kutish (default 3 s)
+	Probe         HostProbe                    // nil → TCPHostProbe (port ochiqligi)
+	Wsdd          func(time.Duration) []Device // nil → wsddDevices (test uchun inject)
+	BannerTimeout time.Duration                // RTSP OPTIONS banner (0 → 500 ms)
 }
 
 type Scanner struct {
@@ -52,6 +53,9 @@ func NewScanner(creator CameraCreator, known func() []Known, cfg ScannerConfig) 
 	}
 	if cfg.Probe == nil {
 		cfg.Probe = TCPHostProbe(cfg.HostTimeout)
+	}
+	if cfg.BannerTimeout <= 0 {
+		cfg.BannerTimeout = 500 * time.Millisecond
 	}
 	return &Scanner{creator: creator, known: known, cfg: cfg}
 }
@@ -93,6 +97,7 @@ func (s *Scanner) StartScan() (int, error) {
 		devs = append(devs, got...)
 	}
 	devs = dedupeByIP(devs)
+	enrichRTSP(ctx, devs, s.cfg.BannerTimeout, s.cfg.Parallel)
 	var known []Known
 	if s.known != nil {
 		known = s.known()
@@ -125,6 +130,35 @@ func markKnownByIP(res []MergeResult, known []Known) {
 			res[i].AlreadyKnown, res[i].ExistingID = true, id
 		}
 	}
+}
+
+// enrichRTSP — ONVIF'da nomi yo'q qurilmalarga RTSP OPTIONS bannerini
+// so'raydi: "Server: Hikvision/…" yoki 401 (parol talab) ma'lumoti.
+func enrichRTSP(ctx context.Context, devs []Device, timeout time.Duration, parallel int) {
+	if parallel <= 0 {
+		parallel = 8
+	}
+	sem := make(chan struct{}, parallel)
+	var wg sync.WaitGroup
+	for i := range devs {
+		if devs[i].Model != "" {
+			continue
+		}
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			srv, auth := RTSPBanner(ctx, devs[i].IP, devs[i].Port, timeout)
+			switch {
+			case srv != "":
+				devs[i].Model = srv
+			case auth:
+				devs[i].Model = "RTSP (auth)"
+			}
+		}(i)
+	}
+	wg.Wait()
 }
 
 // dedupeByIP — bitta IP bo'yicha bir yozuv: WS-Discovery ma'lumoti

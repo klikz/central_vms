@@ -84,7 +84,7 @@ func Default() Config {
 
 	c.Discovery.CIDRs = nil
 	c.Discovery.OnvifTimeoutS = 10
-	c.Discovery.RTSPScanPorts = []int{554}
+	c.Discovery.RTSPScanPorts = []int{554, 8554, 10554}
 	c.Discovery.MaxHosts = 1024
 
 	c.Publish.WhipFallback = "rtsp_tcp"
