@@ -73,11 +73,44 @@ var paths = []string{"/", "/live", "/live/main", "/video", "/video1", "/video2",
 	"/11", "/12", "/h264", "/h264preview", "/Streaming/Channels/101", "/Streaming/Channels/201",
 	"/cam/realmonitor?channel=1&subtype=0", "/mpeg4?tcpstream=0", "/ONVIF/MEDIA/PREVIEW/AVC",
 	"/Live?node=0", "/media/video1", "/ch0_0.h264", "/ps/onvif_media1", "/video.cgi", "/videostream.cgi", "/livestream/0", "/1.h264",
-	"/h264stream", "/media/1", "/1", "/2", "/video?2,3", "/ch01", "/ch02", "/av0", "/av1"}
+	"/h264stream", "/media/1", "/1", "/2", "/video?2,3", "/ch01", "/ch02", "/av0", "/av1",
+	"/0", "/0.h264", "/high", "/low", "/h264high", "/h264low", "/magic1/monitor",
+	"/media/video?channel=1", "/video.mp4", "/live1.mp4", "/webclient", "/video1.mp4"}
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "-wsdd" {
 		wsdd()
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "-pull" {
+		// lanprobe -pull <rtsp-url> <user> <pass> [sekund]
+		if len(os.Args) < 5 {
+			fmt.Fprintln(os.Stderr, "ishlatish: lanprobe -pull <rtsp-url> <user> <pass> [sekund]")
+			os.Exit(2)
+		}
+		secs := 5
+		if len(os.Args) > 5 {
+			fmt.Sscanf(os.Args[5], "%d", &secs)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(secs+10)*time.Second)
+		defer cancel()
+		var aus, bytes int64
+		var first string
+		err := cams.Pull(ctx, cams.PullOptions{URL: os.Args[2], User: os.Args[3], Pass: os.Args[4]},
+			func(a cams.AU) error {
+				aus++
+				for _, n := range a.Nals {
+					bytes += int64(len(n))
+				}
+				if first == "" {
+					first = fmt.Sprintf("nal0=0x%02x ts=%d", a.Nals[0][0], a.Timestamp)
+				}
+				return nil
+			})
+		fmt.Printf("AU=%d bayt=%d %s err=%v\n", aus, bytes, first, err)
+		if aus == 0 {
+			os.Exit(1)
+		}
 		return
 	}
 	if len(os.Args) < 2 {
