@@ -227,7 +227,7 @@ kodek + caps to'g'ri; kamera o'chirilsa serverda ham o'chadi; nom o'zgarsa `id` 
 > Eng xavfli bosqich. Medium rejimda **eng mayda qadamlar** shu yerda: har bir transport,
 > har bir holat alohida qadam + alohida fixture. Har qadamda **bitta** yangi tushuncha.
 
-### C3 holati (2026-11-19) — 19/20 bajarildi + media yo'li to'liq ulangan (mock e2e)
+### C3 holati (2026-11-19) — 19/20 bajarildi; MEDIA YO'LI TAYOR (mock e2e: rtsp_tcp + whip)
 - **Tarmoq aniqligi:** `pion/webrtc` + `pion/rtp` + barcha pion bo'linmalari modulkeshda **haqiqiy** (tekshirildi: 249 fayl, SDP offer ishlaydi) — WHIP yo'li Go-native. `bluenviron/gortsplib`/`mediacommon` esa **stub** (bo'sh taqilgan paketlar) — RTSP publish/pull o'z `internal/rtspclient`imizda (ANNOUNCE/SETUP/RECORD + `$`-freym), RTP packetizerlar o'zimiz yozdik (RFC 6184 / RFC 7798), H.265/zaxira yo'llarida FFmpeg (`-f whip` ≥7.1 darvozasi bilan).
 - **Qolganlar:** **C3.20** (real server S2 bilan `make itest SCENARIO=c3*`) — server tomoni S2/S3 tayyor bo'lganda.
 - **Test infratuzilmasi:** pion-ikkinchi-PC WHIP sunucusi (tarmoqsiz SDP qo'l berishuv), fake RTSP server (interleaved yozib oluvchi), `ffmpeg` real smoke (lavfi→mp4, progress), fake clock TTL/grace. `go test ./... -race` 18 paket toza; publish 82 %, rtspclient 86 %, ffmpeg 87 %.
