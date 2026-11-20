@@ -36,13 +36,18 @@ func newHTTPServer(cfg config.Config, lg *slog.Logger, deps *httpapi.Deps) []*ht
 		mux.Handle("/api/", deps.Mux)
 	}
 
+	// Auth-hook (protocol.md §15): MediaMTX bu portga yozadi. S2'da real
+	// tekshiruv: token → sha256 → DB → path+action mosligi → expireAt.
 	hookMux := http.NewServeMux()
-	hookMux.HandleFunc("/internal/auth", func(w http.ResponseWriter, _ *http.Request) {
-		// S2: token→sessiya→path→user tekshiruvi (protocol.md §15).
-		writeJSON(w, http.StatusNotImplemented, map[string]any{
-			"error": "not_implemented", "detail": "auth-hook S2 bosqichida ishlaydi",
+	if deps != nil && deps.MTXHook != nil {
+		hookMux.Handle("/internal/auth", deps.MTXHook)
+	} else {
+		hookMux.HandleFunc("/internal/auth", func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, http.StatusNotImplemented, map[string]any{
+				"error": "not_implemented", "detail": "auth-hook ulanmagan",
+			})
 		})
-	})
+	}
 
 	srv := &http.Server{
 		Addr:              cfg.Bind,

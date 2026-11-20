@@ -92,34 +92,11 @@ func TestServeUntilSignal_Graceful(t *testing.T) {
 	}
 }
 
-func TestPickBackend(t *testing.T) {
-	cases := []struct {
-		encs, decs []string
-		want       string
-	}{
-		{[]string{"h264_nvenc", "libx264"}, []string{"hevc_cuvid"}, "nvenc"},
-		{[]string{"h264_vaapi", "libx264"}, []string{"hevc_vaapi"}, "vaapi/amf"},
-		{[]string{"libx264"}, []string{"hevc"}, "software(libx264)"},
-		{nil, nil, "yo'q"},
-	}
-	for i, c := range cases {
-		if got := pickBackend(c.encs, c.decs); got != c.want {
-			t.Errorf("case %d: got %q want %q", i, got, c.want)
-		}
-	}
-}
-
-func TestFFmpegCodecs_MissingBinary(t *testing.T) {
-	if _, _, err := ffmpegCodecs("yoq-ffmpeg-binari"); err == nil {
-		t.Fatal("yo'q binary uchun xato kutilardi")
-	}
-}
-
 func TestProbeRuns(t *testing.T) {
 	if _, err := os.Stat("/usr/bin/ffmpeg"); err != nil {
 		t.Skip("ffmpeg yo'q — probe testi o'tkazib yuborildi")
 	}
-	if err := runProbe(testLogger(), testCfg(t)); err != nil {
+	if err := runProbe(testLogger(), testCfg(t), nil, true); err != nil {
 		t.Fatalf("runProbe: %v", err)
 	}
 }

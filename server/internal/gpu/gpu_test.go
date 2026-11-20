@@ -116,6 +116,32 @@ func TestDetect_RealFFmpeg(t *testing.T) {
 	t.Logf("detect: backend=%s enc=%s dec=%s gpu=%q", c.Backend, c.Encoder, c.HEVCDecoder, c.GPUName)
 }
 
+func TestProbe_FallsBackToWorkingEncoder(t *testing.T) {
+	// Bu mashinada amalda kuzatilgan holat: nvenc ro'yxatda bor, lekin
+	// drayver eski → runtime'da yiqiladi. Probe keyingisiga o'tishi kerak.
+	_, thisFile, _, _ := runtime.Caller(0)
+	script := filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata", "fakeencoder.sh")
+	c := Caps{Backend: BackendNVENC, Encoder: "h264_nvenc",
+		Encoders: []string{"h264_nvenc", "h264_vaapi", "libx264"},
+		Decoders: []string{"hevc_cuvid"}}
+	got, notes := Probe(script, c)
+	if got.Backend != BackendSoft || got.Encoder != "libx264" {
+		t.Fatalf("fallback ishlamadi: %+v", got)
+	}
+	if len(notes) != 2 {
+		t.Fatalf("2 ta ishlamagan backend kutilardi: %v", notes)
+	}
+	// Hech qanday encoder ishlamasa — BackendNone.
+	all := filepath.Join(t.TempDir(), "alwayfail.sh")
+	if err := os.WriteFile(all, []byte("#!/usr/bin/env bash\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got2, notes2 := Probe(all, Caps{Encoders: []string{"h264_nvenc", "libx264"}})
+	if got2.Backend != BackendNone || len(notes2) != 2 {
+		t.Fatalf("hammasi ishlamasligi: %+v %v", got2, notes2)
+	}
+}
+
 func TestDetect_MissingFFmpeg(t *testing.T) {
 	c, err := Detect("yoq-binar")
 	if err == nil || c.Backend != BackendNone {

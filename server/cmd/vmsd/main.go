@@ -42,6 +42,7 @@ func run() error {
 		cfgPath  = flag.String("config", "config/dev.yaml", "konfiguratsiya YAML fayli")
 		webDir   = flag.String("web", "", "UI statikasi papkasi (bo'sh → config.web_dir)")
 		probe    = flag.Bool("probe", false, "server quvvatini o'lchab chiqish (make probe)")
+		probeQ   = flag.Bool("probe-quick", false, "probe: sig'im o'lchovisiz (tez)")
 		migrateO = flag.Bool("migrate-only", false, "faqat migratsiyani bajarib chiqish")
 		migrate  = flag.String("migrate", "", "migratsiya amali: up|down|status (make migrate-*)")
 		seedAdm  = flag.String("seed-admin", "", "admin yaratish/yangilash: username:parol (make admin)")
@@ -69,10 +70,6 @@ func run() error {
 	defer logW.Close()
 	lg = lg.With(slog.String("svc", "vmsd"), slog.String("version", version.Version))
 
-	if *probe {
-		return runProbe(lg, cfg)
-	}
-
 	if *migrate != "" {
 		return runMigrate(lg, cfg, *migrate)
 	}
@@ -80,7 +77,9 @@ func run() error {
 	// Port tekshiruvi (REJA §2.1/1): band bo'lsa aniq xato, tashqi xizmatni
 	// o'zi to'xtatmaydi. API bind porti 0 bo'lsa (testlar) tekshirilmaydi.
 	// UDP: MediaMTX RTP/RTCP (8000/8001) va WebRTC ICE (8189).
-	if apiPort := portOf(cfg.Bind); apiPort != 0 {
+	// seed-admin/migrate-only rejimlarda portlar kerak emas — yozib o'tirgan
+	// vmsd bilan to'qnashuv bo'lmasligi uchun tekshiruv o'tkazib yuboriladi.
+	if apiPort := portOf(cfg.Bind); apiPort != 0 && *seedAdm == "" && !*migrateO {
 		if err := ports.Check(
 			[]int{apiPort, cfg.MediaMTX.RTSPPort, cfg.MediaMTX.HLSPort, cfg.MediaMTX.WebRTCPort},
 			[]int{8000, 8001, 8189},
@@ -104,6 +103,9 @@ func run() error {
 	if *migrateO {
 		lg.Info("migrate-only: tayyor")
 		return nil
+	}
+	if *probe {
+		return runProbe(lg, cfg, db, *probeQ)
 	}
 	if *seedAdm != "" {
 		return runSeedAdmin(lg, db, *seedAdm)
@@ -144,6 +146,13 @@ func run() error {
 		lg.Warn("transcode_backend so'ralmagan imkoniyat — avtomatik tanlovda qoladi",
 			"requested", cfg.Media.TranscodeBackend, "detected", caps.Backend)
 	}
+	// Runtime probe: ro'yxatda bor encoder drayver/xato tufayli ishlamasligi
+	// mumkin — zanjir bo'yicha tekshirib, ishlaydiganini tanlaymiz.
+	caps, notes := gpu.Probe(cfg.Media.FFmpegPath, caps)
+	for _, n := range notes {
+		lg.Warn("probe: backend ishlamadi", "detail", n)
+	}
+	lg.Info("transcode backend (probe natijasi)", "backend", caps.Backend, "encoder", caps.Encoder)
 	tr := media.NewTranscoder(cfg.Media.FFmpegPath, cfg.Media.MaxTranscodes, lg)
 	defer tr.StopAll()
 	mtokens := media.NewTokens(db, nil)
@@ -168,6 +177,7 @@ func run() error {
 		WHEPPort: cfg.MediaMTX.WebRTCPort, RTSPPort: cfg.MediaMTX.RTSPPort,
 	})
 	defer mgr.Close()
+	tr.SetOnFailure(mgr.OnTranscodeFailure)
 	hub.SetSink(mgr)
 	deps.Media = mgr
 	deps.MTXHook = media.NewHook(mtokens, lg)

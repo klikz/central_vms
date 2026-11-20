@@ -29,10 +29,20 @@ Login rate-limit: 5 urinish / 5 min → `429 rate_limited`. Noto'g'ri parol: `40
 |---|---|---|
 | POST | `/api/cameras/{id}/play` | `{profile:"sub"|"main", browser:{hevc:bool}}` → `{session_id, whep_url, token, ttl, codec, transcoded}` |
 | POST | `/api/cameras/{id}/preview` | `{on:true|false}` → preview sessiya (kind=preview, profile=sub) |
-| POST | `/api/sessions/{id}/stop` | sessiyani mayin to'xtatish |
+| DELETE | `/api/sessions/{id}` | sessiyani mayin to'xtatish (idempotent) |
+| POST | `/api/sessions/refresh` | `{session_id, extend_s}` → TTL uzatish (2 min) |
 | GET | `/api/sessions` | faol oqimlar (admin: barchasi, viewer: o'ziniki) |
 
-Xato kodlari: `404 not_found`, `409 client_offline`, `429 user_limit` / `global_limit` / `client_uploads` / `preview_limit` (`detail`da limit va navbat holati), `503 media_offline`.
+Xato kodlari: `404 not_found`, `403 disabled`, `409 client_offline`,
+`429 user_limit` / `global_limit` / `client_uploads` / `preview_limit`
+(`detail`da limit holati; navbat — S2.5 qoldig'i), `503 media_offline`.
+
+**S2'da tekshirilgan (2026-11-20, `make e2e-s2`):** `play` javobida `token`
+MediaMTX o'quvchi tokenidir — RTSP'da `?token=`, WHEP'da `Authorization: Bearer`
+bilan beriladi; token TTL davomida bitta session/path/action uchun qayta
+ishlatiladi, boshqa path yoki action'da `403`. Sessiya yopilgach MediaMTX
+readers=0 bo'ladi va `idle_stop_s` keyin agentga `media_stop` yuboriladi
+(har sessiya ID'si uchun alohida).
 
 ## Favorites va Layouts (S1/S3)
 

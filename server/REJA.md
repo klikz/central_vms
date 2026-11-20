@@ -52,6 +52,7 @@ S0'da bu fayl `docs/protocol.md` ga ko'chiriladi (yoki symlink); keyin o'zgarish
 | 3 | **`MEDIAMTX_VERSION = v1.11.3`** (dev mashinada o'rnatilgan versiya) — `make media-get` shu tag'ni oladi. |
 | 4 | **Proto tiplari serverda nusxa** (§2.8) — `shared/` modul chiqarilmaydi. |
 | 5 | **GPU modeli oldindan belgilangan emas** — prod serverga istalgan GPU o'rnatilishi mumkin yoki umuman bo'lmasligi mumkin. Transcode backend'i ishga tushishda avtomatik aniqlanadi: `h264_nvenc`(+`hevc_cuvid`) → `h264_vaapi`/`h264_amf` → `libx264` (software). Parallel limit `make probe` bilan har mashinada o'lchanadi. Kodda GPU modeli **hardcode taqiqlangan**. |
+| 6 | **Runtime probe (2026-11-20, amalda kuzatilgan):** `ffmpeg -encoders` ro'yxatida bo'lishi encoder HAQIQATAN ishlashini anglatmaydi — dev mashinada `h264_nvenc` ro'yxatda bor, lekin drayver eski (`Required: 13.1, Found: 13.0`) va birinchi kadrdanoq yiqiladi. Shuning uchun: (a) ishga tushishda `gpu.Probe` har backend'da 1 kadr encode qilib ko'radi va ishlaydiganini tanlaydi; (b) transcode jarayoni 5 s ichida yiqilsa Transcoder o'sha backend'ni "yomon" deb belgilaydi, menejer zanjir bo'yicha (nvenc → vaapi → amf → libx264) qayta urinishadi; (c) `make probe` parallel sig'imni o'lchab `settings.server_max_transcodes` ga yozadi. GPU almashtirilsa yoki drayver eskirsa qayta qurish/sozlash talab qilinmaydi. |
 
 ## 3. Komponentlar
 

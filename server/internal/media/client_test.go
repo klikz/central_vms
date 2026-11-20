@@ -80,10 +80,24 @@ func TestReaders(t *testing.T) {
 	if err != nil || n != 3 {
 		t.Fatalf("readers: %d %v", n, err)
 	}
-	// Path yo'q (404) → xato (poller loglaydi, sessiyani buzmaydi).
+	// Path yo'q (404) → readers=0: idle stop shu holda publish'ni yopadi.
 	srv404, _ := mockMTX(t, 404, "")
-	if _, err := NewClient(srv404.URL).Readers("cam/a/b"); err == nil {
-		t.Fatal("404 readersda xato berishi kerak")
+	n404, err404 := NewClient(srv404.URL).Readers("cam/a/b")
+	if err404 != nil || n404 != 0 {
+		t.Fatalf("404 readers=0 bo'lishi kerak: %d %v", n404, err404)
+	}
+}
+
+func TestReadersArrayShape(t *testing.T) {
+	// v1.11.3 haqiqiy ko'rinishi: readers — obyektlar ro'yxati.
+	srv, _ := mockMTX(t, 200, `{"name":"cam/a/b","readers":[{"id":"r1","remoteAddr":"1.2.3.4:5"},{"id":"r2"}]}`)
+	n, err := NewClient(srv.URL).Readers("cam/a/b")
+	if err != nil || n != 2 {
+		t.Fatalf("array readers: %d %v", n, err)
+	}
+	srv0, _ := mockMTX(t, 200, `{"name":"cam/a/b","readers":[]}`)
+	if n, err := NewClient(srv0.URL).Readers("cam/a/b"); err != nil || n != 0 {
+		t.Fatalf("bo'sh array: %d %v", n, err)
 	}
 }
 

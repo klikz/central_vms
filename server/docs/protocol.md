@@ -528,6 +528,13 @@ MediaMTX yuboradi (rasmiy maydonlar):
 - Javob: `200 {"allow": true}` yoki `403`. Qo'shimcha imkoniyat (tavsiya etiladi):
   `200 {"expireAt": "2026-11-19T10:01:00Z"}` — MediaMTX sessiyani o'zi yopadi, TTL watchdog ikki tomonlama ishlaydi.
 - Tekshiruv zanjiri: `token` → sha256 → DB → session → `path` mosligi → user/client huquqi.
+- **v1.11.3'da tekshirildi (2026-11-20):** RTSP so'rovlarida token `token`
+  maydonida BO'SH, `query` satrida (`token=...`) keladi; WHIP/WHEP'da esa
+  `Authorization: Bearer` `token` maydoniga tushadi. Klient uchala manbani
+  ham o'qiydi (`ExtractToken`).
+- Control API (`/v3/paths/get/{name}`) — YAKKA obyekt, `readers` maydoni —
+  **obyektlar ro'yxati**; path bo'lmasa 404 (idle stop uchun readers=0
+  deb olinadi).
 - `tc/...` publish'i uchun alohida **ichki token** (server o'zi FFmpeg'ga beradi).
 
 ## 16. Discovery va ommaviy qo'shish (agent, lokal UI)

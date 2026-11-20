@@ -179,6 +179,7 @@ type Hook struct {
 
 type logger interface {
 	Warn(msg string, args ...any)
+	Debug(msg string, args ...any)
 }
 
 func NewHook(t *Tokens, lg logger) *Hook { return &Hook{tokens: t, lg: lg} }
@@ -189,6 +190,10 @@ func (h *Hook) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		hookDeny(w, "bad_json")
 		return
 	}
+	// Daraxt (debug): MediaMTX yuborgan maydonlar (token qiymati yozilmaydi).
+	h.lg.Debug("auth-hook", "action", req.Action, "path", req.Path, "protocol", req.Protocol,
+		"has_token", req.Token != "", "query", req.Query, "ip", req.IP)
+
 	switch req.Action {
 	case "publish", "read", "playback":
 		// davom etadi

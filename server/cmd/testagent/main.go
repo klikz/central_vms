@@ -1,7 +1,7 @@
 // testagent — soxta agent (server REJA §6, TASKS S0/S1/S2).
-// S0 skeleti: enroll + auth/welcome handshake + hello + cams_sync (N kamera)
-// + cam_status. S2'da haqiqiy WHIP/RTSP publish qo'shiladi (FFmpeg test pattern).
-// Client kutilmaydi: `make devserver` (client repodagi mock) ustida ham ishlaydi.
+// S0: enroll + handshake + cams_sync. S1: cam_status pulse.
+// S2: -publish rejimi — media_start kelganda FFmpeg test pattern'ini
+// MediaMTX'ga RTSP bilan yuboradi (haqiqiy oqim; e2e qabul uchun).
 package main
 
 import (
@@ -13,7 +13,9 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -31,17 +33,83 @@ func main() {
 		secret   = flag.String("secret", "", "mavjud agent_secret")
 		nCams    = flag.Int("cams", 100, "soxta kameralar soni")
 		hostname = flag.String("hostname", "testagent", "hostname")
-		once     = flag.Bool("once", false, "cams_ackdan keyin chiqish (e2e testlar uchun)")
+		once     = flag.Bool("once", false, "cams_ackdan keyin chiqish (S1 e2e testlari uchun)")
+		publish  = flag.Bool("publish", false, "media_start'da FFmpeg test pattern'ini chiqaradi (S2)")
+		ffmpeg   = flag.String("ffmpeg", "ffmpeg", "ffmpeg yo'li (-publish uchun)")
+		size     = flag.String("size", "1280x720", "test pattern o'lchami")
+		fps      = flag.Int("fps", 15, "test pattern fps")
 	)
 	flag.Parse()
 
-	if err := run(*server, *code, *agentID, *secret, *nCams, *hostname, *once); err != nil {
+	err := run(*server, *code, *agentID, *secret, *nCams, *hostname, *once, *publish, *ffmpeg, *size, *fps)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "testagent: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(server, code, agentID, secret string, nCams int, hostname string, once bool) error {
+// publisher — bitta kamera uchun FFmpeg test pattern jarayoni.
+type publisher struct {
+	mu     sync.Mutex
+	cmds   map[string]*pubProc // session_id → jarayon
+	ffmpeg string
+	size   string
+	fps    int
+}
+
+// pubProc — bitta FFmpeg jarayoni; done kanali BIR marta Wait() bilan yopiladi
+// (ikki marta Wait() Go'da xato beradi — jarayon o'lmagan holda "o'ldi" deb
+// o'ylanardi, amalda topilib tuzatildi).
+type pubProc struct {
+	cmd  *exec.Cmd
+	done chan struct{}
+}
+
+func (p *publisher) start(ms proto.MediaStart) (int64, error) {
+	url := ms.Publish.URLs.RTSP
+	if url == "" {
+		return 0, fmt.Errorf("rtsp publish URL yo'q")
+	}
+	if ms.Publish.Token != "" {
+		url += "?token=" + ms.Publish.Token
+	}
+	t0 := time.Now()
+	// testsrc → libx264 → RTSP (TCP). Haqiqiy agentda manba kameradan oladi.
+	cmd := exec.Command(p.ffmpeg, "-hide_banner", "-loglevel", "error",
+		"-re", "-f", "lavfi", "-i", fmt.Sprintf("testsrc=size=%s:rate=%d", p.size, p.fps),
+		"-an", "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
+		"-pix_fmt", "yuv420p", "-f", "rtsp", "-rtsp_transport", "tcp", url)
+	if err := cmd.Start(); err != nil {
+		return 0, fmt.Errorf("ffmpeg start: %w", err)
+	}
+	pr := &pubProc{cmd: cmd, done: make(chan struct{})}
+	p.mu.Lock()
+	p.cmds[ms.SessionID] = pr
+	p.mu.Unlock()
+	go func() { _ = cmd.Wait(); close(pr.done) }()
+	return time.Since(t0).Milliseconds(), nil
+}
+
+func (p *publisher) stop(sessionID string) {
+	p.mu.Lock()
+	pr, ok := p.cmds[sessionID]
+	if ok {
+		delete(p.cmds, sessionID)
+	}
+	p.mu.Unlock()
+	if !ok || pr.cmd.Process == nil {
+		return
+	}
+	_ = pr.cmd.Process.Signal(syscall.SIGINT)
+	select {
+	case <-pr.done: // Wait() goroutine'si yopadi
+	case <-time.After(3 * time.Second):
+		_ = pr.cmd.Process.Kill()
+		<-pr.done
+	}
+}
+
+func run(server, code, agentID, secret string, nCams int, hostname string, once, publish bool, ffmpegPath, size string, fps int) error {
 	base := server
 
 	if code != "" {
@@ -100,11 +168,16 @@ func run(server, code, agentID, secret string, nCams int, hostname string, once 
 
 	cams := make([]proto.CameraEntry, 0, nCams)
 	for i := range nCams {
+		main, sub := "h265", "h264"
+		if publish && i == 0 {
+			// Test pattern H.264 chiqariladi — kodek ma'lumoti shunga mos.
+			main, sub = "h264", "h264"
+		}
 		cams = append(cams, proto.CameraEntry{
 			Op: "upsert", ID: uuid.NewString(),
 			Name:       fmt.Sprintf("test-cam-%03d", i+1),
 			RTSPMasked: fmt.Sprintf("rtsp://***:***@10.0.5.%d:554/cam/realmonitor?channel=1&subtype=1", 20+i%100),
-			Codecs:     proto.CameraProfilePair{Main: "h265", Sub: "h264"},
+			Codecs:     proto.CameraProfilePair{Main: main, Sub: sub},
 			Status:     "online", Position: i, Enabled: true,
 		})
 	}
@@ -116,8 +189,7 @@ func run(server, code, agentID, secret string, nCams int, hostname string, once 
 	fmt.Printf("cams_sync yuborildi: %d kamera\n", nCams)
 
 	// cams_ack kutiladi (10 s). Eslatma: devserver mock'ida AutoCamsAck
-	// default false — ack kelmasa ogohlantirish bilan davom etamiz
-	// (haqiqiy vmsd S1'da albatta javob beradi).
+	// default false — ack kelmasa ogohlantirish bilan davom etamiz.
 	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	gotAck := false
 	for {
@@ -138,11 +210,28 @@ func run(server, code, agentID, secret string, nCams int, hostname string, once 
 		fmt.Println("cams_ack kelmadi (mock rejimi) — pulse rejimiga o'tamiz")
 	}
 
-	// cam_status pulse (S1 testlari uchun uzluksiz rejim).
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	pub := &publisher{cmds: map[string]*pubProc{}, ffmpeg: ffmpegPath, size: size, fps: fps}
 	tick := time.NewTicker(5 * time.Second)
 	defer tick.Stop()
+
+	// O'qish alohida goroutine'da: media_start/media_stop darhol javob berish
+	// kerak (ready taymauti 5 s).
+	msgs := make(chan proto.Envelope, 16)
+	go func() {
+		for {
+			var e proto.Envelope
+			_ = conn.SetReadDeadline(time.Now().Add(90 * time.Second))
+			if err := conn.ReadJSON(&e); err != nil {
+				close(msgs)
+				return
+			}
+			msgs <- e
+		}
+	}()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -152,6 +241,62 @@ func run(server, code, agentID, secret string, nCams int, hostname string, once 
 				_ = send(proto.MsgCamStatus, proto.CamStatus{
 					CameraID: c.ID, Status: "online", CheckedAt: time.Now().UTC(), RTTMs: 12,
 				})
+			}
+		case e, ok := <-msgs:
+			if !ok {
+				fmt.Println("ulanish uzildi")
+				return nil
+			}
+			switch e.Type {
+			case proto.MsgMediaStart:
+				var ms proto.MediaStart
+				if err := json.Unmarshal(e.Data, &ms); err != nil {
+					fmt.Println("media_start parse:", err)
+					continue
+				}
+				if !publish {
+					fmt.Printf("media_start (publish rejimi yopiq): %s\n", ms.SessionID)
+					continue
+				}
+				readyMs, err := pub.start(ms)
+				if err == nil {
+					// Test agent: RTSP publish o'rnatilishini kutamiz
+					// (haqiqiy agentda kamera javobi bilan aniq bo'ladi).
+					time.Sleep(1500 * time.Millisecond)
+				}
+				if err != nil {
+					fmt.Println("publish boshlanmadi:", err)
+					_ = send(proto.MsgMediaStopped, proto.MediaStopped{
+						SessionID: ms.SessionID, CameraID: ms.CameraID, Reason: "ffmpeg_failed"})
+					continue
+				}
+				path := ""
+				if u := ms.Publish.URLs.RTSP; u != "" {
+					if i := bytes.Index([]byte(u), []byte("554/")); i >= 0 {
+						path = string(u[i+4:])
+					}
+				}
+				_ = send(proto.MsgMediaReady, proto.MediaReady{
+					SessionID: ms.SessionID, CameraID: ms.CameraID, Profile: ms.Profile,
+					Kind: ms.Kind, PublishID: "pub-" + ms.SessionID, Path: path,
+					Ingest: ms.Ingest, Transport: "rtsp/tcp", ReadyMs: readyMs,
+				})
+				fmt.Printf("publish boshlandi: session=%s path=%s\n", ms.SessionID, path)
+			case proto.MsgMediaStop:
+				var ms proto.MediaStop
+				_ = json.Unmarshal(e.Data, &ms)
+				pub.stop(ms.SessionID)
+				_ = send(proto.MsgMediaStopped, proto.MediaStopped{
+					SessionID: ms.SessionID, CameraID: ms.CameraID, Reason: ms.Reason})
+				fmt.Printf("publish to'xtatildi: session=%s reason=%s\n", ms.SessionID, ms.Reason)
+			case proto.MsgSecretRotate:
+				var sr proto.SecretRotate
+				_ = json.Unmarshal(e.Data, &sr)
+				fmt.Printf("secret_rotate olindi (grace %d s)\n", sr.GraceS)
+			case proto.MsgConfigPush:
+				fmt.Println("config_push olindi")
+			default:
+				// welcome/ping/pong va boshqalar — e'tiborsiz
 			}
 		}
 	}

@@ -4,6 +4,7 @@ package media
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -189,8 +190,8 @@ func TestHappyPathDirect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	if res.PlayURL != "http://192.168.1.50:8889/cam/ag_1/cam-uuid-1/whep" {
-		t.Fatalf("play url: %s", res.PlayURL)
+	if res.WHEPURL != "http://192.168.1.50:8889/cam/ag_1/cam-uuid-1/whep" {
+		t.Fatalf("play url: %s", res.WHEPURL)
 	}
 	if mt.fs.count(proto.MsgMediaStart) != 1 {
 		t.Fatalf("media_start soni: %d", mt.fs.count(proto.MsgMediaStart))
@@ -289,7 +290,9 @@ func TestDedupSharedPublish(t *testing.T) {
 	// readers=0 bo'lsa — idle stop ishlaydi.
 	mt.mtx.setReaders(0)
 	mt.fc.advance(20 * time.Millisecond)
-	waitFor(t, func() bool { return mt.fs.count(proto.MsgMediaStop) == 1 }, "media_stop yuborilmadi")
+	// Har sessiya uchun bitta media_stop (agent publish'ni session_id
+	// bo'yicha kuzatadi — protocol.md §9).
+	waitFor(t, func() bool { return mt.fs.count(proto.MsgMediaStop) == 2 }, "media_stop yuborilmadi")
 }
 
 func TestReadyTimeout(t *testing.T) {
@@ -336,13 +339,13 @@ func TestLimits(t *testing.T) {
 	if _, err := mt.m.Start(mt.cam, 1, "", "play"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := mt.m.Start(mt.cam, 1, "main", "play"); err != ErrFull {
+	if _, err := mt.m.Start(mt.cam, 1, "main", "play"); !isLimit(err, "user_limit") {
 		t.Fatalf("user limit ishlamadi: %v", err)
 	}
 	if _, err := mt.m.Start(mt.cam, 2, "main", "play"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := mt.m.Start(mt.cam, 3, "main", "play"); err != ErrFull {
+	if _, err := mt.m.Start(mt.cam, 3, "main", "play"); !isLimit(err, "global_limit") {
 		t.Fatalf("global limit ishlamadi: %v", err)
 	}
 }
@@ -377,6 +380,55 @@ func TestIdleStopReaders(t *testing.T) {
 	mt.mtx.setReaders(0)
 	mt.fc.advance(60 * time.Millisecond)
 	waitFor(t, func() bool { return mt.fs.count(proto.MsgMediaStop) == 1 }, "idle stop ishlamadi")
+}
+
+func isLimit(err error, kind string) bool {
+	var le *LimitError
+	return errors.As(err, &le) && le.Kind == kind
+}
+
+func TestPreviewLimitKind(t *testing.T) {
+	mt := newMTest(t, MgrConfig{PreviewMax: 1}, gpu.Caps{Backend: gpu.BackendNone})
+	if _, err := mt.m.Start(mt.cam, 1, "sub", "preview"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mt.m.Start(mt.cam, 2, "sub", "preview"); !isLimit(err, "preview_limit") {
+		t.Fatalf("preview_limit kutilardi: %v", err)
+	}
+	// play (preview emas) cheklanmaydi.
+	if _, err := mt.m.Start(mt.cam, 2, "sub", "play"); err != nil {
+		t.Fatalf("play cheklanmasligi kerak: %v", err)
+	}
+}
+
+func TestSessionsForAndPreviewOff(t *testing.T) {
+	mt := newMTest(t, MgrConfig{}, gpu.Caps{Backend: gpu.BackendNone})
+	r1, err := mt.m.Start(mt.cam, 1, "sub", "preview")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r2, err := mt.m.Start(mt.cam, 2, "sub", "preview")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := mt.m.SessionsFor(1, "", "preview")
+	if len(ids) != 1 || ids[0] != r1.SessionID {
+		t.Fatalf("SessionsFor(user1): %v", ids)
+	}
+	all := mt.m.SessionsFor(0, mt.cam.ID, "")
+	if len(all) != 2 {
+		t.Fatalf("SessionsFor(all): %v", all)
+	}
+	// preview "on:false" semanticsi: chaqiruvchi topib to'xtatadi.
+	for _, id := range mt.m.SessionsFor(1, mt.cam.ID, "preview") {
+		if err := mt.m.Stop(id, "user"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := mt.m.SessionsFor(1, "", "preview"); len(got) != 0 {
+		t.Fatalf("yopilgandan keyin: %v", got)
+	}
+	_ = r2
 }
 
 func TestDecideTranscode(t *testing.T) {
@@ -438,8 +490,8 @@ func TestServerTCUsesMainSource(t *testing.T) {
 	}
 	mt.fc.advance(20 * time.Millisecond)
 	waitFor(t, func() bool { return mt.m.deps.Transcode.Count() == 0 }, "transcode to'xtamadi")
-	if res.PlayURL != "http://192.168.1.50:8889/tc/ag_1/cam-uuid-1/whep" {
-		t.Fatalf("play url tc bo'lishi kerak: %s", res.PlayURL)
+	if res.WHEPURL != "http://192.168.1.50:8889/tc/ag_1/cam-uuid-1/whep" {
+		t.Fatalf("play url tc bo'lishi kerak: %s", res.WHEPURL)
 	}
 	if !res.Transcoded || res.Backend != "nvenc" {
 		t.Fatalf("result: %+v", res)

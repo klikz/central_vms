@@ -114,6 +114,82 @@ func Detect(ffmpegPath string) (Caps, error) {
 	return c, nil
 }
 
+// Probe — tanlangan encoder HAQIQATAN ishlaydiganini tekshiradi (bitta
+// kadr encode). `-encoders` ro'yxatida bo'lishi yetarli EMAS: drayver
+// eski bo'lsa nvenc ro'yxatda bor, lekin ishda xato beradi (amalda
+// kuzatilgan). Ishlamasa zanjir bo'yicha keyingisiga o'tiladi.
+func Probe(ffmpegPath string, c Caps) (Caps, []string) {
+	var notes []string
+	try := []Backend{c.Backend, BackendNVENC, BackendVAAPI, BackendAMF, BackendSoft}
+	seen := map[Backend]bool{}
+	for _, b := range try {
+		if b == BackendNone || seen[b] {
+			continue
+		}
+		seen[b] = true
+		enc, dec := encoderForBackend(b, c)
+		if enc == "" {
+			continue // bunday encoder bu mashinada yo'q
+		}
+		if err := probeEncode(ffmpegPath, enc); err != nil {
+			notes = append(notes, string(b)+": "+err.Error())
+			continue
+		}
+		c.Backend, c.Encoder, c.HEVCDecoder = b, enc, dec
+		return c, notes
+	}
+	c.Backend, c.Encoder, c.HEVCDecoder = BackendNone, "", ""
+	return c, notes
+}
+
+// encoderForBackend — imkoniyatlar ro'yxatidan shu backend encoderi va
+// mos H.265 decoderi (bo'lmasa bo'sh satr).
+func encoderForBackend(b Backend, c Caps) (string, string) {
+	want := map[Backend]string{
+		BackendNVENC: "h264_nvenc", BackendVAAPI: "h264_vaapi",
+		BackendAMF: "h264_amf", BackendSoft: "libx264",
+	}[b]
+	if want == "" {
+		return "", ""
+	}
+	has := func(list []string, n string) bool {
+		for _, x := range list {
+			if x == n {
+				return true
+			}
+		}
+		return false
+	}
+	if !has(c.Encoders, want) {
+		return "", ""
+	}
+	dec := ""
+	if b == BackendNVENC && has(c.Decoders, "hevc_cuvid") {
+		dec = "hevc_cuvid"
+	}
+	if b == BackendVAAPI && has(c.Decoders, "hevc_vaapi") {
+		dec = "hevc_vaapi"
+	}
+	return want, dec
+}
+
+// probeEncode — 64x64 qora kadrni 1 marta encode qilish (~0.5 s).
+func probeEncode(ffmpegPath, enc string) error {
+	cmd := exec.Command(ffmpegPath, "-hide_banner", "-loglevel", "error", "-y",
+		"-f", "lavfi", "-i", "color=c=black:s=64x64:r=1",
+		"-frames:v", "1", "-c:v", enc, "-f", "null", "-")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = err.Error()
+		}
+		return fmt.Errorf("%s", msg)
+	}
+	return nil
+}
+
 // listCodecs — `ffmpeg -hide_banner <flag>` chiqishidan nomlar ro'yxati.
 // Format: " V..... h264_nvenc   H.264 / AVC / MPEG-4 AVC (encoders)..."
 func listCodecs(ffmpegPath, flag, kind string) ([]string, error) {

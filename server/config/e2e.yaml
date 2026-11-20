@@ -1,0 +1,43 @@
+# S2 qabul (e2e) konfiguratsiyasi: `make e2e-s2` shu faylni ishlatadi.
+# DB va jurnallar /tmp'da — qabul skripti ularni o'zi tozalaydi.
+bind: "127.0.0.1:8081"
+web_dir: "web/dist"
+db_path: "/tmp/vms_e2e.db"
+migrations_dir: "migrations"
+
+mediamtx:
+  control_url: "http://127.0.0.1:9997"
+  auth_hook_bind: "127.0.0.1:8189"
+  webrtc_port: 8889
+  rtsp_port: 8554
+  hls_port: 8888
+  public_host: "127.0.0.1"
+
+auth:
+  jwt_secret: "e2e-test-secret-0123456789abcdef01"
+  access_ttl_min: 15
+  refresh_ttl_days: 7
+
+enrollment:
+  ttl_h: 24
+  rate_per_5m: 20
+
+limits:
+  user_max_sessions: 16
+  global_max_sessions: 48
+  preview_max: 8
+  per_client_uploads: 8
+
+media:
+  idle_stop_s: 2            # qabul tez bo'lsin (prod: 10)
+  session_ttl_min: 5
+  session_renew_min: 2
+  publish_ttl_s: 60
+  read_token_ttl_s: 30
+  server_max_transcodes: 5
+  ready_timeout_s: 5
+  ffmpeg_path: "ffmpeg"
+
+log_level: "debug"          # auth-hook maydonlarini ko'rish uchun
+log_file: ""
+retention_days: 90

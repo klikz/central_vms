@@ -70,23 +70,66 @@ har mashinada `make probe` bilan o'lchanadi, model nomi kodda hardcode **taqiqla
 
 ## S2 — Media server: session manager + transcode (≈7–10 kun) — *Dependence: S1; real agent uchun client C3, lekin testagent bilan ham yuradi*
 
-- [ ] **`internal/gpu` — server quvvatini aniqlash (tasdiqlangan 2026-11-20, GPU modeli o'zgaruvchan):** `ffmpeg -encoders/-decoders` parse + `nvidia-smi`/`vainfo` tekshiruvi → backend tanlash `nvenc → vaapi/amf → software libx264` (client `caps` parse uslubiga o'xshash, lekin server tomoni); natija `settings` (`server_transcode_backend`, `server_max_transcodes`) va admin panelga; **GPU modeli nomiga qarab tarmoq qilmaydi — faqat imkoniyatlarga qaraydi** — [Test: fixture `testdata/encoders/*.txt` (nvenc-li, vaapi-li, GPU-yo'q 3 holat) → to'g'ri backend] — [Tekshiruv: `go test ./internal/gpu -race`]
-- [ ] MediaMTX control API klienti (path qo'shish/o'chirish, readers count polling ~2 s)
-- [ ] **Session manager + holat mashinasi (§7.1):** `pending → publishing → playing → stopping → ended/failed`; taymautlar 10 s (`media_ready`), 10 s (WHEP), 15 s (transcode publish); `session_state` WS push; `failed` limit hisoblagichidan qaytariladi
-- [ ] Token mint: 256-bit (`base64url`), sha256 hash DB, TTL: read 30 s / publish `ttl_s` (60 s); **uzatish: RTSP'da `?token=`, WHIP/WHEP'da `Authorization: Bearer`** (token bir martalik emas — bitta session/path/action doirasida qayta ishlatiladi, protocol.md §7)
-- [ ] `media_start` payload'ini protocol.md §5.2 bo'yicha qurish: `publish:{token, urls:{whip, rtsp, rtsp_tc}, header_name, query_name}`, `ttl_s`, `transcode:{mode, by, backend, params}`; **`media_refresh`** (30–60 s) va **`media_stats`** qabuli; `media_ready/media_stopped` da `publish_id` + `reason` kodlari (§13)
-- [ ] **`/internal/auth` hook:** MediaMTX JSON (`action: publish|read|playback|api|metrics|pprof`, `path, protocol, user, password, token, ip, id, query, userAgent`) → token→sessiya→path→user tekshiruvi → `{allow:true}` / 403; javobda **`expireAt`** qaytarish (MediaMTX sessiyani o'zi yopsin); `tc/...` ichki tokeni
-- [ ] `POST /api/cameras/{id}/play` (profile default `sub`, `browser.hevc`), `/preview`, `/sessions/{id}/stop`, `GET /sessions`
-- [ ] `internal/limits`: user 16 / global 48 / per-client `max_uploads` / preview 1 va 8; chegarada aniq xato + navbat holati
-- [ ] Idle stop: readers=0 → 10 s (preview ~1 s) → `media_stop` agent'ga + path o'chirish
-- [ ] **Transcode manager (server):** FFmpeg subprocess (**backend `internal/gpu` natijasidan: `hevc_cuvid → h264_nvenc` / `vaapi` / `libx264` software**, parametrlar root §16.3); **kamera bo'yicha dedup** (bitta jarayon, refcount); `tc/...` path; navbat; jarayon o'ldirish (idle, fail); GPU kuzatuvi (NVIDIA bo'lsa `nvidia-smi`, bo'lmasa o'z hisoblagich — admin panel uchun)
-- [ ] `make probe` / `vmsd --probe`: **mashinaga mos** limitni o'lchash — NVENC **va NVDEC** parallel sessiyalari (NVIDIA bo'lsa) yoki software `libx264` sig'imi (CPU yadro hisobi) → `settings.server_max_transcodes` + `server_transcode_backend`; natijada GPU modeli faqat audit yozuvida (kod uni o'qimaydi)
-- [ ] Kodek siyosati server qismi: `play_profile` tanlash (H.264 eng past profil), `browser_caps.hevc` → transcodesiz `cam/...` yo'li, `transcode_mode auto|server|client|off` (zaxira → agent'ga `transcode.by=client`; server ichida zaxira: GPU → software `libx264`)
+- [x] **`internal/gpu` — server quvvatini aniqlash (tasdiqlangan 2026-11-20, GPU modeli o'zgaruvchan):** `ffmpeg -encoders/-decoders` parse + `nvidia-smi`/`vainfo` tekshiruvi → backend tanlash `nvenc → vaapi/amf → software libx264` (client `caps` parse uslubiga o'xshash, lekin server tomoni); natija `settings` (`server_transcode_backend`, `server_max_transcodes`) va admin panelga; **GPU modeli nomiga qarab tarmoq qilmaydi — faqat imkoniyatlarga qaraydi** — [Test: fixture `testdata/encoders/*.txt` (nvenc-li, vaapi-li, GPU-yo'q 3 holat) → to'g'ri backend] — [Tekshiruv: `go test ./internal/gpu -race`]
+- [x] MediaMTX control API klienti (path qo'shish/o'chirish, readers count polling ~2 s)
+- [x] **Session manager + holat mashinasi (§7.1):** `pending → publishing → playing → stopping → ended/failed`; taymautlar 10 s (`media_ready`), 10 s (WHEP), 15 s (transcode publish); `session_state` WS push; `failed` limit hisoblagichidan qaytariladi
+- [x] Token mint: 256-bit (`base64url`), sha256 hash DB, TTL: read 30 s / publish `ttl_s` (60 s); **uzatish: RTSP'da `?token=`, WHIP/WHEP'da `Authorization: Bearer`** (token bir martalik emas — bitta session/path/action doirasida qayta ishlatiladi, protocol.md §7)
+- [x] `media_start` payload'ini protocol.md §5.2 bo'yicha qurish: `publish:{token, urls:{whip, rtsp, rtsp_tc}, header_name, query_name}`, `ttl_s`, `transcode:{mode, by, backend, params}`; **`media_refresh`** (30–60 s) va **`media_stats`** qabuli; `media_ready/media_stopped` da `publish_id` + `reason` kodlari (§13)
+- [x] **`/internal/auth` hook:** MediaMTX JSON (`action: publish|read|playback|api|metrics|pprof`, `path, protocol, user, password, token, ip, id, query, userAgent`) → token→sessiya→path→user tekshiruvi → `{allow:true}` / 403; javobda **`expireAt`** qaytarish (MediaMTX sessiyani o'zi yopsin); `tc/...` ichki tokeni
+- [x] `POST /api/cameras/{id}/play` (profile default `sub`, `browser.hevc`), `/preview`, `/sessions/{id}/stop`, `GET /sessions`
+- [x] *(qisman)* limitlar: user 16 / global 48 / preview 8 menejerda bajarildi (`LimitError` turlari bilan); **per-client `max_uploads` va navbat holati S2.5 qoldig'i**
+- [x] Idle stop: readers=0 → 10 s (preview ~1 s) → `media_stop` agent'ga + path o'chirish
+- [x] **Transcode manager (server):** FFmpeg subprocess (**backend `internal/gpu` natijasidan: `hevc_cuvid → h264_nvenc` / `vaapi` / `libx264` software**, parametrlar root §16.3); **kamera bo'yicha dedup** (bitta jarayon, refcount); `tc/...` path; navbat; jarayon o'ldirish (idle, fail); GPU kuzatuvi (NVIDIA bo'lsa `nvidia-smi`, bo'lmasa o'z hisoblagich — admin panel uchun)
+- [x] `make probe` / `vmsd --probe`: **mashinaga mos** limitni o'lchash — NVENC **va NVDEC** parallel sessiyalari (NVIDIA bo'lsa) yoki software `libx264` sig'imi (CPU yadro hisobi) → `settings.server_max_transcodes` + `server_transcode_backend`; natijada GPU modeli faqat audit yozuvida (kod uni o'qimaydi)
+- [x] *(qisman)* Kodek siyosati: `play_profile`, `transcode_mode auto|server|client|off`, server ichida zaxira (GPU → software, runtime probe orqali); **`browser_caps.hevc` siyosati S3 (UI brauzer imkoniyatini xabar qiladi) qoldig'i** (H.264 eng past profil), `browser_caps.hevc` → transcodesiz `cam/...` yo'li, `transcode_mode auto|server|client|off` (zaxira → agent'ga `transcode.by=client`; server ichida zaxira: GPU → software `libx264`)
 - [ ] LL-HLS fallback: MediaMTX config + UI'ga signal (`hls.js`)
-- [ ] `testagent`ni to'liq publish'ga kengaytirish (WHIP H.264 + RTSP/TCP H.265, FFmpeg test pattern)
+- [x] `testagent`ni to'liq publish'ga kengaytirish (WHIP H.264 + RTSP/TCP H.265, FFmpeg test pattern)
 - [ ] `internal/wsui`: `client_status`, `cam_status`, `session_count`, `session_revoked`, `session_state`
 
 **Qabul:** testagent orqali — H.264 kamera WHEP'da ≤1.5 s ochiladi; H.265 → server transcode (dev mashinada NVENC; **GPU bo'lmagan mashinada `libx264` software bilan ham ishlaydi** — `ffmpeg -v codec` orqali tekshiriladi), 2 user = **1 FFmpeg**; `media_ready` 10 s taymauti `failed` + qayta urinish; yopilsa upload to'xtaydi; token qayta ishlatilsa 403.
+
+---
+
+### S2 natijasi (2026-11-20) — **bajarildi (qoldiqlar bilan)**
+Qabul oqimi `make e2e-s2` (real MediaMTX v1.11.3 + real FFmpeg) — **18/18 PASS**:
+agent publish → API `play` → token bilan RTSP o'qish (h264) → token'siz va
+noto'g'ri token rad → MediaMTX readers hisobi → sessiya yopilgach idle stop
+(2 s) va agent FFmpeg'ini o'ldiradi → `transcode_mode=server` bilan `tc/...`
+o'qiladi (kamera boshida bitta FFmpeg).
+
+**Amalda topilgan va hujjatlashtirilgan og'ishlar (muhim):**
+1. MediaMTX v1.11.3 `/v3/paths/get/{name}` — YAKKA obyekt va `readers` —
+   **obyektlar ro'yxati** (son emas). Klient ikkala ko'rinishni qabul qiladi;
+   404 (path yo'q) readers=0 deb olinadi (idle stop shunda ishlaydi).
+2. Auth-hook'da RTSP tokeni `token` maydonida EMAS — `query` satrida
+   (`token=...`) keladi; `ExtractToken` uchala manbani ham qaytaradi.
+3. **`ffmpeg -encoders` ro'yxatida bo'lishi ishlashini anglatmaydi:** bu
+   mashinada nvenc ro'yxatda bor, lekin drayver eski ("Required: 13.1,
+   Found: 13.0") va encode darhol yiqiladi. Shuning uchun **runtime probe**
+   (`gpu.Probe`, 1 kadr encode) va **zanjir zaxirasi** (nvenc → vaapi → amf →
+   libx264) qo'shildi; transcode darhol yiqilsa Transcoder backendni
+   "yomon" deb belgilaydi va menejer keyingi backend bilan qayta urinishadi.
+   Bu REJA §2.1/5 ("GPU o'zgaruvchan") talabining amaliy javobi.
+4. `media_stop` **har sessiya ID'si uchun alohida** yuboriladi (agent
+   publish'ni session_id bo'yicha kuzatadi); tugagan sessiyalar ro'yxatdan
+   o'chirilgani uchun publish ID'sini yuborish xato edi (test agent FFmpeg'i
+   tirik qolgani shu orqali topildi).
+5. `play` javobi api.md bo'yicha: `{session_id, whep_url, token, ttl, codec,
+   transcoded, backend, rtsp_url, expires_at}`. Sessiya yopish:
+   `DELETE /api/sessions/{id}` (`/stop` o'rniga), uzatish:
+   `POST /api/sessions/refresh`. Xato kodlari: `429 user_limit|global_limit|
+   preview_limit`, `403 disabled`, `409 client_offline`, `503 media_offline`.
+6. `media_ready` taymauti: §7.1'da 10 s deyilgan edi, amalda **5 s**
+   (`media.ready_timeout_s`) — agent publish o'rnatguncha kechikish kichik.
+7. `make probe` endi nafaqat imkoniyatni, balki **parallel sig'imni**
+   o'lchaydi (real-time factor ≥ 0.95 bo'lgan maksimal parallel son) va
+   `settings.server_transcode_backend` / `server_max_transcodes` ga yozadi
+   (bu mashinada: nvenc/vaapi/amf ishlamadi → `cpu`, o'lchangan 8).
+
+**S2 qoldiqlari (S3/S4'ga ko'chirildi):** `internal/limits` alohida paketi
+(per-client `max_uploads` hisobi va navbat holati), `internal/wsui`
+(`session_state`/`client_status` push), LL-HLS fallback signali,
+`browser_caps.hevc` siyosati, WHEP orqali haqiqiy o'qish testi (S3 UI bilan).
 
 ---
 

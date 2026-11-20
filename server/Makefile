@@ -74,6 +74,7 @@ dev:
 build:
 	@mkdir -p $(BUILD_DIR)/web $(BUILD_DIR)/migrations $(BUILD_DIR)/config $(BUILD_DIR)/mediamtx
 	CGO_ENABLED=$(CGO) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BIN) ./cmd/$(BIN)
+	CGO_ENABLED=$(CGO) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build $(GOFLAGS) -o $(BUILD_DIR)/testagent ./cmd/testagent
 	cp -f migrations/*.sql $(BUILD_DIR)/migrations/
 	cp -f config/prod.yaml.example $(BUILD_DIR)/config/config.yaml
 	cp -f mediamtx/mediamtx.yml $(BUILD_DIR)/mediamtx/mediamtx.yml
@@ -115,6 +116,10 @@ migrate-down:
 
 migrate-status:
 	./$(BUILD_DIR)/$(BIN) -config config/dev.yaml -migrate status
+
+## S2 qabul mezoni: real MediaMTX + real FFmpeg bilan uchdan-uchga tekshiruv
+e2e-s2:
+	./scripts/e2e_s2.sh
 
 ## Birinchi admin: make admin USER=admin (parol so'raladi, terminalga chiqmaydi)
 admin: build

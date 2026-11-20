@@ -42,6 +42,25 @@ func (m *Manager) tick(st *loopState) {
 			m.dropPubLocked(st, p)
 			continue
 		}
+		// Transcode qayta urinishi (manba kechikishi) — 3 marta, keyin
+		// o'quvchi direct (cam) path'ga qaytadi.
+		if p.mode == "server_tc" && !p.tcStarted && p.ready && m.deps.Transcode != nil {
+			if p.tcTries < 3 && !now.Before(p.tcNextTry) {
+				m.startTranscode(st, p)
+			} else if p.tcTries >= 3 {
+				// O'quvchi tokeni tc/ path uchun mint qilingan — direct'ga
+				// fallback tokenni buzadi; shuning uchun sessiyani yopamiz
+				// (UI qayta urinishni taklif qiladi).
+				m.deps.Lg.Warn("transcode urinishlari tugadi", "camera", p.cameraID)
+				for _, sid := range append([]string(nil), p.sessions...) {
+					if s := st.sessions[sid]; s != nil {
+						m.endSessionLocked(st, s, "transcode_failed", true)
+					}
+				}
+				m.dropPubLocked(st, p)
+				continue
+			}
+		}
 		// Idle stop: refcount=0 va readers=0 → upload to'xtatish (§16.2).
 		if p.refcount == 0 && p.idleOn && !now.Before(p.stopAt) {
 			if n, err := m.deps.MTX.Readers(p.path); err == nil && n == 0 {
@@ -60,8 +79,10 @@ func (m *Manager) tick(st *loopState) {
 func (m *Manager) shutdownAll(st *loopState) {
 	for _, p := range snapshotPubs(st) {
 		if m.deps.Agent.Online(p.agentID) {
-			_ = m.deps.Agent.Send(p.agentID, proto.MsgMediaStop, proto.MediaStop{
-				SessionID: p.firstSession(), CameraID: p.cameraID, Reason: "server_shutdown"})
+			for _, sid := range p.stopTargets() {
+				_ = m.deps.Agent.Send(p.agentID, proto.MsgMediaStop, proto.MediaStop{
+					SessionID: sid, CameraID: p.cameraID, Reason: "server_shutdown"})
+			}
 		}
 	}
 	for _, s := range snapshotSessions(st) {

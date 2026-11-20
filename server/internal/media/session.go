@@ -17,8 +17,19 @@ import (
 	"central-vms/server/internal/registry"
 )
 
-// ErrFull — limitlar to'lgan (handler 429 beradi; navbat S2.5).
-var ErrFull = errors.New("limit to'lgan")
+// LimitError — qaysi limit to'lgani (handler 429 + detail beradi; api.md).
+type LimitError struct{ Kind string } // user_limit|global_limit|preview_limit
+
+func (e *LimitError) Error() string { return e.Kind + " to'ldi" }
+
+// ErrFull — umumiy "joy yo'q" belgisi (testlar shundan foydalanadi).
+var ErrFull = &LimitError{Kind: "global_limit"}
+
+// ErrAgentOffline / ErrDisabled — handler 409/403 uchun sentinellar.
+var (
+	ErrAgentOffline = errors.New("agent offline")
+	ErrDisabled     = errors.New("kamera o'chirilgan")
+)
 
 // AgentSender — agentga media_start/media_stop yuborish (wsagent.Hub).
 type AgentSender interface {
@@ -88,11 +99,16 @@ type Manager struct {
 	lastSeen map[string]time.Time
 }
 
-// StartResult — play/preview javobi (handler'ga).
+// StartResult — play/preview javobi (api.md: session_id, whep_url, token,
+// ttl, codec, transcoded). token — MediaMTX o'quvchi tokeni (WHEP Bearer /
+// RTSP ?token=). rtsp_url/expires_at qo'shimcha qulaylik.
 type StartResult struct {
 	SessionID  string    `json:"session_id"`
-	PlayURL    string    `json:"play_url"`
+	WHEPURL    string    `json:"whep_url"`
 	RTSPURL    string    `json:"rtsp_url"`
+	Token      string    `json:"token"`
+	TTL        int       `json:"ttl"`
+	Codec      string    `json:"codec"`
 	ExpiresAt  time.Time `json:"expires_at"`
 	Transcoded bool      `json:"transcoded"`
 	Backend    string    `json:"backend"`
@@ -156,6 +172,13 @@ func (m *Manager) Stop(sessionID, reason string) error {
 	return m.submit(&cmd{op: "stop", sessionID: sessionID, reason: reason}).err
 }
 
+// SessionsFor — filtr bo'yicha sessiya ID'lari (userID=0 — barchasi,
+// cameraID/kind bo'sh — ixtiyoriy).
+func (m *Manager) SessionsFor(userID int64, cameraID, kind string) []string {
+	res := m.submit(&cmd{op: "list", userID: userID, cameraID: cameraID, kind: kind})
+	return res.ids
+}
+
 // OnMediaReady/Stopped/Stats — wsagent.MediaSink (hub goroutine'laridan
 // chaqiriladi; loop'ga uzatamiz).
 func (m *Manager) OnMediaReady(agentID string, mm proto.MediaReady) {
@@ -192,12 +215,14 @@ type cmd struct {
 	profile   string
 	kind      string
 	sessionID string
+	cameraID  string
 	reason    string
 	extendS   int
 	agentID   string
 	ready     *proto.MediaReady
 	stopped   *proto.MediaStopped
 	res       *StartResult
+	ids       []string
 	err       error
 	done      chan struct{}
 }
@@ -222,11 +247,13 @@ type publish struct {
 	mode       string // direct | server_tc
 	token      string // publish token (agent/ffmpeg uchun)
 	refcount   int
-	sessions   []string
-	tcPath     string // server_tc bo'lsa tc/... (yo'q bo'lsa bo'sh)
-	tcPubTok   string // tc/... publish ichki tokeni
-	srcReadTok string // cam/... o'qish tokeni (FFmpeg uchun)
-	codecIn    string // h264|h265 — decode tezlashtirish tanlovi uchun
+	sessions   []string // faol sessiyalar
+	ended      []string // tugagan sessiyalar (media_stop shu ID'lar bilan yuboriladi)
+	tcPath     string   // server_tc bo'lsa tc/... (yo'q bo'lsa bo'sh)
+	tcPubTok   string   // tc/... publish ichki tokeni
+	srcReadTok string   // cam/... o'qish tokeni (FFmpeg uchun)
+	codecIn    string   // h264|h265 — decode tezlashtirish tanlovi uchun
+	caps       gpu.Caps // transcode uchun tanlangan imkoniyatlar (fallback bilan)
 
 	ready     bool
 	started   time.Time
@@ -235,6 +262,8 @@ type publish struct {
 	readyTO   time.Time
 	stopSent  bool
 	tcStarted bool
+	tcTries   int // transcode urinishlari (manba kechikishi mumkin)
+	tcNextTry time.Time
 }
 
 type session struct {

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 
 	"central-vms/server/internal/auth"
 	"central-vms/server/internal/media"
@@ -25,6 +24,7 @@ func (d *Deps) handleCameraPlay(w http.ResponseWriter, r *http.Request, kind str
 	}
 	var in struct {
 		Profile string `json:"profile"`
+		On      *bool  `json:"on"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&in)
 	if in.Profile != "" && in.Profile != "main" && in.Profile != "sub" {
@@ -32,17 +32,27 @@ func (d *Deps) handleCameraPlay(w http.ResponseWriter, r *http.Request, kind str
 		return
 	}
 	cl, _ := auth.ClaimsFrom(r)
+	// preview {on:false} — foydalanuvchining shu kameradagi preview'sini
+	// yopish (api.md).
+	if kind == "preview" && in.On != nil && !*in.On {
+		for _, sid := range d.Media.SessionsFor(cl.Sub, cam.ID, "preview") {
+			_ = d.Media.Stop(sid, "user")
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		return
+	}
 	res, err := d.Media.Start(cam, cl.Sub, in.Profile, kind)
+	var le *media.LimitError
 	switch {
-	case errors.Is(err, media.ErrFull):
-		writeErr(w, http.StatusTooManyRequests, "full", "joy band — keyinroq qayta urinib ko'ring")
-	case err != nil && strings.Contains(err.Error(), "o'chirilgan"):
+	case errors.As(err, &le):
+		writeErr(w, http.StatusTooManyRequests, le.Kind, "joy band — keyinroq qayta urinib ko'ring")
+	case errors.Is(err, media.ErrDisabled):
 		writeErr(w, http.StatusForbidden, "disabled", "")
-	case err != nil && strings.Contains(err.Error(), "offline"):
-		writeErr(w, http.StatusServiceUnavailable, "agent_offline", "")
+	case errors.Is(err, media.ErrAgentOffline):
+		writeErr(w, http.StatusConflict, "client_offline", "")
 	case err != nil:
 		d.Lg.Warn("play", "camera", cam.ID, "err", err)
-		writeErr(w, http.StatusServiceUnavailable, "media_error", "")
+		writeErr(w, http.StatusServiceUnavailable, "media_offline", "")
 	default:
 		_ = d.Audit.Add(cl.Sub, auditPlay, cam.ID)
 		writeJSON(w, http.StatusOK, res)

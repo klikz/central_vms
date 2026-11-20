@@ -56,8 +56,25 @@ type Transcoder struct {
 	ffmpegPath string
 	max        int
 
-	mu    sync.Mutex
-	procs map[string]*transcodeProc
+	mu        sync.Mutex
+	procs     map[string]*transcodeProc
+	bad       map[gpu.Backend]bool // ishlamagan backendlar (drayver/xato)
+	onFailure func(cameraID string, backend gpu.Backend)
+}
+
+// SetOnFailure — jarayon darhol (5 s ichida) yiqilsa chaqiriladi
+// ( menejer boshqa backend bilan qayta urinishi uchun).
+func (t *Transcoder) SetOnFailure(f func(cameraID string, backend gpu.Backend)) {
+	t.mu.Lock()
+	t.onFailure = f
+	t.mu.Unlock()
+}
+
+// IsBad — operator/menejer tanlovi uchun: bu backend ishlamagan.
+func (t *Transcoder) IsBad(b gpu.Backend) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.bad[b]
 }
 
 type transcodeProc struct {
@@ -77,7 +94,8 @@ func NewTranscoder(ffmpegPath string, max int, lg *slog.Logger) *Transcoder {
 	if max <= 0 {
 		max = 5
 	}
-	return &Transcoder{lg: lg, ffmpegPath: ffmpegPath, max: max, procs: map[string]*transcodeProc{}}
+	return &Transcoder{lg: lg, ffmpegPath: ffmpegPath, max: max,
+		procs: map[string]*transcodeProc{}, bad: map[gpu.Backend]bool{}}
 }
 
 // Count — faol transcode'lar (metrics/UI).
@@ -190,16 +208,29 @@ func (t *Transcoder) progress(cameraID string, p *transcodeProc, rd *os.File) {
 // watch — jarayon tugashini kuzatish (exit + stderr log).
 func (t *Transcoder) watch(cameraID string, p *transcodeProc, stderr *bytes.Buffer, outWR *os.File) {
 	outWR.Close() // bolalar pipe yopilsa scanner tugaydi
+	t0 := p.stats.StartedAt
 	err := p.cmd.c.Wait()
+	elapsed := time.Since(t0)
 	t.mu.Lock()
 	cur, ok := t.procs[cameraID]
 	if ok && cur == p {
 		delete(t.procs, cameraID)
 	}
+	fb := t.onFailure
 	t.mu.Unlock()
 	if err != nil {
-		t.lg.Warn("transcode tugadi", "camera", cameraID, "err", err,
-			"stderr", strings.TrimSpace(stderr.String()))
+		msg := strings.TrimSpace(stderr.String())
+		t.lg.Warn("transcode tugadi", "camera", cameraID, "err", err, "stderr", msg)
+		// Darhol yiqilish — encoder ishlamayapti (drayver/parametr):
+		// backendni "yomon" deb belgilaymiz va menejerga xabar qilamiz.
+		if elapsed < 5*time.Second && p.spec.Caps.Backend != gpu.BackendSoft {
+			t.mu.Lock()
+			t.bad[p.spec.Caps.Backend] = true
+			t.mu.Unlock()
+			if fb != nil {
+				fb(cameraID, p.spec.Caps.Backend)
+			}
+		}
 		return
 	}
 	t.lg.Info("transcode tugadi", "camera", cameraID, "exit", 0)

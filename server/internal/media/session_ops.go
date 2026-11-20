@@ -33,6 +33,10 @@ func (m *Manager) handle(st *loopState, c *cmd) {
 		m.mediaStopped(st, c)
 	case "tick":
 		m.tick(st)
+	case "list":
+		c.ids = m.listSessions(st, c)
+	case "tcfailed":
+		m.transcodeFailed(st, c)
 	case "stats":
 		// stats allaqachon muhofaza qilingan; tick bilan bir xil ish
 	}
@@ -62,28 +66,28 @@ func decideTranscode(mode string, caps gpu.Caps) (pubMode, backend, by string) {
 func (m *Manager) start(st *loopState, c *cmd) (*StartResult, error) {
 	cam := c.cam
 	if !cam.Enabled {
-		return nil, fmt.Errorf("kamera o'chirilgan")
+		return nil, ErrDisabled
 	}
 	cl, err := m.deps.Reg.GetClientByID(cam.ClientID)
 	if err != nil {
 		return nil, fmt.Errorf("client topilmadi: %w", err)
 	}
 	if !m.deps.Agent.Online(cl.AgentID) {
-		return nil, fmt.Errorf("agent offline")
+		return nil, ErrAgentOffline
 	}
 	total, err := m.deps.Store.CountActiveSessions(0)
 	if err != nil {
 		return nil, err
 	}
 	if m.cfg.GlobalMax > 0 && total >= m.cfg.GlobalMax {
-		return nil, ErrFull
+		return nil, &LimitError{Kind: "global_limit"}
 	}
 	mine, err := m.deps.Store.CountActiveSessions(c.userID)
 	if err != nil {
 		return nil, err
 	}
 	if m.cfg.UserMax > 0 && mine >= m.cfg.UserMax {
-		return nil, ErrFull
+		return nil, &LimitError{Kind: "user_limit"}
 	}
 	if c.kind == "preview" && m.cfg.PreviewMax > 0 {
 		var pv int
@@ -93,7 +97,7 @@ func (m *Manager) start(st *loopState, c *cmd) (*StartResult, error) {
 			}
 		}
 		if pv >= m.cfg.PreviewMax {
-			return nil, ErrFull
+			return nil, &LimitError{Kind: "preview_limit"}
 		}
 	}
 
@@ -167,10 +171,17 @@ func (m *Manager) start(st *loopState, c *cmd) (*StartResult, error) {
 	sess.state = "publishing"
 	_ = m.deps.Store.SetSessionState(sess.id, "publishing")
 
+	codec := "h264" // transcode natijasi doim H.264 (browser/hamsodalik)
+	if !sess.transcoded {
+		codec = camCodecFor(cam, profile)
+	}
 	return &StartResult{
 		SessionID:  sess.id,
-		PlayURL:    m.whepURL(sess.readerPath),
+		WHEPURL:    m.whepURL(sess.readerPath),
 		RTSPURL:    m.rtspURL(sess.readerPath),
+		Token:      sess.readToken,
+		TTL:        int(m.cfg.SessionTTL.Seconds()),
+		Codec:      codec,
 		ExpiresAt:  sess.expiresAt,
 		Transcoded: sess.transcoded,
 		Backend:    backend,
@@ -190,7 +201,7 @@ func (m *Manager) getOrCreatePub(st *loopState, cam registry.Camera, agentID, pr
 	p := &publish{
 		id: randHex(8), agentID: agentID, cameraID: cam.ID, path: path, profile: profile,
 		ingest: ingest, mode: pubMode, started: now, readyTO: now.Add(m.cfg.MediaReadyTO),
-		codecIn: codecForProfile(cam, profile),
+		codecIn: codecForProfile(cam, profile), caps: m.deps.GPU,
 	}
 	if pubMode == "server_tc" {
 		p.tcPath = "tc/" + agentID + "/" + cam.ID
@@ -236,22 +247,7 @@ func (m *Manager) mediaReady(st *loopState, c *cmd) {
 	// server_tc: manba tayyor → FFmpeg'ni ishga tushiramiz (bitta kamera =
 	// bitta jarayon; qo'shimcha o'quvchilar shu jarayonni ishlatadi).
 	if p.mode == "server_tc" && m.deps.Transcode != nil && !p.tcStarted {
-		p.tcStarted = true
-		_, rb := m.urls()
-		spec := TranscodeSpec{
-			CameraID: p.cameraID, SrcPath: p.path, DstPath: p.tcPath,
-			SrcToken: p.srcReadTok, DstToken: p.tcPubTok, CodecIn: p.codecIn,
-			Caps: m.deps.GPU, RTSPBase: rb,
-		}
-		if err := m.deps.Transcode.Start(spec); err != nil {
-			p.tcStarted = false
-			m.deps.Lg.Warn("transcode boshlanmadi — fallback direct", "camera", p.cameraID, "err", err)
-			for _, sid := range p.sessions {
-				if s := st.sessions[sid]; s != nil {
-					s.transcoded, s.readerPath = false, p.path
-				}
-			}
-		}
+		m.startTranscode(st, p)
 	}
 	if c.ready.Path != "" {
 		p.path = c.ready.Path // agent xabar bergan path — bir xil kelishi shart
@@ -274,6 +270,93 @@ func (m *Manager) mediaReady(st *loopState, c *cmd) {
 	}
 }
 
+// startTranscode — FFmpeg'ni ishga tushirish (muvaffaqiyatsiz bo'lsa
+// qayta urinish vaqti belgilanadi).
+func (m *Manager) startTranscode(st *loopState, p *publish) {
+	p.tcStarted, p.tcTries = true, p.tcTries+1
+	_, rb := m.urls()
+	spec := TranscodeSpec{
+		CameraID: p.cameraID, SrcPath: p.path, DstPath: p.tcPath,
+		SrcToken: p.srcReadTok, DstToken: p.tcPubTok, CodecIn: p.codecIn,
+		Caps: p.caps, RTSPBase: rb,
+	}
+	if err := m.deps.Transcode.Start(spec); err != nil {
+		p.tcStarted = false
+		p.tcNextTry = m.deps.Clock.Now().Add(time.Second)
+		m.deps.Lg.Warn("transcode boshlanmadi — qayta urilinadi", "camera", p.cameraID,
+			"try", p.tcTries, "err", err)
+		return
+	}
+	// Transcode tayyor bo'lsa o'quvchi tc/ path'ga o'tadi.
+	for _, sid := range p.sessions {
+		if s := st.sessions[sid]; s != nil {
+			s.transcoded, s.readerPath = true, p.tcPath
+		}
+	}
+}
+
+// transcodeFailed — Transcoder xabar berdi: bu backend ishlamadi.
+// Zanjir bo'yicha keyingi imkoniyatga o'tamiz (server GPU → server CPU).
+func (m *Manager) transcodeFailed(st *loopState, c *cmd) {
+	for _, p := range st.pubs {
+		if p.cameraID != c.cameraID || p.mode != "server_tc" {
+			continue
+		}
+		p.tcStarted = false
+		p.tcNextTry = m.deps.Clock.Now()
+		if next, ok := m.nextCaps(p.caps); ok {
+			p.caps = next
+			m.deps.Lg.Info("transcode backend almashtirildi", "camera", p.cameraID, "backend", next.Backend)
+		}
+	}
+}
+
+// nextCaps — zanjir bo'yicha keyingi ishlash mumkin bo'lgan backend
+// (nvenc → vaapi → amf → cpu); Transcoder "yomon" deb belgilaganlari
+// chiqarib tashlanadi.
+func (m *Manager) nextCaps(cur gpu.Caps) (gpu.Caps, bool) {
+	chain := []gpu.Backend{gpu.BackendNVENC, gpu.BackendVAAPI, gpu.BackendAMF, gpu.BackendSoft}
+	skip := cur.Backend
+	for _, b := range chain {
+		if b == skip || b == gpu.BackendNone {
+			continue
+		}
+		if m.deps.Transcode != nil && m.deps.Transcode.IsBad(b) {
+			continue
+		}
+		for _, e := range cur.Encoders {
+			want := map[gpu.Backend]string{
+				gpu.BackendNVENC: "h264_nvenc", gpu.BackendVAAPI: "h264_vaapi",
+				gpu.BackendAMF: "h264_amf", gpu.BackendSoft: "libx264",
+			}[b]
+			if e == want {
+				nc := cur
+				nc.Backend, nc.Encoder = b, want
+				if b != gpu.BackendNVENC && b != gpu.BackendVAAPI {
+					nc.HEVCDecoder = ""
+				}
+				return nc, true
+			}
+		}
+	}
+	return cur, false
+}
+
+// OnTranscodeFailure — Transcoder qaygi (jarayon darhol yiqilsa).
+func (m *Manager) OnTranscodeFailure(cameraID string, backend gpu.Backend) {
+	m.dropCmd(&cmd{op: "tcfailed", cameraID: cameraID})
+}
+
+// dropCmd — bloklamaydigan yuborish (goroutine callback'idan; loop band
+// bo'lsa xabar tushib qoladi — keyingi tick qayta urinishni davom ettiradi).
+func (m *Manager) dropCmd(c *cmd) {
+	c.done = make(chan struct{})
+	select {
+	case m.cmd <- c:
+	default:
+	}
+}
+
 func (m *Manager) mediaStopped(st *loopState, c *cmd) {
 	p := m.pubBySessionLocked(st, c.stopped.SessionID)
 	if p == nil {
@@ -286,6 +369,23 @@ func (m *Manager) mediaStopped(st *loopState, c *cmd) {
 		}
 	}
 	m.dropPubLocked(st, p) // refcount hisobiga qaramay darhol to'xtatiladi
+}
+
+func (m *Manager) listSessions(st *loopState, c *cmd) []string {
+	var out []string
+	for _, s := range st.sessions {
+		if c.userID != 0 && s.userID != c.userID {
+			continue
+		}
+		if c.cameraID != "" && s.cameraID != c.cameraID {
+			continue
+		}
+		if c.kind != "" && s.kind != c.kind {
+			continue
+		}
+		out = append(out, s.id)
+	}
+	return out
 }
 
 func (m *Manager) refresh(st *loopState, c *cmd) error {
@@ -339,6 +439,7 @@ func (m *Manager) endSessionLocked(st *loopState, s *session, reason string, dbS
 			}
 		}
 		p.sessions = out
+		p.ended = append(p.ended, s.id)
 		m.releasePubLocked(st, p)
 	}
 	m.deps.Lg.Info("session yakunlandi", "session", s.id, "state", final, "reason", reason)
@@ -377,21 +478,44 @@ func (m *Manager) stopPublish(st *loopState, p *publish, reason string) {
 		return
 	}
 	p.stopSent = true
+	// Har sessiya ID'si uchun alohida media_stop: agent publish'ni
+	// session_id bo'yicha kuzatadi (protocol.md §9). firstSession()
+	// yetmas edi — tugagan sessiyalar ro'yxatdan o'chirilgan bo'ladi.
 	if m.deps.Agent.Online(p.agentID) {
-		_ = m.deps.Agent.Send(p.agentID, proto.MsgMediaStop, proto.MediaStop{
-			SessionID: p.firstSession(), CameraID: p.cameraID, Reason: reason})
+		for _, sid := range p.stopTargets() {
+			_ = m.deps.Agent.Send(p.agentID, proto.MsgMediaStop, proto.MediaStop{
+				SessionID: sid, CameraID: p.cameraID, Reason: reason})
+		}
 	}
 	_ = m.deps.MTX.DeletePath(p.path)
 }
 
-func (p *publish) firstSession() string {
-	if len(p.sessions) > 0 {
-		return p.sessions[0]
+// stopTargets — media_stop yuboriladigan sessiya ID'lari (faol + tugagan,
+// takrorlanmas). Kamida bitta ID bo'lishi shart (agent publish'ni taniydi).
+func (p *publish) stopTargets() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, sid := range append(append([]string(nil), p.sessions...), p.ended...) {
+		if !seen[sid] {
+			seen[sid] = true
+			out = append(out, sid)
+		}
 	}
-	return p.id
+	if len(out) == 0 {
+		out = []string{p.id}
+	}
+	return out
 }
 
 func pubKey(cameraID, profile, mode string) string { return cameraID + "|" + profile + "|" + mode }
+
+// camCodecFor — o'quvchiga xabar qilinadigan kodek (profil bo'yicha).
+func camCodecFor(cam registry.Camera, profile string) string {
+	if profile == "main" {
+		return cam.CodecMain
+	}
+	return cam.CodecSub
+}
 
 // codecForProfile — transcode manbasining kodeki (cuvid/vaapi tanlovi uchun).
 func codecForProfile(cam registry.Camera, profile string) string {

@@ -84,8 +84,8 @@ func TestPlayRefreshStopFlow(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("play: %d %s", code, raw)
 	}
-	if !strings.Contains(m["play_url"].(string), "http://10.0.0.5:8889/cam/") || !strings.Contains(m["play_url"].(string), "/whep") {
-		t.Fatalf("play_url: %v", m["play_url"])
+	if !strings.Contains(m["whep_url"].(string), "http://10.0.0.5:8889/cam/") || !strings.Contains(m["whep_url"].(string), "/whep") {
+		t.Fatalf("play_url: %v", m["whep_url"])
 	}
 	sessID := m["session_id"].(string)
 	agentF.mu.Lock()

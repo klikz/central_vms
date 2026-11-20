@@ -62,22 +62,28 @@ func (c *Client) DeletePath(name string) error {
 // Readers — path'dagi faol o'quvchilar soni (idle stop shu orqali: readers=0
 // → 10 s keyin upload to'xtatish; root §16.2). Xato bo'lsa -1 (poller loglaydi).
 func (c *Client) Readers(path string) (int, error) {
-	// v3 paths/get — YAKKА obyekt: readers maydoni yuqorida bo'sadi
-	// (tekshirilgan); items ro'yxatli ko'rinish ham qo'llab-quvvatlanadi.
+	// v1.11.3 tekshirildi: /v3/paths/get/{name} — YAKKA obyekt va `readers`
+	// — OBYEKTLAR RO'YXATI (id/remoteAddr). Son ko'rinishi ham qabul
+	// qilinadi (moslashuvchanlik).
 	var out struct {
-		Readers int `json:"readers"`
-		Items   []struct {
-			Name    string `json:"name"`
-			Readers int    `json:"readers"`
+		ReadersAny json.RawMessage `json:"readers"`
+		Items      []struct {
+			Name       string          `json:"name"`
+			ReadersAny json.RawMessage `json:"readers"`
 		} `json:"items"`
 	}
 	if err := c.do(http.MethodGet, "/v3/paths/get/"+path, nil, &out); err != nil {
+		// Path yo'q (404) — o'quvchi ham yo'q: idle stop uchun 0 deb olamiz.
+		if isMTXNotFound(err) {
+			return 0, nil
+		}
 		return -1, err
 	}
+	raw := out.ReadersAny
 	if len(out.Items) > 0 {
-		return out.Items[0].Readers, nil
+		raw = out.Items[0].ReadersAny
 	}
-	return out.Readers, nil
+	return countReaders(raw)
 }
 
 // URLs — WHEP/RTSP asos manzillari (portlar config'dan; §7.1 URL namunasi).
@@ -121,6 +127,22 @@ func (c *Client) do(method, path string, body []byte, out any) error {
 		}
 	}
 	return nil
+}
+
+// countReaders — readers maydonini son yoki ro'yxat ko'rinishida o'qiydi.
+func countReaders(raw json.RawMessage) (int, error) {
+	if len(raw) == 0 {
+		return 0, nil
+	}
+	var n int
+	if err := json.Unmarshal(raw, &n); err == nil {
+		return n, nil
+	}
+	var arr []json.RawMessage
+	if err := json.Unmarshal(raw, &arr); err == nil {
+		return len(arr), nil
+	}
+	return -1, fmt.Errorf("readers maydoni kutilmagan ko'rinishda: %s", raw)
 }
 
 type mtxError struct {
