@@ -245,6 +245,15 @@ ro‘yxatdan o‘tganida CreateClient `ErrExists` qaytargan va enroll chalkash
 `409 already_enrolled` degan (operator kodni ayblagan). Endi `ErrNameTaken` →
 `409 name_taken`, kod isrof bo‘lmaydi. Kontrakt: 1.0-draft.9.
 
+**Mijoz o‘chirilgandan keyingi holatlar (2026-11-20, 1.0-draft.11):**
+- `DELETE /api/admin/clients/{id}` endi agent WS sessiyasini ham yopadi
+  (`wsagent.Hub.Kick`, close 4004) — avval o‘chirilgan mijoz UI'da
+  "online" bo'lib turardi. Test: `TestKickClosesSession`.
+- Tasdiqlangan so‘rovning mijoz qatori yo‘q bo‘lib qolsa (FK `SET NULL`),
+  keyingi polling `rejected` qaytaradi va qator shu holatga o‘tadi
+  (`registry.InvalidateOrphanJoin`) — avval abadiy "pending" kutilardi.
+  Test: `TestJoinApprovedClientDeleted`.
+
 **Ulanish tartibi: kod → so‘rov + admin tasdig‘i (2026-11-20, operator
 talabi):** „ulanish kodini olib tashla. ulanish ruhsati faqat server UI dan
 tasdiqlanadi“. Endi agent `POST /api/agent/join` bilan so‘rov yuboradi

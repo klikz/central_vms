@@ -190,9 +190,10 @@ func run(ctx context.Context, log *slog.Logger, cfgPath string,
 	}
 	// §3 (1.0-draft.10): agent ulanish so'rovi yuboradi va admin tasdig'ini
 	// kutadi — tasdiqlangach sessiya avtomatik boshlanadi.
-	if rt.st != nil && rt.st.AgentID == "" {
-		go rt.joinLoop(ctx, 15*time.Second)
-	}
+	// §3.2: so'rov/tasdiq kuzatuvi doim yuradi — identity bo'lmasa
+	// (birinchi ishga tushish yoki "Clear connection" dan keyin) so'rov
+	// yuboradi, bo'lsa jim turadi.
+	go rt.joinLoop(ctx, 15*time.Second)
 	if cfg.UIPin != "" {
 		log.Warn("ui_pin kaliti endi ishlatilmaydi (§10.3 bekor qilindi) — fayldan olib tashlang")
 	}
@@ -215,9 +216,10 @@ func run(ctx context.Context, log *slog.Logger, cfgPath string,
 		SelftestLast: func() []selftest.Result { return rt.selftest.Last() },
 		// UI "Save" → faylga yozish + sessiyani qayta boshlash;
 		// UI "Join" → §3.1 ulanish so'rovini yuborish/holatini so'rash.
-		SetSettings: rt.setSettings,
-		GetSettings: rt.currentSettings,
-		JoinNow:     rt.joinFromUI,
+		SetSettings:   rt.setSettings,
+		GetSettings:   rt.currentSettings,
+		JoinNow:       rt.joinFromUI,
+		ResetIdentity: rt.resetIdentity,
 	})
 	if err != nil {
 		return fmt.Errorf("lokal UI: %w", err)

@@ -58,6 +58,7 @@ type runtime struct {
 
 	mu              sync.Mutex
 	online          bool
+	authRejected    bool // §3.6: server secret'ni rad etdi (4003/4004)
 	versionMismatch bool
 	serverVer       string
 	protoMin        int
@@ -149,6 +150,47 @@ func (r *runtime) setSettings(in localui.Settings) error {
 		r.log.Info("sozlama saqlandi — sessiya qayta boshlanadi",
 			"server", redact.String(r.cfg.ServerURL), "name", r.cfg.ClientName)
 	}
+	return nil
+}
+
+// isAuthReject — §3.6: 4003/4004 (secret rad / agent revoked). Bunday
+// holatda lokal identity ishlatib bo'lmaydi: uni tozalab qayta so'rov
+// yuborish kerak (1.0-draft.11).
+func isAuthReject(err error) bool {
+	var ce *agent.ConnError
+	if errors.As(err, &ce) {
+		return ce.Code == 4003 || ce.Code == 4004
+	}
+	return false
+}
+
+// resetIdentity — lokal UI "Clear connection": agent_id, join_key va sir
+// o'chiriladi; kameralar, server_url va boshqa sozlamalar saqlanadi.
+// Server mijozni o'chirganda yoki secret'ni aylantirganda (cheksiz 4003)
+// shundan keyin yangi kalit bilan qayta so'rov yuboriladi (§3.4).
+func (r *runtime) resetIdentity() error {
+	r.mu.Lock()
+	st, had := r.st, r.st != nil && (r.st.AgentID != "" || r.st.JoinKey != "")
+	r.mu.Unlock()
+	if st == nil {
+		return errors.New("reset: state holati yuklanmagan")
+	}
+	if !had {
+		return nil // tozalash idempotent: allaqachon bo'sh
+	}
+	st.AgentID, st.JoinKey, st.JoinStatus = "", "", ""
+	r.ks.Delete(keystore.RefAgentSecret)
+	if err := r.ks.Save(); err != nil {
+		return fmt.Errorf("reset: keystore: %w", err)
+	}
+	if err := st.Save(); err != nil {
+		return fmt.Errorf("reset: state: %w", err)
+	}
+	r.mu.Lock()
+	r.authRejected, r.online = false, false
+	r.mu.Unlock()
+	r.log.Info("lokal ulanish identity'si tozalandi — endi Request access bilan qayta so'rov yuborilsin")
+	r.requestReload(true)
 	return nil
 }
 
@@ -245,17 +287,37 @@ func (r *runtime) ensureJoinKeys(st *statestore.State) error {
 
 // joinLoop — tasdiq kutilayotgan payt so'rovni muntazam takrorlaydi
 // (polling). Tasdiqlangach yoki agent to'xtatilgach tugaydi.
+// joinLoop — §3.2: identity bo'lmagan paytda doimiy ravishda so'rov
+// yuborish / tasdiqni so'rash. Ulangan yoki rad etilgan bo'lsa jim turadi,
+// lekin "Clear connection" dan keyin o'zi davom etadi (avval loop tugab
+// qolardi va resetdan keyin abadiy jimgina qolardi — 2026-11-20 kuzatildi).
 func (r *runtime) joinLoop(ctx context.Context, every time.Duration) {
 	t := time.NewTicker(every)
 	defer t.Stop()
 	for {
 		r.mu.Lock()
 		enrolled := r.st != nil && r.st.AgentID != ""
+		rejected := r.st != nil && r.st.JoinStatus == "rejected"
 		r.mu.Unlock()
-		if enrolled {
-			return
+		if enrolled || rejected {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				continue
+			}
 		}
 		if err := r.joinOnce(ctx); err != nil {
+			// "rejected" — terminal holat: operator harakati kerak
+			// (Clear connection → Request access). 15 s davrda abadiy
+			// so'rash foydasiz (§3.2).
+			r.mu.Lock()
+			rejected := r.st != nil && r.st.JoinStatus == "rejected"
+			r.mu.Unlock()
+			if rejected {
+				r.log.Warn("ulanish so'rovi rad etilgan — lokal UI'da Clear connection, so'ng Request access")
+				return
+			}
 			r.log.Debug("join urinishi", "err", err)
 		}
 		select {
@@ -364,10 +426,22 @@ func (r *runtime) newSession() *agent.Session {
 		Name:   cname,
 		BootID: bootID(), CamsEpoch: r.st.CamsEpoch, Caps: r.caps,
 		Clock: clockReal(), Log: r.log,
-		OnDisconnect: func(error) {
+		OnDisconnect: func(err error) {
+			rej := isAuthReject(err)
 			r.mu.Lock()
 			r.online = false
+			first := rej && !r.authRejected
+			if rej {
+				r.authRejected = true
+			}
 			r.mu.Unlock()
+			if first {
+				// Lokal identity eskirgan: server bazasi qayta boshlangan
+				// yoki mijoz o'chirilgan/dasrotlan bo'lishi mumkin.
+				r.log.Warn("server ulanish ma'lumotlarimizni rad etdi",
+					"kod", fmt.Sprint(err),
+					"yo'l", "lokal UI: Clear connection → Request access")
+			}
 		},
 		OnCompat: func(w proto.Welcome) { // §1: versiya mos emas — C4.7 banneri
 			r.mu.Lock()
@@ -390,6 +464,7 @@ func (r *runtime) newSession() *agent.Session {
 			r.mu.Lock()
 			r.online, r.welcome = true, w
 			r.versionMismatch = false // muvaffaqiyatli qo'l berish — banner o'chadi
+			r.authRejected = false
 			r.mu.Unlock()
 			r.log.Info("welcome qabul qilindi", "server_version", w.ServerVersion,
 				"needs_full_sync", w.NeedsFullSync, "cams_epoch", w.CamsEpoch)
@@ -461,8 +536,8 @@ func (r *runtime) statusFn() localui.Status {
 	defer r.mu.Unlock()
 	st := localui.Status{
 		Version: version, ServerOnline: r.online, AgentID: r.st.AgentID,
-		JoinStatus: r.st.JoinStatus,
-		CamsTotal:  len(r.st.Cameras), Publishes: 0, CamsEpoch: r.st.CamsEpoch,
+		JoinStatus: r.st.JoinStatus, AuthRejected: r.authRejected,
+		CamsTotal: len(r.st.Cameras), Publishes: 0, CamsEpoch: r.st.CamsEpoch,
 		FFmpegOK: r.caps.FFmpegVersion != "",
 	}
 	// §17 holat chizig'i: oxirgi heartbeat + oxirgi xato (redaktor orqali).

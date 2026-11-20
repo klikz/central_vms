@@ -126,8 +126,21 @@ func (j *Joiner) Request(in JoinInput, sourceIP string) (JoinOutcome, error) {
 		// Agent qayta so'rayapti (masalan disk state'ini yo'qotgan):
 		// agent_id qaytariladi, sir esa hech qachon qaytarmaydi.
 		c, err := j.reg.GetClientByID(q.ClientID)
+		if errors.Is(err, registry.ErrNotFound) {
+			// Mijoz qatori server tomonidan o'chirilgan (yoki baza qayta
+			// boshlangan): tasdiq yetim. Agentga sabani ochiq aytamiz —
+			// aks holdu u cheksiz "pending" kutadi (§3.2, 1.0-draft.11).
+			note := "mijoz qatori server tomonidan o'chirilgan — lokal UI'da Clear connection, so'ng Request access"
+			if uerr := j.reg.InvalidateOrphanJoin(q.ID, note); uerr != nil {
+				j.lg.Warn("yetim tasdiq holati yangilanmadi", "request_id", q.ID, "err", uerr)
+			}
+			j.lg.Info("tasdiqlangan so'rov yetim qoldi (mijoz o'chirilgan)",
+				"request_id", q.ID, "hostname", q.Hostname)
+			return JoinOutcome{Status: "rejected", RequestID: q.ID},
+				fmt.Errorf("%w: %s", ErrRejected, note)
+		}
 		if err != nil {
-			return JoinOutcome{Status: "pending", RequestID: q.ID}, nil
+			return JoinOutcome{}, err
 		}
 		return JoinOutcome{Status: "approved", AgentID: c.AgentID, RequestID: q.ID}, nil
 	case "rejected":

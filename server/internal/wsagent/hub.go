@@ -131,6 +131,21 @@ func (h *Hub) Online(agentID string) bool {
 	return h.conns[agentID] != nil
 }
 
+// Kick — agent sessiyasini majburiy yopadi. Admin mijozni o'chirganda
+// chaqiriladi: aks holda WS sessiyasi tirik qoladi va o'chirilgan mijoz
+// UI'da "online" bo'lib turadi (2026-11-20 kuzatildi). Agent qayta
+// ulanishda 4003/4004 oladi va lokal UI'da tiklanish yo'li ko'rsatiladi.
+func (h *Hub) Kick(agentID string, code int, reason string) bool {
+	h.mu.Lock()
+	c := h.conns[agentID]
+	h.mu.Unlock()
+	if c == nil {
+		return false
+	}
+	c.closeWith(code, reason)
+	return true
+}
+
 // Send — agentga server xabari (yozuvchi goroutine'ga channel orqali).
 func (h *Hub) Send(agentID, typ string, data any) error {
 	raw, err := json.Marshal(data)

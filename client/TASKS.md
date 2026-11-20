@@ -352,3 +352,28 @@ nusxasini qaytaryotgandi. Server xato kodlari UI’da aniq matnga aylanadi:
   agent xavf haqida ogohlantiradi.
 - `state.json`ga `join_key` va `join_status` qo'shildi; sir avvalgi kabi
   keystore'da (§10.1). Kontrakt: 1.0-draft.10.
+
+**Eskirgan identity: „Clear connection“ (2026-11-20, operator kuzatuvi):**
+client „connected as ag_…“ deb turgan edi va Request access o'chirilgan edi —
+sababi serverda bu mijoz qatori o'chirilgan (yoki baza qayta boshlangan),
+agent esa o'z eski `agent_id`/secret'i bilan cheksiz **4003** olayotgan.
+Endi: (a) agent 4003/4004'ni `status.auth_rejected` sifatida UI'ga beradi va
+Sozlamalar sahifasi „server bizning ma'lumotlarni rad etdi — Clear connection,
+so'ng Request access“ deydi; (b) yangi **Clear connection** tugmasi
+`POST /api/ui/reset` orqali `agent_id`, `join_key` va sirni o'chiradi
+(kameralar va sozlamalar saqlanadi, amallar idempotent); (c) so'ng Request
+access bilan yangi kalitli so'rov yuboriladi. Server tomonida eski qator
+Boshqaruv → „O'chirish“ bilan tozalanadi. Kontrakt: 1.0-draft.11 (§3.6, §17.1).
+
+**UI va kuzatuv tuzatishlari (2026-11-20, 1.0-draft.11):**
+- `app.js`da `joinStatus` o'zgaruvchisi **umuman e'lon qilinmagan** edi —
+  `"use strict"` tufayli `loadStatus()` ReferenceError bilan uzilib,
+  Sozlamalar holat matni (hint) hech qachon ko'rinmas edi. E'lon qilindi.
+- Holat matni endi 5 s davrdagi status polling bilan yangilanadi
+  (`updateJoinState()`); avval faqat ekran ochilganda yangilanardi —
+  tasdiqdan keyin matn eskirib qolardi.
+- `joinLoop` doimiy yuradi: ulangan yoki rad etilgan paytda jim turadi,
+  **Clear connection**'dan keyin o'zi davom etadi (avval loop tugab,
+  agent jimgina qolardi).
+- Rad etilgan so'rovda `Request access` o'chiriladi (eski kalit bilan
+  urinish foydasiz) va `Clear connection` faollashadi.

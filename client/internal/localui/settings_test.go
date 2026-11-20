@@ -3,6 +3,7 @@ package localui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -174,5 +175,47 @@ func TestJoinEndpoint_LegacyPinIgnored(t *testing.T) {
 	res := postJSON(t, ts.URL+"/api/ui/join", map[string]string{})
 	if res.StatusCode != http.StatusOK || !called {
 		t.Fatalf("eski ui_pin yozuvi join'ni to'sib qo'ydi: %d called=%v", res.StatusCode, called)
+	}
+}
+
+// POST /api/ui/reset — "Clear connection" (1.0-draft.11).
+func TestResetEndpoint(t *testing.T) {
+	called := false
+	ts := newDepsServer(t, Deps{ResetIdentity: func() error { called = true; return nil }})
+	res := postJSON(t, ts.URL+"/api/ui/reset", map[string]string{})
+	if res.StatusCode != http.StatusOK || !called {
+		t.Fatalf("reset ishlamadi: %d called=%v", res.StatusCode, called)
+	}
+}
+
+func TestResetEndpointErrors(t *testing.T) {
+	ts := newDepsServer(t, Deps{}) // ResetIdentity nil
+	res := postJSON(t, ts.URL+"/api/ui/reset", map[string]string{})
+	if res.StatusCode != http.StatusNotImplemented {
+		t.Fatalf("bog'lanmagan reset: %d", res.StatusCode)
+	}
+	ts2 := newDepsServer(t, Deps{ResetIdentity: func() error { return errors.New("disk yozib bo'lmadi") }})
+	res2 := postJSON(t, ts2.URL+"/api/ui/reset", map[string]string{})
+	if res2.StatusCode != http.StatusBadGateway {
+		t.Fatalf("xatoli reset: %d", res2.StatusCode)
+	}
+}
+
+// Status.auth_rejected — §3.6 holati UI'ga yetib borishi kerak.
+func TestStatusAuthRejectedField(t *testing.T) {
+	ts := newDepsServer(t, Deps{Status: func() Status {
+		return Status{Version: "test-ver", AgentID: "ag_x", AuthRejected: true}
+	}})
+	res, err := ts.Client().Get(ts.URL + "/api/ui/status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var m map[string]any
+	if err := json.NewDecoder(res.Body).Decode(&m); err != nil {
+		t.Fatal(err)
+	}
+	if m["auth_rejected"] != true {
+		t.Fatalf("auth_rejected yo'q: %+v", m)
 	}
 }

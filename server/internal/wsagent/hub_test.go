@@ -468,3 +468,27 @@ func dialHandshakeNamed(t *testing.T, e *testEnv, agentID, secret string, ver in
 		Caps: proto.Caps{GPU: "none"},
 	})
 }
+
+// Admin mijozni o'chirganda sessiya majburiy yopilishi kerak: aks holda
+// o'chirilgan mijoz UI'da "online" bo'lib turadi (2026-11-20 kuzatildi).
+func TestKickClosesSession(t *testing.T) {
+	e := newTestEnv(t)
+	agentID, secret := e.enroll(t)
+	_, _ = dialHandshake(t, e, agentID, secret, 1)
+	if !e.hub.Online(agentID) {
+		t.Fatal("kick oldidan online emas")
+	}
+	if !e.hub.Kick(agentID, 4004, "mijoz_ochirildi") {
+		t.Fatal("Kick false qaytardi")
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for e.hub.Online(agentID) && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if e.hub.Online(agentID) {
+		t.Fatal("kick dan keyin ham online")
+	}
+	if e.hub.Kick("ag_yo'qagent", 4004, "x") {
+		t.Fatal("yo'q agentga Kick true qaytardi")
+	}
+}

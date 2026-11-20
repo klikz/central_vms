@@ -288,3 +288,54 @@ func TestJoinPollingAllowed(t *testing.T) {
 		t.Fatalf("yangi so'rovlar limiti ishlamadi: %v", lastErr)
 	}
 }
+
+// Mijoz qatori o'chirilsa (server UI "O'chirish" yoki baza qayta boshlansa),
+// tasdiqlangan so'rov abadiy "pending" bo'lib qolmasligi kerak: agentga
+// ochiq "rejected" qaytadi va qator shu holatga o'tadi (1.0-draft.11).
+func TestJoinApprovedClientDeleted(t *testing.T) {
+	j, reg, _ := testJoiner(t)
+	in := joinInput("Ochirilgan-mijoz")
+	out, err := j.Request(in, "10.0.0.40")
+	if err != nil || out.Status != "pending" {
+		t.Fatalf("birinchi so'rov: %+v %v", out, err)
+	}
+	ap, err := j.Approve(out.RequestID, "Ochirilgan-mijoz", 0)
+	if err != nil || ap.Status != "approved" || ap.AgentID == "" {
+		t.Fatalf("tasdiq: %+v %v", ap, err)
+	}
+	c, err := reg.GetClientByAgentID(ap.AgentID)
+	if err != nil {
+		t.Fatalf("mijoz topilmadi: %v", err)
+	}
+	if err := reg.DeleteClient(c.ID); err != nil {
+		t.Fatalf("mijoz o'chirildi: %v", err)
+	}
+	got, err := j.Request(in, "10.0.0.40")
+	if !errors.Is(err, ErrRejected) {
+		t.Fatalf("mijoz o'chirilgandan keyin: %+v %v (ErrRejected kutilgan)", got, err)
+	}
+	if got.Status != "rejected" || got.RequestID != out.RequestID {
+		t.Fatalf("holat: %+v", got)
+	}
+	// Qator ham barqaror "rejected" holatiga o'tgan bo'lishi kerak.
+	list, err := j.reg.ListJoinRequests("rejected")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, q := range list {
+		if q.ID == out.RequestID {
+			found = true
+			if q.Note == "" {
+				t.Errorf("rad izohi yo'q: %+v", q)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("so'rov %d rejected ro'yxatida yo'q", out.RequestID)
+	}
+	// Keyingi polling ham shu javobni beradi (holat o'zgarmas).
+	if got2, err2 := j.Request(in, "10.0.0.40"); !errors.Is(err2, ErrRejected) || got2.Status != "rejected" {
+		t.Fatalf("takroriy polling: %+v %v", got2, err2)
+	}
+}

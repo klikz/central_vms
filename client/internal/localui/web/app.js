@@ -6,7 +6,6 @@
 const SCREENS = ["cams", "discovery", "status", "settings", "log"];
 const I18N = {
   loading: "loading…",
-  needPin: "PIN required",
   saved: "Saved",
   saveFailed: "Could not save",
   scanDone: (n) => `${n} camera(s) found`,
@@ -16,6 +15,10 @@ const I18N = {
   joinSent: "Request sent — waiting for the server admin to approve",
   joinFailed: "Could not send the request",
   joinAlready: "Already connected to the server",
+  resetDone: "Saved connection cleared — press Request access to ask again",
+  resetFailed: "Could not clear the connection",
+  resetConfirm: "Clear this computer's saved connection? Cameras and settings stay. You will have to request access again.",
+  authRejected: "server rejected our saved credentials — the server was reset or this client was deleted. Press Clear connection, then Request access",
   err_already_enrolled: "Already connected to the server",
   err_rejected: "The server rejected this request — contact the administrator",
   err_bad_key: "Local key problem — check the agent's state directory",
@@ -42,13 +45,14 @@ function showScreen(name) {
   load(name);
 }
 
-let agentId = "";  // bo'sh → agent ro'yxatdan o'tmagan (Enroll faol)
+let agentId = "";    // bo'sh → ulanish yo'q ("Request access" faol)
+let joinStatus = ""; // §3.2: pending | approved | rejected
+let authRejected = false; // §3.6: server secret'ni rad etdi (4003/4004)
 
 async function api(path, opts) {
   const o = Object.assign({ credentials: "same-origin" }, opts || {});
   o.headers = Object.assign({}, o.headers || {});
   const res = await fetch(path, o);
-  if (res.status === 401) { toast(I18N.needPin, "err"); return null; }
   if (!res.ok) {
     const e = new Error(path + ": HTTP " + res.status);
     try { e.body = await res.json(); } catch (_) { /* JSON bo'lmasa bo'sh */ }
@@ -68,6 +72,7 @@ async function loadStatus() {
     if (sa) sa.textContent = st.agent_id ? st.agent_id.slice(0, 11) : "—";
     agentId = st.agent_id || "";
     joinStatus = st.join_status || "";
+    authRejected = !!st.auth_rejected;
     $("#txt-publishes").textContent = String(st.publishes ?? 0);
     const dot = $("#dot-server");
     dot.className = "dot " + (st.server_online ? "dot-ok" : "dot-off");
@@ -114,6 +119,7 @@ function renderStatusCards(st) {
       banner.hidden = true;
     }
   }
+  updateJoinState(); // §3: Sozlamalar matni ham polling bilan yangilanadi
 }
 
 async function load(screen) {
@@ -140,20 +146,56 @@ async function loadSettings() {
     }
   } catch (e) { /* eski versiyalarda bo'lmasligi mumkin */ }
   // §3 holati: operator nima kutishini shu yerda ko'radi.
+  updateJoinState();
+}
+
+// updateJoinState — §3 holat matni va tugmalar holati. Alohida funksiya:
+// 5 s davrdagi status polling'i ham buni yangilaydi (avval faqat ekran
+// ochilganda yangilanardi — tasdiqdan keyin matn eskirib qolardi,
+// 2026-11-20 kuzatildi).
+function updateJoinState() {
   const hint = $("#set-hint");
   const btn = document.querySelector('[data-act="join"]');
-  if (agentId) {
+  const resetBtn = document.querySelector('[data-act="reset"]');
+  if (!hint && !btn) return;
+  // "Clear connection" identity yoki so'rov holati bo'lsa kerak (rejected
+  // holda ham: eski join_key bilan qayta urinish rad etiladi).
+  if (resetBtn) resetBtn.disabled = !agentId && !joinStatus;
+  if (agentId && authRejected) {
+    if (hint) hint.textContent = I18N.authRejected;
+    if (btn) btn.disabled = true;
+  } else if (agentId) {
     if (hint) hint.textContent = "connected as " + agentId;
     if (btn) btn.disabled = true;
   } else if (joinStatus === "pending") {
     if (hint) hint.textContent = "request sent — waiting for approval on the server (retried automatically)";
     if (btn) btn.disabled = false;
   } else if (joinStatus === "rejected") {
-    if (hint) hint.textContent = "request rejected by the server — contact the administrator";
-    if (btn) btn.disabled = false;
+    // Eski kalit bilan qayta urinish foydasiz: avval identity tozalanadi.
+    if (hint) hint.textContent = "request rejected by the server — press Clear connection, then Request access";
+    if (btn) btn.disabled = true;
   } else {
     if (hint) hint.textContent = "not connected — press Request access, then approve in the server UI";
     if (btn) btn.disabled = false;
+  }
+}
+
+// resetNow — eski ulanish identity'sini tozalash (§3.4, 1.0-draft.11).
+async function resetNow(btn) {
+  if (!window.confirm(I18N.resetConfirm)) return;
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Clearing…";
+  try {
+    await api("/api/ui/reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    toast(I18N.resetDone, "ok");
+    agentId = ""; joinStatus = ""; authRejected = false;
+    setTimeout(() => { loadStatus(); loadSettings(); }, 800);
+  } catch (e) {
+    toast(I18N.resetFailed, "err");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
   }
 }
 
@@ -209,6 +251,8 @@ document.addEventListener("click", (ev) => {
       .catch(() => toast(I18N.saveFailed, "err"));
   } else if (act === "join") {
     joinNow(btn);
+  } else if (act === "reset") {
+    resetNow(btn);
   } else if (act === "selftest") {
     runSelftest(btn);
   } else if (act === "scan-start") {

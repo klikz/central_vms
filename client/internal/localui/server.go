@@ -42,13 +42,17 @@ type Status struct {
 	AgentID string `json:"agent_id,omitempty"`
 	// JoinStatus — §3.2: pending | approved | rejected (agent_id bo'sh
 	// bo'lsa operator nima kutishini shu maydondan biladi).
-	JoinStatus   string `json:"join_status,omitempty"`
-	ServerOnline bool   `json:"server_online"`
-	CamsTotal    int    `json:"cams_total"`
-	CamsOnline   int    `json:"cams_online"`
-	Publishes    int    `json:"publishes"`
-	CamsEpoch    int64  `json:"cams_epoch"`
-	FFmpegOK     bool   `json:"ffmpeg_ok"`
+	JoinStatus string `json:"join_status,omitempty"`
+	// AuthRejected — §3.6: server bizning secret'ni rad etdi (4003/4004).
+	// Bu holda lokal identity eskirgan (server qayta boshlangan yoki mijoz
+	// o'chirilgan) — UI "Clear connection" yo'lini ko'rsatadi (1.0-draft.11).
+	AuthRejected bool  `json:"auth_rejected,omitempty"`
+	ServerOnline bool  `json:"server_online"`
+	CamsTotal    int   `json:"cams_total"`
+	CamsOnline   int   `json:"cams_online"`
+	Publishes    int   `json:"publishes"`
+	CamsEpoch    int64 `json:"cams_epoch"`
+	FFmpegOK     bool  `json:"ffmpeg_ok"`
 	// §17 holat chizig'i: oxirgi heartbeat va oxirgi xato (redaktorlangan).
 	// §1/C4.7: protokol versiyasi mos kelmasa — UI banneri.
 	VersionMismatch bool   `json:"version_mismatch,omitempty"`
@@ -100,29 +104,31 @@ type Deps struct {
 	// SetSettings'ndan keyin UI javobida yangi qiymat ko'rinishi uchun
 	// ishlatiladi: Server o'zida konfiguratsiyaning ko'chmasini saqlaydi.
 	GetSettings func() Settings
-	// Enroll — UI orqali ro'yxatdan o'tish (§3.1): kod bilan serverga
-	// so'rov, natijada agent_id/secret saqlanadi va sessiya boshlanadi.
 	// JoinNow — UI tugmasi: §3.1 ulanish so'rovini darhol yuborish
-	// (yoki tasdiq holatini so'rash). Kod so'ralmaydi.
+	// (yoki tasdiq holatini so'rash). Kod so'ralmaydi (1.0-draft.10).
 	JoinNow func(ctx context.Context) error
+	// ResetIdentity — UI tugmasi: lokal identity'ni (agent_id, join_key,
+	// sir) tozalash; kameralar va sozlamalar saqlanadi (§3.4, 1.0-draft.11).
+	ResetIdentity func() error
 }
 
 // Server — lokal UI (:8082). Faqat 127.0.0.1 bind qilinishi shart (§10.3).
 type Server struct {
-	cfg          config.Config
-	log          *slog.Logger
-	version      string
-	status       func() Status
-	selftestRun  func(ctx context.Context) []selftest.Result
-	selftestLast func() []selftest.Result
-	logLines     func(limit int) []string
-	setSettings  func(s Settings) error
-	getSettings  func() Settings
-	joinNow      func(ctx context.Context) error
-	cams         CamService
-	discovery    DiscoveryService
-	snap         SnapshotSource
-	mux          *http.ServeMux
+	cfg           config.Config
+	log           *slog.Logger
+	version       string
+	status        func() Status
+	selftestRun   func(ctx context.Context) []selftest.Result
+	selftestLast  func() []selftest.Result
+	logLines      func(limit int) []string
+	setSettings   func(s Settings) error
+	getSettings   func() Settings
+	joinNow       func(ctx context.Context) error
+	resetIdentity func() error
+	cams          CamService
+	discovery     DiscoveryService
+	snap          SnapshotSource
+	mux           *http.ServeMux
 }
 
 // NewServer — UI serverini quradi. Deps maydonlari nil bo'lsa bo'sh natija qaytariladi.
@@ -139,8 +145,9 @@ func NewServer(cfg config.Config, log *slog.Logger, version string, d Deps) (*Se
 	s := &Server{cfg: cfg, log: log, version: version, status: d.Status,
 		selftestRun: d.SelftestRun, selftestLast: d.SelftestLast,
 		logLines: d.LogLines, setSettings: d.SetSettings, getSettings: d.GetSettings,
-		joinNow: d.JoinNow,
-		cams:    d.Cams, discovery: d.Discovery, snap: d.Snapshots, mux: http.NewServeMux()}
+		joinNow:       d.JoinNow,
+		resetIdentity: d.ResetIdentity,
+		cams:          d.Cams, discovery: d.Discovery, snap: d.Snapshots, mux: http.NewServeMux()}
 	s.routes()
 	return s, nil
 }
@@ -165,6 +172,7 @@ func (s *Server) routes() {
 	})
 	s.mux.HandleFunc("/api/ui/settings", s.handleSettings)
 	s.mux.HandleFunc("POST /api/ui/join", s.handleJoin)
+	s.mux.HandleFunc("POST /api/ui/reset", s.handleReset)
 	s.mux.HandleFunc("/api/ui/selftest", s.handleSelftest)
 	s.camRoutes()
 	s.discoveryRoutes()
@@ -358,16 +366,25 @@ func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
-func normalizeCode(code string) string {
-	out := make([]rune, 0, len(code))
-	for _, r := range code {
-		switch r {
-		case ' ', '\t', '-', '_':
-			continue
-		}
-		out = append(out, r)
+
+// handleReset — POST /api/ui/reset: eski ulanish identity'sini tozalash
+// (1.0-draft.11). Server mijozni o'chirsa yoki secret'ni aylantirsa agent
+// cheksiz 4003 oladi (§3.6) va eski agent_id bilan tiklana olmaydi — shu
+// amaldan keyin yangi join_key bilan qayta so'rov yuboriladi.
+func (s *Server) handleReset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodErr(w)
+		return
 	}
-	return strings.TrimSpace(string(out))
+	if s.resetIdentity == nil {
+		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "reset_unavailable"})
+		return
+	}
+	if err := s.resetIdentity(); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "reset_failed", "detail": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
 }
 
 // Run — serverni ishga tushiradi va ctx bekor qilinganda mayin to'xtatadi (§9.4).

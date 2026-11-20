@@ -274,9 +274,17 @@ func (d *Deps) handleClientDelete(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_id", "")
 		return
 	}
+	c, err := d.Reg.GetClientByID(id)
+	if err != nil {
+		regErr(w, err)
+		return
+	}
 	if err := d.Reg.DeleteClient(id); err != nil {
 		regErr(w, err)
 		return
+	}
+	if d.Agent != nil && d.Agent.Kick(c.AgentID, 4004, "mijoz_ochirildi") {
+		_ = d.Audit.Add(claimsSub(r), audit.AdminAction, "agent_kick:"+c.AgentID)
 	}
 	_ = d.Audit.Add(claimsSub(r), audit.AdminAction, "client_delete:"+r.PathValue("id"))
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

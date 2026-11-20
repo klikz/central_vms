@@ -1,6 +1,6 @@
 # Central VMS — kontrakt: agent (`vmsagent`) ↔ server (`vmsd`)
 
-**Versiya: 1.0-draft.10** · Sana: 2026-11-20 · Holat: **client tomonida yozildi, muzlatildi (frozen)**
+**Versiya: 1.0-draft.11** · Sana: 2026-11-20 · Holat: **client tomonida yozildi, muzlatildi (frozen)**
 
 Bu fayl **yagona manba** (single source of truth). Server S0 bosqichida bu fayl `docs/protocol.md`
 ga ko'chiriladi (yoki symlink bilan bog'ladi) va undan keyin o'zgarish faqat versiya ko'tarib,
@@ -105,6 +105,11 @@ operator nomi, kelgan IP, tizim/versiya, vaqt. Amallar:
   ko‘rinadi va so‘rov rad holatida qoladi.
 - **O‘chirish** — eski so‘rov; agent qayta so‘rov yuborsa yangi qator
   ochiladi.
+- **Mijoz qatori o‘chirilsa** (`DELETE /api/admin/clients/{id}`, 1.0-draft.11):
+  agent WS sessiyasi darhol yopiladi (`Hub.Kick`, close **4004**) va
+  tasdiqlangan so‘rov keyingi polling‘da **rejected** holatiga o‘tadi
+  (note: „mijoz qatori server tomonidan o‘chirilgan“). Aks holda agent
+  abadiy „pending“ deb kutardi (2026-11-20 amalda kuzatildi).
 DB: `join_requests(join_key_hash UNIQUE, agent_secret_hash, hostname, name,
 os, lan_ip, source_ip, agent_version, status, decided_at, decided_by,
 client_id, note)`.
@@ -163,6 +168,14 @@ server → agent : { "type": "welcome", "data": { ... } }    // §4.1, yoki 4001
 - `auth` kelmasa server 5 sdan keyin yopadi (code **4002**).
 - Secret noto'g'ri → code **4003** (`agent_revoked` bo'lsa `4004`). Agent 4003'da backoff'ni
   60 s dan boshlaydi va lokal UI'da "secret rad etildi — qayta ulanish so‘rovi yuboring" deydi.
+- **Eskirgan identity (1.0-draft.11):** server bazasi qayta boshlansa yoki mijoz
+  qatori o'chirilsa, agent o'z `agent_id`/secret'i bilan cheksiz 4003 oladi va
+  o'zi tiklana olmaydi (serverda hash, agentda esa eski sir). Shuning uchun
+  agent 4003/4004'ni `status.auth_rejected` sifatida UI'ga chiqaradi va operator
+  **Clear connection** (`POST /api/ui/reset`) → **Request access** bilan yangi
+  `join_key`/secret orqali qayta so'rov yuboradi. Kameralar va sozlamalar
+  saqlanadi; eski mijoz qatori server UI'da **O'chirish** bilan olib tashlanadi
+  (nom band bo'lsa tasdiq `409 name_taken` qaytaradi).
 
 ## 4. Xabarlar: agent → server
 
@@ -683,9 +696,14 @@ UI — SPA; ma'lumotlar shu endpoint'lar orqali olinadi. Barcha javoblar JSON
 | `/api/ui/cams/export` | GET | `text/csv` — parollar `***`. `?with_secrets=1` faqat PIN bilan (§16.3) |
 | `/api/ui/discovery*` | POST/GET | WS-Discovery boshlash/natija (C2) |
 | `/api/ui/selftest` | POST | Self-test ishga tushirish (C4) |
+| `/api/ui/reset` | POST | Lokal identity'ni tozalash (1.0-draft.11): `agent_id`,
+  `join_key` va sir o'chiriladi; kameralar/sozlamalar saqlanadi. Server mijozni
+  o'chirganda yoki secret aylantirilganda (cheksiz 4003) ishlatiladi. Jism
+  talab qilinmaydi; javob `{status:"cleared"}` |
 | `/api/ui/join` | POST | §3.1 ulanish so‘rovi (jism talab qilinmaydi). Agent
   so‘rovni yuboradi/holatini so‘raydi; tasdiqlansa `agent_id` saqlanadi va sessiya
-  qayta boshlanadi. Xatolar: `409 already_enrolled`, `403 rejected`,
+  qayta boshlanadi. `status`da `join_status` va `auth_rejected` (4003/4004)
+  qaytariladi. Xatolar: `409 already_enrolled`, `403 rejected`,
   `429 rate_limited`, `400 bad_key`, `502 join_failed`. Kod maydoni yo‘q
   (1.0-draft.10) |
 | `/favicon.ico`, `/favicon.svg` | GET | SVG ikonka — brauzer avtomatik so'raydi, 404 bo'lmasligi kerak |
@@ -758,6 +776,17 @@ tasodifan qutulgan).
 
 | Versiya | Sana | O'zgarish |
 |---|---|---|
+| 1.0-draft.11 | 2026-11-20 | **Eskirgan identity holati** (operator kuzatuvi:
+  client „connected as ag_…“ deb turardi, Request access o'chirilgan edi,
+  server esa uni tanimasdi). §3.6: agent 4003/4004'ni `status.auth_rejected`
+  qilib UI'ga chiqaradi; lokal UI'da **Clear connection** (`POST /api/ui/reset`,
+  §17.1) — `agent_id`/`join_key`/sir o'chiriladi, kameralar va sozlamalar
+  qoladi; so'ng Request access bilan yangi kalitli so'rov. Server tomonida eski
+  mijoz qatori „O'chirish“ bilan tozalanadi. Qo'shimcha tuzatishlar: mijoz o'chirilganda agent sessiyasi darhol
+  yopiladi (`Hub.Kick`, 4004) va tasdiqlangan so'rov keyingi polling'da
+  `rejected` holatiga o'tadi (yetim tasdiq abadiy "pending" qaytarmaydi);
+  agentning join kuzatuvi Clear connection'dan keyin o'zi davom etadi; lokal
+  UI holat matni 5 s davrdagi status polling bilan yangilanadi. |
 | 1.0-draft.10 | 2026-11-20 | **Ulanish tartibi: kod → so‘rov + admin tasdiqi**
   (operator talabi). §3 qayta yozildi: `POST /api/agent/join` (`join_key`,
   agent o‘zi yaratgan `agent_secret`, `name`, hostname, IP), holatlar

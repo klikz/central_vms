@@ -203,6 +203,17 @@ func (r *Registry) ApproveJoin(requestID int64, agentID, secretHash, name string
 }
 
 // RejectJoin — so'rovni rad etadi (sabab `note`da ko'rsatiladi).
+// InvalidateOrphanJoin — tasdiqlangan so‘rovning mijoz qatori o'chirilgan
+// bo'lsa (clients.id ON DELETE SET NULL) uni "rejected" holatiga o'tkazadi.
+// Buni qilmasak agent abadiy "pending" deb kutadi: tasdiq ma'noga ega
+// emas, chunkki mijoz artiq yo'q (2026-11-20 amalda kuzatildi).
+func (r *Registry) InvalidateOrphanJoin(requestID int64, note string) error {
+	_, err := r.db.Exec(`UPDATE join_requests SET status='rejected', updated_at=?, note=?
+		WHERE id=? AND status='approved' AND client_id IS NULL`,
+		time.Now().UTC().Format(time.RFC3339), strings.TrimSpace(note), requestID)
+	return wrap(err, "join yetim belgilash")
+}
+
 func (r *Registry) RejectJoin(requestID int64, note string, decidedBy int64) error {
 	res, err := r.db.Exec(`UPDATE join_requests SET status='rejected', decided_at=?, decided_by=?,
 		updated_at=?, note=? WHERE id=? AND status='pending'`,
