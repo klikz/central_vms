@@ -36,9 +36,9 @@ func (f *fakeDiscovery) AddSelected(keys []string, in discovery.BulkAddInput) (d
 	return f.addReport, f.addErr
 }
 
-func newDiscServer(t *testing.T, svc DiscoveryService, pin string) *Server {
+func newDiscServer(t *testing.T, svc DiscoveryService) *Server {
 	t.Helper()
-	cfg := config.Config{UIBind: "127.0.0.1:0", UIPin: pin}
+	cfg := config.Config{UIBind: "127.0.0.1:0"}
 	s, err := NewServer(cfg, slog.New(slog.DiscardHandler), "test", Deps{Discovery: svc})
 	if err != nil {
 		t.Fatal(err)
@@ -46,15 +46,12 @@ func newDiscServer(t *testing.T, svc DiscoveryService, pin string) *Server {
 	return s
 }
 
-func doReq(s *Server, method, path, body, pin string) *httptest.ResponseRecorder {
+func doReq(s *Server, method, path, body string) *httptest.ResponseRecorder {
 	var rd io.Reader
 	if body != "" {
 		rd = strings.NewReader(body)
 	}
 	req := httptest.NewRequest(method, path, rd)
-	if pin != "" {
-		req.Header.Set("X-Agent-Pin", pin)
-	}
 	rec := httptest.NewRecorder()
 	s.mux.ServeHTTP(rec, req)
 	return rec
@@ -62,8 +59,8 @@ func doReq(s *Server, method, path, body, pin string) *httptest.ResponseRecorder
 
 func TestDiscovery_ScanStart(t *testing.T) {
 	svc := &fakeDiscovery{scanned: 1024}
-	s := newDiscServer(t, svc, "1234")
-	rec := doReq(s, "POST", "/api/ui/discovery/scan", "", "1234")
+	s := newDiscServer(t, svc)
+	rec := doReq(s, "POST", "/api/ui/discovery/scan", "")
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("kod = %d, 202 kutilardi: %s", rec.Code, rec.Body.String())
 	}
@@ -79,8 +76,8 @@ func TestDiscovery_ResultsShape(t *testing.T) {
 		{Device: discovery.Device{IP: "10.0.0.5", Port: 554, Model: "Dahua", MAC: "aa:bb"}, AlreadyKnown: true, ExistingID: "id1"},
 		{Device: discovery.Device{IP: "10.0.0.6", Port: 554, Model: "Acme"}},
 	}}
-	s := newDiscServer(t, svc, "1234")
-	rec := doReq(s, "GET", "/api/ui/discovery/results", "", "")
+	s := newDiscServer(t, svc)
+	rec := doReq(s, "GET", "/api/ui/discovery/results", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("kod = %d", rec.Code)
 	}
@@ -109,9 +106,9 @@ func TestDiscovery_Add(t *testing.T) {
 		Added:  []cams.Camera{{ID: "n1", Name: "Dahua-01"}},
 		Failed: []discovery.BulkAddFailure{{Err: "host bo'sh"}},
 	}}
-	s := newDiscServer(t, svc, "1234")
+	s := newDiscServer(t, svc)
 	body := `{"keys":["mac:aa:bb"],"name_pattern":"{model}-{index:02d}","password":"pw","enabled":true}`
-	rec := doReq(s, "POST", "/api/ui/discovery/add", body, "1234")
+	rec := doReq(s, "POST", "/api/ui/discovery/add", body)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("kod = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -134,8 +131,8 @@ func TestDiscovery_Add(t *testing.T) {
 // 1.0-draft.10: PIN yo'q — qo'shish PIN'siz bajariladi.
 func TestDiscovery_AddNoPinNeeded(t *testing.T) {
 	svc := &fakeDiscovery{}
-	s := newDiscServer(t, svc, "1234")
-	rec := doReq(s, "POST", "/api/ui/discovery/add", `{"keys":["ip:1.2.3.4:554"]}`, "")
+	s := newDiscServer(t, svc)
+	rec := doReq(s, "POST", "/api/ui/discovery/add", `{"keys":["ip:1.2.3.4:554"]}`)
 	if rec.Code != http.StatusOK {
 		t.Errorf("PIN'siz add = %d, 200 kutilardi", rec.Code)
 	}
@@ -143,8 +140,8 @@ func TestDiscovery_AddNoPinNeeded(t *testing.T) {
 
 // Discovery xizmati bo'lmasa — 501.
 func TestDiscovery_NotReady(t *testing.T) {
-	s := newDiscServer(t, nil, "1234")
-	rec := doReq(s, "GET", "/api/ui/discovery/results", "", "")
+	s := newDiscServer(t, nil)
+	rec := doReq(s, "GET", "/api/ui/discovery/results", "")
 	if rec.Code != http.StatusNotImplemented {
 		t.Errorf("kod = %d, 501 kutilardi", rec.Code)
 	}

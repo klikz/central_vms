@@ -17,7 +17,7 @@ import (
 )
 
 // newCamServer — CRUD sinovi uchun haqiqiy camsvc bilan UI serveri
-func newCamServer(t *testing.T, pin string) (*httptest.Server, *camsvc.Service) {
+func newCamServer(t *testing.T) (*httptest.Server, *camsvc.Service) {
 	t.Helper()
 	dir := t.TempDir()
 	keyPath := filepath.Join(dir, "agent.key")
@@ -35,7 +35,6 @@ func newCamServer(t *testing.T, pin string) (*httptest.Server, *camsvc.Service) 
 	svc := camsvc.New(st, ks)
 
 	cfg := config.Default()
-	cfg.UIPin = pin
 	s, err := NewServer(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", Deps{Cams: svc})
 	if err != nil {
 		t.Fatal(err)
@@ -45,7 +44,7 @@ func newCamServer(t *testing.T, pin string) (*httptest.Server, *camsvc.Service) 
 	return ts, svc
 }
 
-func doJSON(t *testing.T, ts *httptest.Server, method, path, body, pin string) (*http.Response, string) {
+func doJSON(t *testing.T, ts *httptest.Server, method, path, body string) (*http.Response, string) {
 	t.Helper()
 	var rdr io.Reader
 	if body != "" {
@@ -56,9 +55,6 @@ func doJSON(t *testing.T, ts *httptest.Server, method, path, body, pin string) (
 		t.Fatal(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if pin != "" {
-		req.Header.Set("X-Agent-Pin", pin)
-	}
 	res, err := ts.Client().Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -69,10 +65,10 @@ func doJSON(t *testing.T, ts *httptest.Server, method, path, body, pin string) (
 }
 
 func TestCamCRUD(t *testing.T) {
-	ts, svc := newCamServer(t, "1234")
+	ts, svc := newCamServer(t)
 
 	// Bo'sh ro'yxat
-	res, body := doJSON(t, ts, http.MethodGet, "/api/ui/cams", "", "")
+	res, body := doJSON(t, ts, http.MethodGet, "/api/ui/cams", "")
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("list: %d %s", res.StatusCode, body)
 	}
@@ -88,7 +84,7 @@ func TestCamCRUD(t *testing.T) {
 	}
 
 	// Yaratish — PIN'siz (1.0-draft.10: PIN olib tashlandi)
-	res, body = doJSON(t, ts, http.MethodPost, "/api/ui/cams", `{"name":"A","host":"10.0.0.5","secret":"p1"}`, "")
+	res, body = doJSON(t, ts, http.MethodPost, "/api/ui/cams", `{"name":"A","host":"10.0.0.5","secret":"p1"}`)
 	if res.StatusCode != http.StatusCreated {
 		t.Fatalf("create: %d %s", res.StatusCode, body)
 	}
@@ -104,7 +100,7 @@ func TestCamCRUD(t *testing.T) {
 	}
 
 	// Ro'yxatda ko'rinadi
-	res, body = doJSON(t, ts, http.MethodGet, "/api/ui/cams", "", "")
+	res, body = doJSON(t, ts, http.MethodGet, "/api/ui/cams", "")
 	if !strings.Contains(body, `"10.0.0.5"`) {
 		t.Fatalf("ro'yxat: %s", body)
 	}
@@ -114,7 +110,7 @@ func TestCamCRUD(t *testing.T) {
 	}
 
 	// Yangilash
-	res, body = doJSON(t, ts, http.MethodPut, "/api/ui/cams/"+created.ID, `{"name":"B","host":"10.0.0.6"}`, "1234")
+	res, body = doJSON(t, ts, http.MethodPut, "/api/ui/cams/"+created.ID, `{"name":"B","host":"10.0.0.6"}`)
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("update: %d %s", res.StatusCode, body)
 	}
@@ -127,20 +123,20 @@ func TestCamCRUD(t *testing.T) {
 	}
 
 	// Noma'lum id → 404
-	res, _ = doJSON(t, ts, http.MethodPut, "/api/ui/cams/yoq-id", `{"host":"1.1.1.1"}`, "1234")
+	res, _ = doJSON(t, ts, http.MethodPut, "/api/ui/cams/yoq-id", `{"host":"1.1.1.1"}`)
 	if res.StatusCode != http.StatusNotFound {
 		t.Fatalf("noma'lum id: %d", res.StatusCode)
 	}
 
 	// Yomon JSON → 400
-	res, _ = doJSON(t, ts, http.MethodPost, "/api/ui/cams", `{"noma_lum":1}`, "1234")
+	res, _ = doJSON(t, ts, http.MethodPost, "/api/ui/cams", `{"noma_lum":1}`)
 	if res.StatusCode != http.StatusBadRequest {
 		t.Fatalf("noma'lum maydon: %d", res.StatusCode)
 	}
 
 	// CSV import
 	res, body = doJSON(t, ts, http.MethodPost, "/api/ui/cams/import",
-		"name,host\nk1,10.0.0.7\nk2,10.0.0.8\nyomon,,\n", "1234")
+		"name,host\nk1,10.0.0.7\nk2,10.0.0.8\nyomon,,\n")
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("import: %d %s", res.StatusCode, body)
 	}
@@ -153,7 +149,7 @@ func TestCamCRUD(t *testing.T) {
 	}
 
 	// CSV eksport — parollar mask'langan
-	res, body = doJSON(t, ts, http.MethodGet, "/api/ui/cams/export", "", "")
+	res, body = doJSON(t, ts, http.MethodGet, "/api/ui/cams/export", "")
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("export: %d", res.StatusCode)
 	}
@@ -164,13 +160,13 @@ func TestCamCRUD(t *testing.T) {
 		t.Fatalf("eksport parolni ochib yubordi: %s", body)
 	}
 	// with_secrets=1 — PIN'siz ham (operator talabi, 1.0-draft.10)
-	res, body = doJSON(t, ts, http.MethodGet, "/api/ui/cams/export?with_secrets=1", "", "")
+	res, body = doJSON(t, ts, http.MethodGet, "/api/ui/cams/export?with_secrets=1", "")
 	if !strings.Contains(body, "p1") {
 		t.Fatalf("with_secrets eksport: %s", body)
 	}
 
 	// O'chirish
-	res, body = doJSON(t, ts, http.MethodDelete, "/api/ui/cams", `{"ids":["`+created.ID+`"]}`, "1234")
+	res, body = doJSON(t, ts, http.MethodDelete, "/api/ui/cams", `{"ids":["`+created.ID+`"]}`)
 	if res.StatusCode != http.StatusOK || !strings.Contains(body, `"deleted":1`) {
 		t.Fatalf("delete: %d %s", res.StatusCode, body)
 	}
@@ -185,7 +181,7 @@ func TestCamCRUD(t *testing.T) {
 
 func TestCamsNotReady501(t *testing.T) {
 	ts := newTestServer(t, "") // Deps{Cams: nil}
-	res, body := doJSON(t, ts, http.MethodGet, "/api/ui/cams", "", "")
+	res, body := doJSON(t, ts, http.MethodGet, "/api/ui/cams", "")
 	if res.StatusCode != http.StatusNotImplemented {
 		t.Fatalf("kod=%d, kutilgan 501 (%s)", res.StatusCode, body)
 	}

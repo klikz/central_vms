@@ -63,7 +63,6 @@ func newSnapServer(t *testing.T, pin string) (*httptest.Server, *camsvc.Service)
 	}
 	svc := camsvc.New(st, ks)
 	cfg := config.Default()
-	cfg.UIPin = pin
 	s, err := NewServer(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", Deps{
 		Cams: svc, Snapshots: &fakeSnap{dir: t.TempDir()},
 	})
@@ -83,22 +82,22 @@ func TestSnapshotEndpoints(t *testing.T) {
 	}
 
 	// Yo'q snapshot → 404
-	res, _ := doJSON(t, ts, http.MethodGet, "/api/ui/cams/"+created.ID+"/snapshot", "", "")
+	res, _ := doJSON(t, ts, http.MethodGet, "/api/ui/cams/"+created.ID+"/snapshot", "")
 	if res.StatusCode != 404 {
 		t.Fatalf("404 kutilardi: %d", res.StatusCode)
 	}
 	// POST (PIN bilan) → oladi
-	res, body := doJSON(t, ts, http.MethodPost, "/api/ui/cams/"+created.ID+"/snapshot", "", "1234")
+	res, body := doJSON(t, ts, http.MethodPost, "/api/ui/cams/"+created.ID+"/snapshot", "")
 	if res.StatusCode != 200 {
 		t.Fatalf("POST snapshot: %d %s", res.StatusCode, body)
 	}
 	// GET → JPEG fayl
-	res, _ = doJSON(t, ts, http.MethodGet, "/api/ui/cams/"+created.ID+"/snapshot", "", "")
+	res, _ = doJSON(t, ts, http.MethodGet, "/api/ui/cams/"+created.ID+"/snapshot", "")
 	if res.StatusCode != 200 {
 		t.Fatalf("GET snapshot: %d", res.StatusCode)
 	}
 	// Ro'yxatda snapshot_at bor
-	res, body = doJSON(t, ts, http.MethodGet, "/api/ui/cams", "", "")
+	res, body = doJSON(t, ts, http.MethodGet, "/api/ui/cams", "")
 	var lr struct {
 		Cams []struct {
 			ID         string `json:"id"`
@@ -112,11 +111,11 @@ func TestSnapshotEndpoints(t *testing.T) {
 		t.Fatalf("snapshot_at kutilardi: %s", body)
 	}
 	// O'chirish snapshotni ham olib tashlaydi
-	res, body = doJSON(t, ts, http.MethodDelete, "/api/ui/cams", `{"ids":["`+created.ID+`"]}`, "1234")
+	res, body = doJSON(t, ts, http.MethodDelete, "/api/ui/cams", `{"ids":["`+created.ID+`"]}`)
 	if res.StatusCode != 200 {
 		t.Fatalf("delete: %d %s", res.StatusCode, body)
 	}
-	res, _ = doJSON(t, ts, http.MethodGet, "/api/ui/cams/"+created.ID+"/snapshot", "", "")
+	res, _ = doJSON(t, ts, http.MethodGet, "/api/ui/cams/"+created.ID+"/snapshot", "")
 	if res.StatusCode != 404 {
 		t.Errorf("o'chirilgandan keyin 404 kutilardi: %d", res.StatusCode)
 	}
