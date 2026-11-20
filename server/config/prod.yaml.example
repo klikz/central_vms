@@ -1,0 +1,46 @@
+# vmsd PROD konfiguratsiyasi namunasi — `make install` /opt/vmsd/config/config.yaml
+# sifatida shu faylni soladi (jwt_secret MAJBURIY: fayl yoki VMSD_JWT_SECRET).
+# Root REJA §4.1: build/ ichida config/config.yaml bo'ladi.
+
+bind: ":8081"
+web_dir: "/opt/vmsd/web"
+db_path: "/var/lib/vmsd/vmsd.db"
+migrations_dir: "/opt/vmsd/migrations"
+
+mediamtx:
+  control_url: "http://127.0.0.1:9997"
+  auth_hook_bind: "127.0.0.1:8189"
+  webrtc_port: 8889
+  rtsp_port: 8554
+  hls_port: 8888
+  public_host: ""          # TO'LDIRING: server static IP (webrtcAdditionalHosts bilan bir xil)
+
+auth:
+  jwt_secret: ""           # bo'sh → VMSD_JWT_SECRET env (systemd EnvironmentFile) — tavsiya
+  access_ttl_min: 15
+  refresh_ttl_days: 7
+
+enrollment:
+  ttl_h: 24
+  rate_per_5m: 5
+
+limits:
+  user_max_sessions: 16
+  global_max_sessions: 48
+  preview_max: 8
+  per_client_uploads: 8
+
+media:
+  idle_stop_s: 10
+  session_ttl_min: 5
+  session_renew_min: 2
+  publish_ttl_s: 60
+  read_token_ttl_s: 30
+  server_max_transcodes: 5   # `make probe` prod GPU'sida qayta yozadi (REJA §2.1/5)
+  ffmpeg_path: "ffmpeg"
+
+retention_days: 90
+log_level: "info"
+log_file: "/var/log/vmsd/vmsd.log"   # client logi bilan ARALASHMAYDI (talab 2026-11-19)
+log_max_mb: 16
+log_keep: 10

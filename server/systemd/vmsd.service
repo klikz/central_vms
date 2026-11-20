@@ -1,0 +1,18 @@
+# vmsd — prod systemd unit (root §4.2 make install; S4'da to'liq tekshiriladi).
+[Unit]
+Description=Central VMS server (vmsd)
+After=network-online.target vms-media.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/vmsd/vmsd -config /opt/vmsd/config/config.yaml -web /opt/vmsd/web
+Restart=always
+RestartSec=3
+# jwt_secret maxfiy: /etc/vmsd/secret.env ichida VMSD_JWT_SECRET=... (0600)
+EnvironmentFile=-/etc/vmsd/secret.env
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

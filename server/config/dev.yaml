@@ -1,0 +1,46 @@
+# vmsd DEV konfiguratsiyasi (server REJA §3).
+# Prod: config/prod.yaml.example → config/config.yaml (root §4.1).
+# Maxfiy qiymatlar bu faylda EMAS: jwt_secret VMSD_JWT_SECRET env orqali ham keladi.
+
+bind: ":8081"
+web_dir: "build/web"
+db_path: "var/vmsd.db"
+migrations_dir: "migrations"
+
+mediamtx:
+  control_url: "http://127.0.0.1:9997"
+  auth_hook_bind: "127.0.0.1:8189"
+  webrtc_port: 8889
+  rtsp_port: 8554
+  hls_port: 8888
+  public_host: ""          # bo'sh → avtomatik (S2 URL mint)
+
+auth:
+  jwt_secret: "dev-only-secret-change-me-0123456789abcdef"  # FAQAT dev (32+ belgi)
+  access_ttl_min: 15
+  refresh_ttl_days: 7
+
+enrollment:
+  ttl_h: 24
+  rate_per_5m: 5
+
+limits:
+  user_max_sessions: 16
+  global_max_sessions: 48
+  preview_max: 8
+  per_client_uploads: 8
+
+media:
+  idle_stop_s: 10
+  session_ttl_min: 5
+  session_renew_min: 2
+  publish_ttl_s: 60
+  read_token_ttl_s: 30
+  server_max_transcodes: 5     # S2 probe qayta yozadi (har mashinada o'lchanadi)
+  ffmpeg_path: "ffmpeg"
+
+retention_days: 90
+log_level: "debug"
+log_file: "var/log/vmsd.log"   # dev: repo ichida; prod: /var/log/vmsd/vmsd.log (alohida!)
+log_max_mb: 8
+log_keep: 5
