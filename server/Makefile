@@ -34,7 +34,7 @@ COVER_ALL := 50
 STOP_PATTERNS := 'build/[v]msd -config' 'exe/[v]msd' 'go-build[^ ]*/[v]msd' \
                  'mediamtx/[m]ediamtx mediamtx/mediamtx.yml'
 
-.PHONY: all start dev build run media media-get probe migrate-up migrate-down migrate-status \
+.PHONY: all start dev build run media media-get probe migrate-up migrate-down migrate-status admin \
         ui-build ui-dev test race cover gate lint fmt vet package install logs logs-file stop \
         stop-service clean help
 
@@ -115,6 +115,10 @@ migrate-down:
 
 migrate-status:
 	./$(BUILD_DIR)/$(BIN) -config config/dev.yaml -migrate status
+
+## Birinchi admin: make admin USER=admin (parol so'raladi, terminalga chiqmaydi)
+admin: build
+	@read -rp "Parol (kamida 8 belgi): " P; 	./$(BUILD_DIR)/$(BIN) -config config/dev.yaml -seed-admin "$${USER:-admin}:$$P"
 
 ## UI build (S3'da React+Vite; hozir npm bo'lmasa placeholder — REJA §3 embed YO'Q).
 ui-build:

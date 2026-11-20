@@ -46,16 +46,25 @@ har mashinada `make probe` bilan o'lchanadi, model nomi kodda hardcode **taqiqla
 
 ## S1 — Auth, registry, agent WS (≈3–4 kun) — *Dependence: S0*
 
-- [ ] argon2id parol hash; login rate-limit (5/5 min); JWT access 15 min + refresh cookie (httpOnly, SameSite=Lax)
-- [ ] rol middleware: admin / viewer; `POST /api/auth/*`, `GET /api/me`
-- [ ] registry CRUD: users (admin), sites, clients, cameras (PATCH policy: `transcode_mode`, `play_profile`, `enabled`); **`cameras.id` — agent bergan UUIDv4 (o'zgarmas), server uni PK sifatida saqlaydi**
-- [ ] enrollment: `POST /api/admin/enrollments` → bir martalik kod (24 soat); **`POST /api/agent/enroll`** (ochiq endpoint, rate-limit 5/5 min, `401 bad_code` / `409 already_enrolled` / `429`) → `agent_id` (`ag_…`) + `agent_secret` (DB'da sha256); admin nom/site belgilaydi; unikal nom tekshiruvi
-- [ ] `internal/wsagent`: **handshake tartibi (protocol.md §18): `auth {agent_id, secret}` → `hello` → `welcome {server_version, compat, last_seq, cams_epoch, limits, settings, needs_full_sync}`** (≤5 s, kodlar 4001–4004); envelope `{type, seq, ts, data}`; `hello` (version, os, hostname, lan_ip, boot_id, **cams_epoch**, **caps**) qabul + `clients.caps_json`; `cams_sync` chunk'lab + **`op: upsert|delete`** (o'chirish cascade: favorites/layouts slot bo'shatish) + **`cams_ack`** javob; `cam_status`, `codec_probe` saqlash; `hb`/ping-pong + uzilishda status → offline (30 s); **`secret_rotate`** va **`config_push`** yuborish
-- [ ] `GET /api/sites`, `/api/clients`, `/api/clients/{id}/cameras`, `/api/cameras/{id}`
-- [ ] audit_log yozuvlari (login, enroll, play, admin amallari)
-- [ ] `testagent` skelet (fake agent: cams_sync + cam_status) — keyinchalik S2'da publish ham qiladi
+- [x] argon2id parol hash; login rate-limit (5/5 min); JWT access 15 min + refresh cookie (httpOnly, SameSite=Lax)
+- [x] rol middleware: admin / viewer; `POST /api/auth/*`, `GET /api/me`
+- [x] registry CRUD: users (admin), sites, clients, cameras (PATCH policy: `transcode_mode`, `play_profile`, `enabled`); **`cameras.id` — agent bergan UUIDv4 (o'zgarmas), server uni PK sifatida saqlaydi**
+- [x] enrollment: `POST /api/admin/enrollments` → bir martalik kod (24 soat); **`POST /api/agent/enroll`** (ochiq endpoint, rate-limit 5/5 min, `401 bad_code` / `409 already_enrolled` / `429`) → `agent_id` (`ag_…`) + `agent_secret` (DB'da sha256); admin nom/site belgilaydi; unikal nom tekshiruvi
+- [x] `internal/wsagent`: **handshake tartibi (protocol.md §18): `auth {agent_id, secret}` → `hello` → `welcome {server_version, compat, last_seq, cams_epoch, limits, settings, needs_full_sync}`** (≤5 s, kodlar 4001–4004); envelope `{type, seq, ts, data}`; `hello` (version, os, hostname, lan_ip, boot_id, **cams_epoch**, **caps**) qabul + `clients.caps_json`; `cams_sync` chunk'lab + **`op: upsert|delete`** (o'chirish cascade: favorites/layouts slot bo'shatish) + **`cams_ack`** javob; `cam_status`, `codec_probe` saqlash; `hb`/ping-pong + uzilishda status → offline (30 s); **`secret_rotate`** va **`config_push`** yuborish
+- [x] `GET /api/sites`, `/api/clients`, `/api/clients/{id}/cameras`, `/api/cameras/{id}`
+- [x] audit_log yozuvlari (login, enroll, play, admin amallari)
+- [x] `testagent` skelet (fake agent: cams_sync + cam_status) — keyinchalik S2'da publish ham qiladi
 
 **Qabul:** testagent ulanadi, 100 kamera serverda ko'rinadi, status/kodek/caps yangilanadi; kamera o'chirilsa (`op:delete`) serverda ham o'chadi va favorites/layouts sloti bo'shaydi; `cams_epoch` farqida to'liq sync bo'ladi; viewer boshqa user ma'lumotini ko'rmaydi.
+
+---
+
+### S1 natijasi (2026-11-20) — **bajarildi**
+- Qabul oqimi amalda ko'rsatildi: `seed-admin` → login (JWT+cookie) → admin enroll kodi → `testagent` enroll → WS handshake → `cams_sync` 100 kamera → API `/api/clients/{id}/cameras` = 100; agent uzilganda client+kameralar `offline`.
+- `op:delete` cascade (favorites FK + layout slot `null`) va eski `cams_epoch` → `stale_epoch` ack — testlar yashil; policy (`transcode_mode` va h.k.) qayta sync'da saqlanadi (test).
+- Viewer admin endpoint'larida 403; login rate-limit 5/5 min → 429; refresh cookie httpOnly+Lax, rotatsiyalanadi.
+- `make gate` yashil: coverage 60 % (wsagent 78.5 %, proto 100 %); goleak barcha paketlarda.
+- **S2'ga qoldiq:** server tomonidan `cams_request` tashabbusi (hozircha `welcome.needs_full_sync` bayrog'i bilan agent boshlaydi — epoch solishtiruvi ishlaydi); `/api/cameras/{id}/play` va sessiyalar — S2.
 
 ---
 

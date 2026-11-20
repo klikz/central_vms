@@ -31,16 +31,17 @@ func main() {
 		secret   = flag.String("secret", "", "mavjud agent_secret")
 		nCams    = flag.Int("cams", 100, "soxta kameralar soni")
 		hostname = flag.String("hostname", "testagent", "hostname")
+		once     = flag.Bool("once", false, "cams_ackdan keyin chiqish (e2e testlar uchun)")
 	)
 	flag.Parse()
 
-	if err := run(*server, *code, *agentID, *secret, *nCams, *hostname); err != nil {
+	if err := run(*server, *code, *agentID, *secret, *nCams, *hostname, *once); err != nil {
 		fmt.Fprintf(os.Stderr, "testagent: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(server, code, agentID, secret string, nCams int, hostname string) error {
+func run(server, code, agentID, secret string, nCams int, hostname string, once bool) error {
 	base := server
 
 	if code != "" {
@@ -79,7 +80,7 @@ func run(server, code, agentID, secret string, nCams int, hostname string) error
 		return fmt.Errorf("auth: %w", err)
 	}
 	if err := send(proto.MsgHello, proto.Hello{
-		ProtocolVersion: 1, AgentVersion: "testagent-0", OS: "linux",
+		ProtocolVersion: 1, AgentVersion: "testagent-1.0", OS: "linux",
 		Hostname: hostname, LanIP: "127.0.0.1", BootID: uuid.NewString(),
 		StartedAt: time.Now().UTC(), CamsEpoch: time.Now().Unix(),
 		Caps: proto.Caps{GPU: "none", CPUCores: 4, RAMMB: 8192, FFmpegVersion: "test"},
@@ -129,7 +130,10 @@ func run(server, code, agentID, secret string, nCams int, hostname string) error
 		}
 	}
 	if gotAck {
-		fmt.Println("cams_ack OK — S0 skeleti tayyor (Ctrl+C bilan chiqish)")
+		fmt.Println("cams_ack OK")
+		if once {
+			return nil
+		}
 	} else {
 		fmt.Println("cams_ack kelmadi (mock rejimi) — pulse rejimiga o'tamiz")
 	}
