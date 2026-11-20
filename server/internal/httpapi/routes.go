@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"reflect"
 	"strings"
 
 	"central-vms/server/internal/audit"
@@ -109,6 +110,12 @@ func Routes(d *Deps) http.Handler {
 // --- yordamchilar ---
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
+	// Bo'sh ro'yxat JSON'da `null` bo'lib chiqmasin — UI `.map()` qiladi.
+	if v != nil {
+		if rv := reflect.ValueOf(v); rv.Kind() == reflect.Slice && rv.IsNil() {
+			v = reflect.MakeSlice(rv.Type(), 0, 0).Interface()
+		}
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)

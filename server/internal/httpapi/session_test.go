@@ -236,3 +236,18 @@ func TestAuthHookMounted(t *testing.T) {
 		t.Fatalf("hook: %d %v", code, m)
 	}
 }
+
+// UI `.map()` qiladi — bo'sh ro'yxat JSON'da `null` emas `[]` bo'lishi kerak.
+func TestEmptyListsSerializeAsArray(t *testing.T) {
+	srv, _, _, _, _, _ := newServer(t)
+	tok := login(t, srv, "admin1")
+	for _, path := range []string{"/api/sites", "/api/clients", "/api/sessions", "/api/favorites", "/api/layouts"} {
+		code, _, body := do(t, http.MethodGet, srv.URL+path, "", tok)
+		if code != 200 {
+			t.Fatalf("%s: %d", path, code)
+		}
+		if strings.TrimSpace(body) != "[]" {
+			t.Fatalf("%s bo'sh ro'yxat: %q (=[] kutilardi)", path, body)
+		}
+	}
+}

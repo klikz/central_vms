@@ -75,16 +75,15 @@ func run() error {
 		return runMigrate(lg, cfg, *migrate)
 	}
 
-	// Port tekshiruvi (REJA §2.1/1): band bo'lsa aniq xato, tashqi xizmatni
-	// o'zi to'xtatmaydi. API bind porti 0 bo'lsa (testlar) tekshirilmaydi.
-	// UDP: MediaMTX RTP/RTCP (8000/8001) va WebRTC ICE (8189).
-	// seed-admin/migrate-only rejimlarda portlar kerak emas — yozib o'tirgan
-	// vmsd bilan to'qnashuv bo'lmasligi uchun tekshiruv o'tkazib yuboriladi.
+	// Port tekshiruvi (REJA §2.1/1): vmsd FAQAT o'zi bog'laydigan portlarni
+	// talab qiladi — API va auth-hook (TCP 8189). MediaMTX portlari
+	// (8554/8888/8889, UDP 8000/8001/8189)ni bizning MediaMTX'imiz band
+	// qiladi; tashqi MediaMTX bilan to'qnashuvni `make port-check`
+	// (`make start` chaqiradi) oldindan aniqlaydi — vmsd tashqi xizmatni
+	// o'zi to'xtatmaydi. seed-admin/migrate-only rejimlarda portlar kerak emas.
 	if apiPort := portOf(cfg.Bind); apiPort != 0 && *seedAdm == "" && !*migrateO {
-		if err := ports.Check(
-			[]int{apiPort, cfg.MediaMTX.RTSPPort, cfg.MediaMTX.HLSPort, cfg.MediaMTX.WebRTCPort},
-			[]int{8000, 8001, 8189},
-		); err != nil {
+		hookPort := portOf(cfg.MediaMTX.AuthHookBind)
+		if err := ports.Check([]int{apiPort, hookPort}, nil); err != nil {
 			return err
 		}
 	}

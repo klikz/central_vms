@@ -78,7 +78,11 @@ func (p *publisher) start(ms proto.MediaStart) (int64, error) {
 	cmd := exec.Command(p.ffmpeg, "-hide_banner", "-loglevel", "error",
 		"-re", "-f", "lavfi", "-i", fmt.Sprintf("testsrc=size=%s:rate=%d", p.size, p.fps),
 		"-an", "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
-		"-pix_fmt", "yuv420p", "-f", "rtsp", "-rtsp_transport", "tcp", url)
+		// Qisqa GOP (2 s): yangi o'quvchi birinchi keyframe'ni tez
+		// kutib oladi — aks holda MediaMTX'da o'qish ~15 s kechikadi
+		// (x264 default gop=250 kadr; 2026-11-20 o'lchandi).
+		"-pix_fmt", "yuv420p", "-g", "30", "-keyint_min", "30", "-sc_threshold", "0",
+		"-f", "rtsp", "-rtsp_transport", "tcp", url)
 	if err := cmd.Start(); err != nil {
 		return 0, fmt.Errorf("ffmpeg start: %w", err)
 	}

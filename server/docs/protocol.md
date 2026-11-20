@@ -532,6 +532,15 @@ MediaMTX yuboradi (rasmiy maydonlar):
   maydonida BO'SH, `query` satrida (`token=...`) keladi; WHIP/WHEP'da esa
   `Authorization: Bearer` `token` maydoniga tushadi. Klient uchala manbani
   ham o'qiydi (`ExtractToken`).
+- **WHEP'da token URL query'da bo'lishi shart (v1.11.3'da tekshirildi):**
+  `Authorization: Bearer` MediaMTX auth-hook'ga uzatilmaydi (u o'z `jwt`ini
+  qo'shadi). Shuning uchun UI `?token=` qo'shadi va header'ni ham saqlaydi.
+- **Publish GOP talabi (o'qish kechikishi uchun hal qiluvchi):** MediaMTX
+  yangi o'quvchiga birinchi keyframe'dan yuboradi. x264 default `gop=250`
+  (15 fps'da ~17 s) — o'lchangan holda o'qish ochilishi 14.4 s edi; GOP 30
+  (2 s) bilan **2.4 s**. Agent publish'da `-g = 2×fps` (va `keyint_min` bir xil,
+  `sc_threshold 0`) ishlatishi shart; kamera sozlamasida GOP 1-2 s bo'lishi
+  tavsiya etiladi.
 - Control API (`/v3/paths/get/{name}`) — YAKKA obyekt, `readers` maydoni —
   **obyektlar ro'yxati**; path bo'lmasa 404 (idle stop uchun readers=0
   deb olinadi).

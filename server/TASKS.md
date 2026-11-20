@@ -84,7 +84,7 @@ har mashinada `make probe` bilan o'lchanadi, model nomi kodda hardcode **taqiqla
 - [x] *(qisman)* Kodek siyosati: `play_profile`, `transcode_mode auto|server|client|off`, server ichida zaxira (GPU → software, runtime probe orqali); **`browser_caps.hevc` siyosati S3 (UI brauzer imkoniyatini xabar qiladi) qoldig'i** (H.264 eng past profil), `browser_caps.hevc` → transcodesiz `cam/...` yo'li, `transcode_mode auto|server|client|off` (zaxira → agent'ga `transcode.by=client`; server ichida zaxira: GPU → software `libx264`)
 - [ ] LL-HLS fallback: MediaMTX config + UI'ga signal (`hls.js`)
 - [x] `testagent`ni to'liq publish'ga kengaytirish (WHIP H.264 + RTSP/TCP H.265, FFmpeg test pattern)
-- [ ] `internal/wsui`: `client_status`, `cam_status`, `session_count`, `session_revoked`, `session_state`
+- [x] `internal/wsui`: `client_status`, `cam_status`, `session_state`, `session_count` (`session_revoked` — S4), `cam_status`, `session_count`, `session_revoked`, `session_state`
 
 **Qabul:** testagent orqali — H.264 kamera WHEP'da ≤1.5 s ochiladi; H.265 → server transcode (dev mashinada NVENC; **GPU bo'lmagan mashinada `libx264` software bilan ham ishlaydi** — `ffmpeg -v codec` orqali tekshiriladi), 2 user = **1 FFmpeg**; `media_ready` 10 s taymauti `failed` + qayta urinish; yopilsa upload to'xtaydi; token qayta ishlatilsa 403.
 
@@ -135,21 +135,62 @@ o'qiladi (kamera boshida bitta FFmpeg).
 
 ## S3 — Web UI (≈6–8 kun) — *Dependence: S2 API*
 
-- [ ] React + TS + Vite skelet, router, o'zbek til (bitta `i18n` fayl, so'zlar bir joyda)
-- [ ] Login + refresh cookie bilan avtomatik kirish; xato sanab o'tish
-- [ ] `lib/api.ts`, `lib/ws.ts`, `lib/whep.ts` (native RTCPeerConnection ~120 qator), `lib/limits.ts`
-- [ ] Chap panel: joy sarlavhasi + client bloklari (status nuqta, online/total); blok bosilganda kamera ro'yxati (nom, status, kodek badge)
-- [ ] **Preview:** debounce 600 ms dwell / min 2 s / close 1 s; WHEP mini player; dedup — kamera grid'da ochiq bo'lsa qo'shimcha sessiya ochilmaydi; `preview_max` toast
-- [ ] Grid 1x1–4x4 (default 3x3); joy tanlanganda **avtomatik to'ldirish** (`position` bo'yicha); pagination (sahifa o'zgarganda eski oqimlar darhol stop)
+- [x] React + TS + Vite skelet, router, o'zbek til (bitta `i18n` fayl, so'zlar bir joyda)
+- [x] Login + refresh cookie bilan avtomatik kirish; xato sanab o'tish
+- [x] `lib/api.ts`, `lib/ws.ts`, `lib/whep.ts` (native RTCPeerConnection ~120 qator), `lib/limits.ts`
+- [x] Chap panel: joy sarlavhasi + client bloklari (status nuqta, online/total); blok bosilganda kamera ro'yxati (nom, status, kodek badge)
+- [x] *(qisman)* **Preview:** debounce 600 ms dwell / min 2 s / close 1 s (`lib/preview.ts` + vitest); WHEP mini player ulangan; `preview_max` toasti bor; **grid katakida hover-preview UI jilosi (katak ichida) S3.6** / min 2 s / close 1 s; WHEP mini player; dedup — kamera grid'da ochiq bo'lsa qo'shimcha sessiya ochilmaydi; `preview_max` toast
+- [x] Grid 1x1–4x4 (default 3x3); joy tanlanganda **avtomatik to'ldirish** (`position` bo'yicha); pagination (sahifa o'zgarganda eski oqimlar darhol stop)
 - [ ] Drag&drop: ro'yxatdan katakka, ikki katakni almashtirish; double-click → fullscreen + `main`
-- [ ] Klaviatura: `1/2/3/4`, `←/→`, `Esc`
+- [x] Klaviatura: `1/2/3/4`, `←/→`, `Esc` (testda tasdiqlangan)
 - [ ] Favorites (⭐, reorder); Layouts: saqlash/yuklash/default, aralash joy; o'chirilgan kamera sloti → bo'sh katak
-- [ ] **IntersectionObserver + Page Visibility** — ko'rinmayotgan katak / yashirin tab → oqim stop
-- [ ] Holatlar: spinner, "transcode boshlandi…", "navbatda", limit toastlari, offline belgilar, xato + "qayta urinish"
+- [x] **IntersectionObserver + Page Visibility** — ko'rinmayotgan katak / yashirin tab → oqim stop
+- [x] Holatlar: spinner, "transcode boshlandi…", "navbatda", limit toastlari, offline belgilar, xato + "qayta urinish"
 - [ ] `browser_caps` (HEVC aniqlash) birinchi ulanishda yuboriladi
 - [ ] `getStats()` monitoring: yomon inbound bitrate → avtomatik past profil haqidagi taklif (keyin to'liq avtomatik)
 
 **Qabul:** 2 user parallel 15 tadan kamera; layout saqlanadi/tiklanadi; preview og'irlik yaratmaydi; tab yashirinsa barcha oqim to'xtaydi; UI to'liq o'zbekcha.
+
+---
+
+### S3 natijasi (2026-11-20) — qisman (S3.0–S3.5 bajarildi)
+**Qabul oqimi `make e2e-s3`** — haqiqiy Chrome (headless, CDP; qo'shimcha
+bog'liqlik yo'q) + real MediaMTX + testagent: **10/10 PASS** —
+login → o'zbekcha interfeys → kamera ro'yxati → katakda **WHEP oqimi
+haqiqiy kadrlar bilan (videoWidth=1280)** → sevimlilar → klaviatura
+(1→1×1, 4→4×4) → tab yashirinsa oqim to'xtaydi → sessiyalar tozalanadi.
+UI unit testlari: `make ui-test` (vitest, 15 ta: grid/klaviatura/preview
+debounce sun'iy soat bilan).
+
+**Muhim topilgan sabab (o'qish kechikishi ≤1.5 s maqsadiga to'siq):**
+yangi o'quvchi ~15-17 s kutsedi — sabab FFmpeg yoki MediaMTX emas,
+**publish GOP'i**: x264 default `gop=250` kadr (15 fps'da ~17 s) va
+MediaMTX o'quvchiga birinchi keyframe'dan boshlab beradi. Test agent'ga
+`-g 30 -keyint_min 30 -sc_threshold 0` qo'yilgach o'qish ochilishi
+**14.4 s → 2.4 s** ga tushdi (`scripts/measure_ffmpeg.sh`).
+**Talab: agent (haqiqiy client) H.264/H.265 publish'da GOP ≤ 2 s**
+(qoida: `-g = 2×fps`, `keyint_min` bir xil, `sc_threshold 0`).
+Bu client tomoniga uzatiladigan kontrakt talabi (protocol.md §5.2 izohi).
+
+**Boshqa tuzatilganlar:**
+- MediaMTX WHEP'da `Authorization: Bearer` hook'ga yetmaydi (MediaMTX o'z
+  `jwt`ini uzatadi) — token **URL query**'da (`?token=`) bo'lishi shart;
+  `whep.ts` ikkalasini ham yuboradi.
+- UI WHEP'ni 6 marta (1 s pauza bilan) qayta uradi — transcode/publish
+  tayyor bo'lmagan holatda "transcode boshlandi…" holati ko'rinadi.
+- Bo'sh ro'yxatlar JSON'da `null` emas `[]` bo'lib chiqadi (UI `.map()`
+  qiladi) — `writeJSON`'da nazorat qilinadi + test.
+- vmsd port tekshiruvi faqat o'zi bog'laydigan portlarni (API, auth-hook)
+  talab qiladi; MediaMTX portlarini bizning MediaMTX band qiladi —
+  tashqi konflikt `make port-check` mas'uliyati (S2 e2e tartibi shu
+  xatoni ochib berdi).
+- JWT base64url (avvalgi commit) — UI WS query'da token uzatishi uchun.
+
+**S3 qoldiqlari:** drag&drop (ro'yxat→katak, katak↔katak) va double-click
+fullscreen brauzer testi, layout saqlash/yuklash/default UI, favorites
+reorder, pagination'da eski oqimlarni darhol stop (kodda bor, brauzer
+testi yo'q), `browser_caps` yuborish, `getStats()` monitoring taklifi,
+`session_revoked` push (S4).
 
 ---
 

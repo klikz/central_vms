@@ -35,7 +35,7 @@ STOP_PATTERNS := 'build/[v]msd -config' 'exe/[v]msd' 'go-build[^ ]*/[v]msd' \
                  'mediamtx/[m]ediamtx mediamtx/mediamtx.yml'
 
 .PHONY: all start dev build run media media-get probe migrate-up migrate-down migrate-status admin \
-        ui-build ui-dev test race cover gate lint fmt vet package install logs logs-file stop \
+        ui-build ui-dev ui-test test race cover gate lint fmt vet package install logs logs-file stop \
         stop-service clean help
 
 all: build
@@ -121,25 +121,36 @@ migrate-status:
 e2e-s2:
 	./scripts/e2e_s2.sh
 
+e2e-s3:
+	./scripts/e2e_s3.sh
+
 ## Birinchi admin: make admin USER=admin (parol so'raladi, terminalga chiqmaydi)
 admin: build
 	@read -rp "Parol (kamida 8 belgi): " P; 	./$(BUILD_DIR)/$(BIN) -config config/dev.yaml -seed-admin "$${USER:-admin}:$$P"
 
-## UI build (S3'da React+Vite; hozir npm bo'lmasa placeholder — REJA §3 embed YO'Q).
+## UI build (React+Vite, webui/). Node PATH'da bo'lmasa ~/.local/node/bin
+## va nvm versiyalari sinab ko'riladi (dev mashina talabi — prod'ga bog'liq emas).
+NODE_DIR ?= $(firstword $(wildcard $(HOME)/.local/node/bin) $(wildcard $(HOME)/.nvm/versions/node/*/bin))
+
 ui-build:
-	@if [ -f webui/package.json ] && command -v npm >/dev/null 2>&1; then \
-	  (cd webui && npm ci && npm run build) && \
-	  rm -rf $(BUILD_DIR)/web && cp -r webui/dist $(BUILD_DIR)/web; \
-	else \
-	  echo "UI S3 bosqichida (React+Vite). Hozirchi holat: API /healthz ishlayapti." > $(BUILD_DIR)/web/index.html; \
-	fi
+	@mkdir -p $(BUILD_DIR)/web; \
+	export PATH="$(NODE_DIR):$$PATH"; \
+	if [ ! -f webui/package.json ] || ! command -v npm >/dev/null 2>&1; then \
+	  echo "UI build qilinmadi: npm topilmadi (node PATH'da yo'q — NODE_DIR=... belgilang)"; \
+	  echo "<html><body>VMS UI hali yig'ilgan emas.</body></html>" > $(BUILD_DIR)/web/index.html; \
+	  exit 0; \
+	fi; \
+	(cd webui && npm ci --no-audit --no-fund >/dev/null && npm run build >/dev/null) && \
+	rm -rf $(BUILD_DIR)/web && cp -r webui/dist $(BUILD_DIR)/web && \
+	echo "UI yig'ildi: $(BUILD_DIR)/web ($$(du -sh $(BUILD_DIR)/web | cut -f1))"
+
+ui-test:
+	@export PATH="$(NODE_DIR):$$PATH"; cd webui && npx vitest run
 
 ui-dev:
-	@if command -v npm >/dev/null 2>&1 && [ -f webui/package.json ]; then \
-	  (cd webui && npm run dev -- --proxy 8081); \
-	else \
-	  echo "npm/webui topilmadi — UI S3'da keladi"; \
-	fi
+	@export PATH="$(NODE_DIR):$$PATH"; \
+	if ! command -v npm >/dev/null 2>&1; then echo "npm topilmadi (NODE_DIR=...)"; exit 1; fi; \
+	cd webui && npm run dev
 
 ## Testlar (unit, race yo'q — tez)
 test:
