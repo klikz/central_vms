@@ -210,6 +210,15 @@ yo'q (`@fontsource` ham olib tashlandi — offline). UI unit testlari 25 ta.
   qilardi. UI `pagehide`'da keepalive DELETE yuboradi + server readers
   watchdog'i **3×IdleStop** deraza bilan sessiyani `idle_no_readers` bilan
   yopadi (1× deraza juda agressiv chiqdi — jonli o'quvchini ham yopdi).
+- `media.public_host` bo'sh bo'lsa mint'langan publish/WHEP manzili
+  **127.0.0.1** bo'lardi — boshqa PC'dagi agent o'z localhost'iga
+  publish qilmoqchi bo'lib hech narsa chiqarmasdi. Endi bo'sh qiymatda
+  LAN interfeysining global IPv4 manzili avtomatik tanlanadi
+  (docker0/link-local chetga), natija logda ko'rinadi va sinovdan
+  o'tkazildi: agent `ws://192.168.0.27:8081` orqali ulanib, oqimni
+  `rtsp://192.168.0.27:8554` ga yubordi. MediaMTX'da
+  `webrtcAdditionalHosts` shu IP ga qo'yildi (boshqa PC brauzeri ICE
+  nomzodi sifatida LAN manzilini ko'radi).
 - WHEP urinish byudjeti kengaytirildi (direct 12, transcode 16; sovuq
   startda path 404 qaytaradi).
 - Cheklangan narsa (S4 yuk testiga qoldi): 4 yadroli dev mashinada 2+ ta

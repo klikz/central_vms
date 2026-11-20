@@ -173,10 +173,14 @@ func run() error {
 	}
 	uiHub := wsui.NewHub(tokens, lg, wsui.Config{})
 	hub.SetUI(uiHub)
+	publicHost := config.ResolvePublicHost(cfg.MediaMTX.PublicHost)
+	lg.Info("media manzili (agent/brauzer ko‘radigan)", "host", publicHost,
+		"sozlangan_public_host", cfg.MediaMTX.PublicHost)
+
 	mgr := media.NewManager(mediaCfg, media.Deps{
 		UI:  uiHub,
 		Reg: reg, Store: reg, Agent: hub, MTX: mclient, Tokens: mtokens,
-		Lg: lg, GPU: caps, Transcode: tr, PublicHost: cfg.MediaMTX.PublicHost,
+		Lg: lg, GPU: caps, Transcode: tr, PublicHost: publicHost,
 		WHEPPort: cfg.MediaMTX.WebRTCPort, RTSPPort: cfg.MediaMTX.RTSPPort,
 	})
 	defer mgr.Close()

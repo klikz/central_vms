@@ -18,7 +18,9 @@ webrtc: yes
 webrtcAddress: :8889              # WHIP/WHEP (WHEP URL: http://host:8889/<path>/whep)
 webrtcLocalUDPAddress: :8189      # ICE UDP porti (vmsd auth-hook TCP 8189 bilan to'qnashmaydi)
 webrtcLocalTCPAddress: ""         # UDP afzal; tarmoq testi S2 itest'ida
-webrtcAdditionalHosts: [192.168.1.50]   # OPERATOR TO'LDIRADI: server static IP (root §16.4)
+webrtcAdditionalHosts: [192.168.0.27]   # OPERATOR TO‘LDIRADI: server static IP (root §16.4)
+# Bu mashinada enp4s0 = 192.168.0.27: boshqa PC‘dagi brauzer WebRTC ICE
+# nomzodi shu manzilni ko‘radi (docker0 172.17.0.1 LAN‘da yetchmaydi).
 hls: yes
 hlsAddress: :8888
 hlsVariant: lowLatency            # LL-HLS fallback (S2: UI'ga hls.js signali)

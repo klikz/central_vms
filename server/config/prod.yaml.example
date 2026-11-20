@@ -13,7 +13,7 @@ mediamtx:
   webrtc_port: 8889
   rtsp_port: 8554
   hls_port: 8888
-  public_host: ""          # TO'LDIRING: server static IP (webrtcAdditionalHosts bilan bir xil)
+  public_host: ""          # bo‘sh → LAN interfeysi avtomatik; tashqi IP bo‘lsa qo‘lda yozing
 
 auth:
   jwt_secret: ""           # bo'sh → VMSD_JWT_SECRET env (systemd EnvironmentFile) — tavsiya
