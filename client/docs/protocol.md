@@ -46,6 +46,11 @@ Aniqlangan asosiy tuzatishlar (eski root §7.1 matniga nisbatan):
   (server 30 s javobsiz → client `offline`).
 - Ping/pong tashqarisida agent **idle heartbeat** yuboradi: `type: "hb"` (har 30 s) — server
   `clients.last_seen_at` shundan yangilanadi.
+- **Server qayta boshlanganda (1.0-draft.10):** ishga tushishda DB'da qolgan
+  `clients.status='online'` va `cameras.status='online'` belgilari
+  **offline** qilib tozalanadi (`registry.ResetOnlineStates`) — bu paytda
+  birorta WS sessiya yo'q. (2026-11-20 amalda kuzatildi: restartdan keyin
+  Boshqaruv sahifasi ulanmagan mijozni "online" deb ko'rsatardi.)
 - Ketma-ketlik: agent barcha buyruqlarni **accept-then-execute** qiladi — darhol qabul qiladi,
   bajarish natijasi alohida xabar bilan (`media_ready` / `media_stopped`).
 

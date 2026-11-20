@@ -259,3 +259,44 @@ func TestFavoritesLayouts(t *testing.T) {
 		t.Fatalf("layout sloti: %s", ls[0].SlotsJSON)
 	}
 }
+
+// Server qayta boshlanganda DB'da qolgan "online" belgilari xato ko'rsatiladi:
+// birorta WS sessiya yo'q. Restart paytida ular tozalanishi kerak
+// (2026-11-20 kuzatildi: UI'da "online" ko'rinib turardi).
+func TestResetOnlineStates(t *testing.T) {
+	r := testReg(t)
+	id, err := r.CreateClient("Qayta-boshlangan", 0, "ag_reset00000001", "hash")
+	if err != nil {
+		t.Fatalf("CreateClient: %v", err)
+	}
+	if err := r.UpsertCamera(id, SyncCamera{ID: "cam-reset", Name: "A"}); err != nil {
+		t.Fatalf("UpsertCamera: %v", err)
+	}
+	if err := r.MarkClientSeen(id); err != nil {
+		t.Fatalf("MarkClientSeen: %v", err)
+	}
+	if err := r.SetCameraStatus("cam-reset", "online", "", 10); err != nil {
+		t.Fatalf("SetCameraStatus: %v", err)
+	}
+	n, err := r.ResetOnlineStates()
+	if err != nil {
+		t.Fatalf("ResetOnlineStates: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("offline qilingan mijozlar: %d, 1 kutilgan", n)
+	}
+	c, err := r.GetClientByID(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Status != "offline" {
+		t.Fatalf("mijoz holati: %s", c.Status)
+	}
+	cams, err := r.ListCamerasByClient(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cams) != 1 || cams[0].Status != "offline" {
+		t.Fatalf("kameralar holati: %+v", cams)
+	}
+}

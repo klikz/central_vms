@@ -182,6 +182,25 @@ func (r *Registry) MarkClientOffline(clientID int64) error {
 	return wrap(err, "cameras offline")
 }
 
+// ResetOnlineStates — server qayta boshlanganda DB'da qolgan "online"
+// belgilarini tozalaydi (2026-11-20: restartdan keyin birorta WS sessiya
+// yo'q, lekin clients.status='online' bo'lib qolardi va Boshqaruv/Kuzatuv
+// noto‘g'ri "online" ko'rsatardi). Qaytadi: nechta mijoz offline qilindi.
+func (r *Registry) ResetOnlineStates() (int64, error) {
+	res, err := r.db.Exec(`UPDATE clients SET status='offline' WHERE status='online'`)
+	if err != nil {
+		return 0, wrap(err, "reset online states")
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, wrap(err, "reset online rows")
+	}
+	if _, err := r.db.Exec(`UPDATE cameras SET status='offline' WHERE status='online'`); err != nil {
+		return n, wrap(err, "reset cameras states")
+	}
+	return n, nil
+}
+
 // SanitizeName — operator nomini saqlashga yaroqli holatga keltiradi:
 // qirib-tartib, uzunlik 64 belgi (rune), boshqariladigan belgilar olib
 // tashlanadi. Bo‘sh qolsa "" qaytadi (chaqiruvchi avtomatik nomni ishlatadi).

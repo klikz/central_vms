@@ -272,6 +272,10 @@ testi yo'q), `browser_caps` yuborish, `getStats()` monitoring taklifi,
   `status='online'` deb qolgan mijozlar "jonli" bo'lib ko'rinadi — agent o'ldirilgan
   bo'lsa ham. Startda barcha mijozlar offline qilinadi (keyin `hello` online qiladi)
   yoki muddatidan ko'ra eski `last_seen` offline hisoblanadi.
+- [x] **Restartdan keyin holatlar (2026-11-20):** `registry.ResetOnlineStates()`
+  ishga tushishda eski `online` belgilarini tozalaydi (mijoz + kameralar);
+  aks holda Boshqaruv/Kuzatuv ulanmagan mijozni "online" deb ko'rsatardi.
+  Test: `TestResetOnlineStates`.
 - [ ] **Mijozlarni tozalash:** endpoint mavjud (`DELETE /api/admin/clients/{id}`,
   Boshqaruv sahifasida „O‘chirish“ tugmasi) — lekin eski/offlayn qoldiqlar
   `clients.name` UNIQUE bo'lgani uchun kerakli nomni band qilib qo'yishi mumkin;

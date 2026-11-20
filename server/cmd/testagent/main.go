@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -330,6 +331,18 @@ func joinAndWait(base, hostname, name string) (agentID, secret string, err error
 	for {
 		id, status, err := joinOnce(base, hostname, name, key, secret)
 		if err != nil {
+			// Tarmoq xatosi (server restart, connection refused) — davom
+			// etamiz: tasdiqni kutish normal holat (2026-11-20: server
+			// qayta boshlansa testagent shu xatoda chiqib ketardi).
+			var he *joinHTTPError
+			if !errors.As(err, &he) {
+				fmt.Println("join: vaqtinchalik xato (qayta uriladi):", err)
+				time.Sleep(3 * time.Second)
+				continue
+			}
+			if he.code == http.StatusForbidden {
+				return "", "", err // rad etilgan
+			}
 			return "", "", err
 		}
 		switch status {
@@ -360,7 +373,7 @@ func joinOnce(base, hostname, name, key, secret string) (agentID, status string,
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if resp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("join %d: %s", resp.StatusCode, b)
+		return "", "", &joinHTTPError{code: resp.StatusCode, body: string(b)}
 	}
 	var out struct {
 		Status  string `json:"status"`
@@ -370,6 +383,17 @@ func joinOnce(base, hostname, name, key, secret string) (agentID, status string,
 		return "", "", fmt.Errorf("join javob: %w", err)
 	}
 	return out.AgentID, out.Status, nil
+}
+
+// joinHTTPError — server javob berdi (status kodi bilan); boshqa xatolar
+// tarmoq darajasida (server o'chik / restart) va ular qayta urinish kerak.
+type joinHTTPError struct {
+	code int
+	body string
+}
+
+func (e *joinHTTPError) Error() string {
+	return fmt.Sprintf("join %d: %s", e.code, e.body)
 }
 
 func randHex(n int) string {

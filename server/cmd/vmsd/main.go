@@ -113,6 +113,13 @@ func run() error {
 
 	// --- S1 bog'lamalari (root §3: bitta binary ichida) ---
 	reg := registry.New(db)
+	// Restartdan keyin eski "online" belgilari noto‘g'ri qoladi: hozir
+	// birorta agent ulanmagan (§17 holatlar; 2026-11-20 kuzatildi).
+	if n, err := reg.ResetOnlineStates(); err != nil {
+		lg.Warn("online holatlar tozalanmadi", "xato", err)
+	} else if n > 0 {
+		lg.Info("eski online belgilari tozalandi", "mijozlar", n)
+	}
 	tokens, err := auth.NewTokens(cfg.Auth.JWTSecret,
 		time.Duration(cfg.Auth.AccessTTLMin)*time.Minute,
 		time.Duration(cfg.Auth.RefreshTTLD)*24*time.Hour, nil)
