@@ -1,0 +1,21 @@
+{
+  "scan_id": "sc_2",
+  "checks": [
+    {
+      "name": "server_ws",
+      "ok": true,
+      "ms": 24
+    },
+    {
+      "name": "whip_tcp",
+      "ok": false,
+      "ms": 0
+    },
+    {
+      "name": "camera:6f0f",
+      "ok": true,
+      "ms": 35,
+      "bitrate_kbps": 700
+    }
+  ]
+}

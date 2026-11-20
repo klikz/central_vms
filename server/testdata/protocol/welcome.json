@@ -1,0 +1,20 @@
+{
+  "server_version": "0.5.2",
+  "protocol_version": 1,
+  "compat": {
+    "ok": true
+  },
+  "last_seq": 128,
+  "cams_epoch": 7,
+  "limits": {
+    "max_uploads": 8,
+    "max_local_transcodes": 4,
+    "media_ttl_s": 60
+  },
+  "settings": {
+    "probe_pacing_parallel": 5,
+    "codec_probe_interval_h": 24,
+    "log_level": "info"
+  },
+  "needs_full_sync": false
+}

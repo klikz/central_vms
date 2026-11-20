@@ -1,0 +1,27 @@
+{
+  "scan_id": "sc_1",
+  "mode": "onvif",
+  "timeout_s": 10,
+  "found": [
+    {
+      "mac": "aa:bb:cc:dd:ee:ff",
+      "serial": "KX5C",
+      "ip": "192.168.10.31",
+      "port": 554,
+      "http_port": 80,
+      "vendor": "Dahua",
+      "model": "IPC-HFW1230S",
+      "onvif_xaddr": "http://192.168.10.31:80/onvif/device_service",
+      "rtsp_probe_ok": true,
+      "codecs": {
+        "main": "h265",
+        "sub": "h264"
+      },
+      "already_known": true,
+      "auth_required": true
+    }
+  ],
+  "errors": [
+    "cidr 10.0.0.0/8: skipped (too large)"
+  ]
+}

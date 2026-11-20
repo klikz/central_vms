@@ -1,3 +1,3 @@
-// Package proto — WS xabarlarining Go tiplari — client nusxasi + golden fixturelar (REJA §2.8, S0)
-// S0 skeleti: paket chegarasi, implementatsiya S1/S2 TASKS qadamlarida.
+// proto — WS xabarlarining Go tiplari (docs/protocol.md §4, §5).
+// Mantiq YO'Q: faqat strukturalar va golden round-trip testlari kontrakt bilan bog'laydi.
 package proto
