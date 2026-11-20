@@ -166,8 +166,15 @@ func (m *Manager) Close() {
 // --- tashqi API (bular loop'ga buyruq yuboradi) ---
 
 // Start — sessiya ochish. camera to'liq registry yozuvi (handler oladi).
-func (m *Manager) Start(cam registry.Camera, userID int64, profile, kind string) (*StartResult, error) {
-	res := m.submit(&cmd{op: "start", cam: cam, userID: userID, profile: profile, kind: kind})
+// BrowserCaps — UI xabar qilgan brauzer imkoniyatlari (protocol.md §16.4:
+// HEVC o'ynalsa H.265 manbani transcodesiz uzatish mumkin).
+type BrowserCaps struct {
+	HEVC bool
+}
+
+func (m *Manager) Start(cam registry.Camera, userID int64, profile, kind string, br BrowserCaps) (*StartResult, error) {
+	res := m.submit(&cmd{op: "start", cam: cam, userID: userID, profile: profile, kind: kind,
+		browserHEVC: br.HEVC})
 	if res.err != nil {
 		return nil, res.err
 	}
@@ -221,22 +228,23 @@ func (m *Manager) PublishStats() map[string]proto.PublishStat {
 }
 
 type cmd struct {
-	op        string // start|refresh|stop|ready|stopped|tick|stats
-	cam       registry.Camera
-	userID    int64
-	profile   string
-	kind      string
-	sessionID string
-	cameraID  string
-	reason    string
-	extendS   int
-	agentID   string
-	ready     *proto.MediaReady
-	stopped   *proto.MediaStopped
-	res       *StartResult
-	ids       []string
-	err       error
-	done      chan struct{}
+	op          string // start|refresh|stop|ready|stopped|tick|stats
+	cam         registry.Camera
+	userID      int64
+	profile     string
+	kind        string
+	sessionID   string
+	cameraID    string
+	reason      string
+	extendS     int
+	agentID     string
+	browserHEVC bool
+	ready       *proto.MediaReady
+	stopped     *proto.MediaStopped
+	res         *StartResult
+	ids         []string
+	err         error
+	done        chan struct{}
 }
 
 func (m *Manager) submit(c *cmd) *cmd {

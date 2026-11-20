@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
 	"central-vms/server/internal/gpu"
@@ -68,7 +69,7 @@ func (m *Manager) handle(st *loopState, c *cmd) {
 
 // decideTranscode — sof funksiya: kamera siyosati + server imkoniyatidan
 // rejimni aniqlash (testlar GPU fixture'lari bilan).
-func decideTranscode(mode string, caps gpu.Caps) (pubMode, backend, by string) {
+func decideTranscode(mode string, caps gpu.Caps, codecIn string, browserHEVC bool) (pubMode, backend, by string) {
 	switch mode {
 	case "off":
 		return "direct", "none", "none"
@@ -79,11 +80,18 @@ func decideTranscode(mode string, caps gpu.Caps) (pubMode, backend, by string) {
 		return "direct", "none", "none" // server GPU yo'q → fallback (root §5 zanjir)
 	case "client":
 		return "direct", "none", "client"
-	default: // auto
+	default: // auto — transcode FAQAT kerak bo'lganda (CPU/limit tejamkorligi)
+		// H.264 brauzerlarda universal; H.265 esa faqat brauzer HEVC'ni
+		// qo'llab-quvvatlasa transcodesiz o'ynaladi (aks holda H.264 ga
+		// o'girish shart — HLS fallback ham HEVC'da ishonchsiz, §16.4).
+		need := strings.EqualFold(codecIn, "h265") && !browserHEVC
+		if !need {
+			return "direct", "none", "none"
+		}
 		if caps.Backend != gpu.BackendNone {
 			return "server_tc", string(caps.Backend), "server"
 		}
-		return "direct", "none", "none"
+		return "direct", "none", "client" // serverda GPU yo'q → agent zaxirasi
 	}
 }
 
@@ -129,7 +137,8 @@ func (m *Manager) start(st *loopState, c *cmd) (*StartResult, error) {
 	if profile == "" {
 		profile = cam.PlayProfile
 	}
-	pubMode, backend, by := decideTranscode(cam.TranscodeMode, m.deps.GPU)
+	needCodec := camCodecFor(cam, c.profile)
+	pubMode, backend, by := decideTranscode(cam.TranscodeMode, m.deps.GPU, needCodec, c.browserHEVC)
 	if pubMode == "server_tc" && m.deps.Transcode == nil {
 		pubMode, backend, by = "direct", "none", "none" // transcode yo'q → fallback
 	}

@@ -25,6 +25,11 @@ func (d *Deps) handleCameraPlay(w http.ResponseWriter, r *http.Request, kind str
 	var in struct {
 		Profile string `json:"profile"`
 		On      *bool  `json:"on"`
+		// Brauzer imkoniyatlari (protocol.md §16.4): HEVC o'ynalsa H.265
+		// manbani transcodesiz uzatish mumkin.
+		Browser struct {
+			HEVC bool `json:"hevc"`
+		} `json:"browser"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&in)
 	if in.Profile != "" && in.Profile != "main" && in.Profile != "sub" {
@@ -41,7 +46,7 @@ func (d *Deps) handleCameraPlay(w http.ResponseWriter, r *http.Request, kind str
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 		return
 	}
-	res, err := d.Media.Start(cam, cl.Sub, in.Profile, kind)
+	res, err := d.Media.Start(cam, cl.Sub, in.Profile, kind, media.BrowserCaps{HEVC: in.Browser.HEVC})
 	var le *media.LimitError
 	switch {
 	case errors.As(err, &le):

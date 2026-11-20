@@ -7,6 +7,11 @@ import "@fontsource-variable/chivo";
 import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/500.css";
 import "./styles.css";
+import { setHevcCapable } from "./lib/api";
+import { detectHevc } from "./lib/whep";
+
+// Birinchi ulanishda brauzer kodek imkoniyatini aniqlaymiz (§16.4).
+void detectHevc().then(setHevcCapable);
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

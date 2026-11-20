@@ -83,6 +83,16 @@ export class ApiError extends Error {
   }
 }
 
+// Brauzer imkoniyatlari bir marta aniqlanadi (detectHevc) va har play'da
+// yuboriladi — server transcode qarorini shu asosda qabul qiladi.
+let hevcCapable: boolean | null = null;
+export function setHevcCapable(v: boolean) {
+  hevcCapable = v;
+}
+export function browserCaps() {
+  return { hevc: hevcCapable === true };
+}
+
 let accessToken = "";
 export const setAccess = (t: string) => {
   accessToken = t;
@@ -155,9 +165,13 @@ export const api = {
   cameras: (clientId: number) => req<Camera[]>("GET", `/api/clients/${clientId}/cameras`),
   camera: (id: string) => req<Camera>("GET", `/api/cameras/${id}`),
   play: (id: string, profile?: string) =>
-    req<PlayResult>("POST", `/api/cameras/${id}/play`, { profile }),
+    req<PlayResult>("POST", `/api/cameras/${id}/play`, { profile, browser: browserCaps() }),
   preview: (id: string, on: boolean, profile?: string) =>
-    req<PlayResult | { ok: boolean }>("POST", `/api/cameras/${id}/preview`, { on, profile }),
+    req<PlayResult | { ok: boolean }>("POST", `/api/cameras/${id}/preview`, {
+      on,
+      profile,
+      browser: browserCaps(),
+    }),
   refreshSession: (session_id: string, extend_s = 120) =>
     req("POST", "/api/sessions/refresh", { session_id, extend_s }),
   stopSession: (id: string) => req("DELETE", `/api/sessions/${id}`),

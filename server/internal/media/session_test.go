@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -186,7 +187,7 @@ func waitFor(t *testing.T, cond func() bool, msg string) {
 func TestHappyPathDirect(t *testing.T) {
 	mt := newMTest(t, MgrConfig{IdleStop: 10 * time.Millisecond}, gpu.Caps{Backend: gpu.BackendNone})
 	mt.mtx.setReaders(0) // idle o'lchov uchun o'quvchi qolmadi
-	res, err := mt.m.Start(mt.cam, 1, "", "play")
+	res, err := mt.m.Start(mt.cam, 1, "", "play", BrowserCaps{})
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -237,11 +238,11 @@ func TestHappyPathDirect(t *testing.T) {
 
 func TestDedupSharedPublish(t *testing.T) {
 	mt := newMTest(t, MgrConfig{IdleStop: 10 * time.Millisecond}, gpu.Caps{Backend: gpu.BackendNone})
-	r1, err := mt.m.Start(mt.cam, 1, "sub", "play")
+	r1, err := mt.m.Start(mt.cam, 1, "sub", "play", BrowserCaps{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	r2, err := mt.m.Start(mt.cam, 2, "", "preview")
+	r2, err := mt.m.Start(mt.cam, 2, "", "preview", BrowserCaps{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,7 +298,7 @@ func TestDedupSharedPublish(t *testing.T) {
 
 func TestReadyTimeout(t *testing.T) {
 	mt := newMTest(t, MgrConfig{MediaReadyTO: 5 * time.Second}, gpu.Caps{Backend: gpu.BackendNone})
-	res, err := mt.m.Start(mt.cam, 1, "", "play")
+	res, err := mt.m.Start(mt.cam, 1, "", "play", BrowserCaps{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -318,7 +319,7 @@ func TestReadyTimeout(t *testing.T) {
 
 func TestSessionTTLExpiry(t *testing.T) {
 	mt := newMTest(t, MgrConfig{SessionTTL: 30 * time.Second}, gpu.Caps{Backend: gpu.BackendNone})
-	res, err := mt.m.Start(mt.cam, 1, "", "play")
+	res, err := mt.m.Start(mt.cam, 1, "", "play", BrowserCaps{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -336,23 +337,23 @@ func TestSessionTTLExpiry(t *testing.T) {
 
 func TestLimits(t *testing.T) {
 	mt := newMTest(t, MgrConfig{GlobalMax: 2, UserMax: 1}, gpu.Caps{Backend: gpu.BackendNone})
-	if _, err := mt.m.Start(mt.cam, 1, "", "play"); err != nil {
+	if _, err := mt.m.Start(mt.cam, 1, "", "play", BrowserCaps{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := mt.m.Start(mt.cam, 1, "main", "play"); !isLimit(err, "user_limit") {
+	if _, err := mt.m.Start(mt.cam, 1, "main", "play", BrowserCaps{}); !isLimit(err, "user_limit") {
 		t.Fatalf("user limit ishlamadi: %v", err)
 	}
-	if _, err := mt.m.Start(mt.cam, 2, "main", "play"); err != nil {
+	if _, err := mt.m.Start(mt.cam, 2, "main", "play", BrowserCaps{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := mt.m.Start(mt.cam, 3, "main", "play"); !isLimit(err, "global_limit") {
+	if _, err := mt.m.Start(mt.cam, 3, "main", "play", BrowserCaps{}); !isLimit(err, "global_limit") {
 		t.Fatalf("global limit ishlamadi: %v", err)
 	}
 }
 
 func TestMediaOffline(t *testing.T) {
 	mt := newMTest(t, MgrConfig{}, gpu.Caps{Backend: gpu.BackendNone})
-	if _, err := mt.m.Start(mt.cam, 1, "", "play"); err != nil {
+	if _, err := mt.m.Start(mt.cam, 1, "", "play", BrowserCaps{}); err != nil {
 		t.Fatal(err)
 	}
 	mt.mtx.setAlive(false)
@@ -364,7 +365,7 @@ func TestMediaOffline(t *testing.T) {
 
 func TestIdleStopReaders(t *testing.T) {
 	mt := newMTest(t, MgrConfig{IdleStop: 50 * time.Millisecond}, gpu.Caps{Backend: gpu.BackendNone})
-	res, err := mt.m.Start(mt.cam, 1, "", "play")
+	res, err := mt.m.Start(mt.cam, 1, "", "play", BrowserCaps{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -389,25 +390,25 @@ func isLimit(err error, kind string) bool {
 
 func TestPreviewLimitKind(t *testing.T) {
 	mt := newMTest(t, MgrConfig{PreviewMax: 1}, gpu.Caps{Backend: gpu.BackendNone})
-	if _, err := mt.m.Start(mt.cam, 1, "sub", "preview"); err != nil {
+	if _, err := mt.m.Start(mt.cam, 1, "sub", "preview", BrowserCaps{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := mt.m.Start(mt.cam, 2, "sub", "preview"); !isLimit(err, "preview_limit") {
+	if _, err := mt.m.Start(mt.cam, 2, "sub", "preview", BrowserCaps{}); !isLimit(err, "preview_limit") {
 		t.Fatalf("preview_limit kutilardi: %v", err)
 	}
 	// play (preview emas) cheklanmaydi.
-	if _, err := mt.m.Start(mt.cam, 2, "sub", "play"); err != nil {
+	if _, err := mt.m.Start(mt.cam, 2, "sub", "play", BrowserCaps{}); err != nil {
 		t.Fatalf("play cheklanmasligi kerak: %v", err)
 	}
 }
 
 func TestSessionsForAndPreviewOff(t *testing.T) {
 	mt := newMTest(t, MgrConfig{}, gpu.Caps{Backend: gpu.BackendNone})
-	r1, err := mt.m.Start(mt.cam, 1, "sub", "preview")
+	r1, err := mt.m.Start(mt.cam, 1, "sub", "preview", BrowserCaps{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	r2, err := mt.m.Start(mt.cam, 2, "sub", "preview")
+	r2, err := mt.m.Start(mt.cam, 2, "sub", "preview", BrowserCaps{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -432,24 +433,36 @@ func TestSessionsForAndPreviewOff(t *testing.T) {
 }
 
 func TestDecideTranscode(t *testing.T) {
-	nv := gpu.Caps{Backend: gpu.BackendNVENC, Encoder: "h264_nvenc"}
-	none := gpu.Caps{Backend: gpu.BackendNone}
+	cGPU := gpu.Caps{Backend: gpu.BackendNVENC, Encoder: "h264_nvenc"}
+	cNone := gpu.Caps{Backend: gpu.BackendNone}
 	cases := []struct {
-		mode         string
-		caps         gpu.Caps
-		pub, backend string
+		mode    string
+		caps    gpu.Caps
+		codec   string
+		hevcOK  bool
+		wantPub string
+		wantBy  string
 	}{
-		{"off", nv, "direct", "none"},
-		{"auto", nv, "server_tc", "nvenc"},
-		{"auto", none, "direct", "none"}, // GPU yo'q → fallback (root §5)
-		{"server", nv, "server_tc", "nvenc"},
-		{"server", none, "direct", "none"},
-		{"client", nv, "direct", "none"}, // client GPU'si agentda hisoblanadi
+		// auto: H.264 — transcode KERAK EMAS (CPU/limit tejanadi).
+		{"auto", cGPU, "h264", false, "direct", "none"},
+		{"auto", cGPU, "H264", false, "direct", "none"},
+		// auto: H.265 + brauzer HEVC'ni o'ynaydi → transcodesiz uzatiladi.
+		{"auto", cGPU, "h265", true, "direct", "none"},
+		// auto: H.265 + brauzer HEVC yo'q → server transcode (H.264 ga).
+		{"auto", cGPU, "h265", false, "server_tc", "server"},
+		// auto: H.265, serverda GPU yo'q → agent zaxirasi (by=client).
+		{"auto", cNone, "h265", false, "direct", "client"},
+		// Aniq rejimlar.
+		{"off", cGPU, "h265", false, "direct", "none"},
+		{"server", cGPU, "h264", true, "server_tc", "server"},
+		{"server", cNone, "h265", false, "direct", "none"},
+		{"client", cGPU, "h265", false, "direct", "client"},
 	}
 	for _, c := range cases {
-		pub, backend, _ := decideTranscode(c.mode, c.caps)
-		if pub != c.pub || backend != c.backend {
-			t.Errorf("mode=%s caps=%v: %s/%s != %s/%s", c.mode, c.caps.Backend, pub, backend, c.pub, c.backend)
+		pub, backend, by := decideTranscode(c.mode, c.caps, c.codec, c.hevcOK)
+		if pub != c.wantPub || by != c.wantBy {
+			t.Errorf("mode=%s codec=%s hevcOK=%v: %s/%s/%s olindi, %s/%s kutilardi",
+				c.mode, c.codec, c.hevcOK, pub, backend, by, c.wantPub, c.wantBy)
 		}
 	}
 }
@@ -461,7 +474,9 @@ func TestServerTCUsesMainSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	mt.cam.TranscodeMode = "auto"
-	res, err := mt.m.Start(mt.cam, 1, "sub", "play") // play_profile=sub, transcode auto
+	// Manba: main=H.265, sub=H.264 (newMTest). Brauzer HEVC'ni o'ynamaydi →
+	// auto H.265'ni H.264 ga o'giradi va MAIN manbadan oladi (sifat).
+	res, err := mt.m.Start(mt.cam, 1, "main", "play", BrowserCaps{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -495,5 +510,37 @@ func TestServerTCUsesMainSource(t *testing.T) {
 	}
 	if !res.Transcoded || res.Backend != "nvenc" {
 		t.Fatalf("result: %+v", res)
+	}
+}
+
+// auto + H.264 manba → transcode BO'LMAYDI (CPU/limit tejanadi) va
+// o'quvchi cam/... path'ini oladi.
+func TestAutoH264SkipsTranscode(t *testing.T) {
+	mt := newMTest(t, MgrConfig{IdleStop: 10 * time.Millisecond},
+		gpu.Caps{Backend: gpu.BackendNVENC, Encoder: "h264_nvenc"})
+	mode := "auto"
+	if err := mt.reg.PatchCameraPolicy("cam-uuid-1", nil, &mode, nil); err != nil {
+		t.Fatal(err)
+	}
+	// Kodexlarni H.264 ga o'zgartiramiz (newMTest'da main=h265).
+	if _, err := mt.reg.DB().Exec(`UPDATE cameras SET codec_main='h264', codec_sub='h264' WHERE id='cam-uuid-1'`); err != nil {
+		t.Fatal(err)
+	}
+	mt.cam.CodecMain = "h264"
+	mt.cam.TranscodeMode = "auto"
+	res, err := mt.m.Start(mt.cam, 1, "main", "play", BrowserCaps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Transcoded || res.Backend != "none" {
+		t.Fatalf("transcode kutilmadi: %+v", res)
+	}
+	if !strings.Contains(res.WHEPURL, "/cam/") {
+		t.Fatalf("o'qish path'i cam/ bo'lishi kerak: %s", res.WHEPURL)
+	}
+	mt.m.OnMediaReady("ag_1", proto.MediaReady{SessionID: res.SessionID, PublishID: "p1", Path: "cam/ag_1/cam-uuid-1"})
+	mt.fc.advance(2 * time.Second)
+	if n := mt.m.deps.Transcode.Count(); n != 0 {
+		t.Fatalf("FFmpeg boshlanmasligi kerak edi, bor: %d", n)
 	}
 }
