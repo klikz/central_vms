@@ -16,3 +16,7 @@ webui/dist/
 *.local.json
 .DS_Store
 coverage.out
+
+# Dev ma'lumotlar bazasi va TS build keshi — kuzatilmaydi (2026-11-20)
+var/
+webui/tsconfig.*.tsbuildinfo
