@@ -140,6 +140,12 @@ func run() error {
 	} else {
 		lg.Info("media backend", "backend", caps.Backend, "encoder", caps.Encoder, "gpu", caps.GPUName)
 	}
+	if !caps.Override(cfg.Media.TranscodeBackend) {
+		lg.Warn("transcode_backend so'ralmagan imkoniyat — avtomatik tanlovda qoladi",
+			"requested", cfg.Media.TranscodeBackend, "detected", caps.Backend)
+	}
+	tr := media.NewTranscoder(cfg.Media.FFmpegPath, cfg.Media.MaxTranscodes, lg)
+	defer tr.StopAll()
 	mtokens := media.NewTokens(db, nil)
 	mclient := media.NewClient(cfg.MediaMTX.ControlURL)
 	sessRows, _ := reg.ListActiveSessions()
@@ -158,7 +164,7 @@ func run() error {
 	}
 	mgr := media.NewManager(mediaCfg, media.Deps{
 		Reg: reg, Store: reg, Agent: hub, MTX: mclient, Tokens: mtokens,
-		Lg: lg, GPU: caps, PublicHost: cfg.MediaMTX.PublicHost,
+		Lg: lg, GPU: caps, Transcode: tr, PublicHost: cfg.MediaMTX.PublicHost,
 		WHEPPort: cfg.MediaMTX.WebRTCPort, RTSPPort: cfg.MediaMTX.RTSPPort,
 	})
 	defer mgr.Close()

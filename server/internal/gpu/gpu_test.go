@@ -78,6 +78,30 @@ func TestSelectBackend_Matrix(t *testing.T) {
 	}
 }
 
+func TestOverride(t *testing.T) {
+	c := Caps{Backend: BackendNVENC, Encoder: "h264_nvenc", Encoders: fixture(t, "enc_nvenc.txt")}
+	if !c.Override("cpu") || c.Backend != BackendSoft || c.Encoder != "libx264" {
+		t.Fatalf("cpu override: %+v", c)
+	}
+	if !c.Override("") || c.Backend != BackendSoft {
+		t.Fatal("bo'sh override o'zgartirmasligi kerak")
+	}
+	if !c.Override("auto") {
+		t.Fatal("auto qabul qilinishi kerak")
+	}
+	// Imkoniyat yo'q → false (aniqlangan qiymat saqlanadi).
+	c2 := Caps{Backend: BackendSoft, Encoder: "libx264", Encoders: fixture(t, "enc_none.txt")}
+	if c2.Override("nvenc") {
+		t.Fatal("nvenc yo'q mashinada override qabul qilindi")
+	}
+	if c2.Backend != BackendSoft {
+		t.Fatalf("override rad etilganda o'zgardi: %+v", c2)
+	}
+	if c2.Override("nima-dir") {
+		t.Fatal("noto'g'ri nom qabul qilindi")
+	}
+}
+
 func TestDetect_RealFFmpeg(t *testing.T) {
 	if _, err := os.Stat("/usr/bin/ffmpeg"); err != nil {
 		t.Skip("ffmpeg yo'q")

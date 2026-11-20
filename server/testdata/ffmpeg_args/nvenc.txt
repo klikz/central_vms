@@ -1,0 +1,1 @@
+ffmpeg -hide_banner -loglevel error -nostdin -progress pipe:1 -hwaccel cuda -c:v hevc_cuvid -rtsp_transport tcp -i rtsp://127.0.0.1:8554/cam/ag_1/c1?token=SRC -an -c:v h264_nvenc -vf scale=1280:720 -r 15 -preset p2 -tune ll -rc cbr -b:v 1200k -maxrate 1440k -bufsize 2880k -g 30 -pix_fmt p010le -f rtsp -rtsp_transport tcp rtsp://127.0.0.1:8554/tc/ag_1/c1?token=DST

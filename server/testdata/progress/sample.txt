@@ -1,0 +1,5 @@
+frame=120
+fps=14.98
+bitrate=1198.4kbits/s
+out_time_ms=8000123
+progress=continue

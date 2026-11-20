@@ -102,6 +102,9 @@ func (m *Manager) start(st *loopState, c *cmd) (*StartResult, error) {
 		profile = cam.PlayProfile
 	}
 	pubMode, backend, by := decideTranscode(cam.TranscodeMode, m.deps.GPU)
+	if pubMode == "server_tc" && m.deps.Transcode == nil {
+		pubMode, backend, by = "direct", "none", "none" // transcode yo'q → fallback
+	}
 	// server_tc: agent main profilni yuboradi (sifat manbai), sub'ga
 	// FFmpeg o'zi tushiradi — dedup kaliti shu.
 	pubProfile := profile
@@ -187,6 +190,23 @@ func (m *Manager) getOrCreatePub(st *loopState, cam registry.Camera, agentID, pr
 	p := &publish{
 		id: randHex(8), agentID: agentID, cameraID: cam.ID, path: path, profile: profile,
 		ingest: ingest, mode: pubMode, started: now, readyTO: now.Add(m.cfg.MediaReadyTO),
+		codecIn: codecForProfile(cam, profile),
+	}
+	if pubMode == "server_tc" {
+		p.tcPath = "tc/" + agentID + "/" + cam.ID
+		if tok, _, err := m.deps.Tokens.Mint("", p.tcPath, "publish", 24*time.Hour); err != nil {
+			m.deps.Lg.Warn("tc publish token", "err", err)
+		} else {
+			p.tcPubTok = tok
+		}
+		if tok, _, err := m.deps.Tokens.Mint("", path, "read", 24*time.Hour); err != nil {
+			m.deps.Lg.Warn("src read token", "err", err)
+		} else {
+			p.srcReadTok = tok
+		}
+		if err := m.deps.MTX.EnsurePath(p.tcPath, PathConf{Source: "publisher"}); err != nil {
+			m.deps.Lg.Warn("ensure tc path", "path", p.tcPath, "err", err)
+		}
 	}
 	raw, _, err := m.deps.Tokens.Mint("", path, "publish", m.cfg.PublishTTL+5*time.Minute)
 	if err != nil {
@@ -212,6 +232,26 @@ func (m *Manager) mediaReady(st *loopState, c *cmd) {
 	}
 	if p.publishID == "" {
 		p.publishID = c.ready.PublishID
+	}
+	// server_tc: manba tayyor → FFmpeg'ni ishga tushiramiz (bitta kamera =
+	// bitta jarayon; qo'shimcha o'quvchilar shu jarayonni ishlatadi).
+	if p.mode == "server_tc" && m.deps.Transcode != nil && !p.tcStarted {
+		p.tcStarted = true
+		_, rb := m.urls()
+		spec := TranscodeSpec{
+			CameraID: p.cameraID, SrcPath: p.path, DstPath: p.tcPath,
+			SrcToken: p.srcReadTok, DstToken: p.tcPubTok, CodecIn: p.codecIn,
+			Caps: m.deps.GPU, RTSPBase: rb,
+		}
+		if err := m.deps.Transcode.Start(spec); err != nil {
+			p.tcStarted = false
+			m.deps.Lg.Warn("transcode boshlanmadi — fallback direct", "camera", p.cameraID, "err", err)
+			for _, sid := range p.sessions {
+				if s := st.sessions[sid]; s != nil {
+					s.transcoded, s.readerPath = false, p.path
+				}
+			}
+		}
 	}
 	if c.ready.Path != "" {
 		p.path = c.ready.Path // agent xabar bergan path — bir xil kelishi shart
@@ -323,6 +363,12 @@ func (m *Manager) dropPubLocked(st *loopState, p *publish) {
 	}
 	delete(st.pubs, p.id)
 	delete(st.byKey, pubKey(p.cameraID, p.profile, p.mode))
+	if p.tcPath != "" {
+		_ = m.deps.MTX.DeletePath(p.tcPath)
+	}
+	if m.deps.Transcode != nil {
+		m.deps.Transcode.Stop(p.cameraID, "publish_dropped")
+	}
 	m.stopPublish(st, p, "dropped")
 }
 
@@ -346,6 +392,14 @@ func (p *publish) firstSession() string {
 }
 
 func pubKey(cameraID, profile, mode string) string { return cameraID + "|" + profile + "|" + mode }
+
+// codecForProfile — transcode manbasining kodeki (cuvid/vaapi tanlovi uchun).
+func codecForProfile(cam registry.Camera, profile string) string {
+	if profile == "main" {
+		return cam.CodecMain
+	}
+	return cam.CodecSub
+}
 
 func (m *Manager) pubByIDLocked(st *loopState, publishID string) *publish {
 	if publishID == "" {

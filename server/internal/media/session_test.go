@@ -155,9 +155,12 @@ func newMTest(t *testing.T, cfg MgrConfig, caps gpu.Caps) *mtest {
 	mtx := newFakeMTX()
 	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
 	cfg.Tick = 10 * time.Millisecond
+	tr := NewTranscoder(fixturePath("fakeffmpeg.sh"), 5, lg)
+	t.Cleanup(tr.StopAll)
 	m := NewManager(cfg, Deps{
 		Reg: reg, Store: reg, Agent: fs, MTX: mtx, Tokens: tk, Clock: fc, Lg: lg,
 		GPU: caps, PublicHost: "192.168.1.50", WHEPPort: 8889, RTSPPort: 8554,
+		Transcode: tr,
 	})
 	t.Cleanup(m.Close)
 	cam, err := reg.GetCamera("cam-uuid-1")
@@ -400,7 +403,7 @@ func TestDecideTranscode(t *testing.T) {
 }
 
 func TestServerTCUsesMainSource(t *testing.T) {
-	mt := newMTest(t, MgrConfig{}, gpu.Caps{Backend: gpu.BackendNVENC, Encoder: "h264_nvenc"})
+	mt := newMTest(t, MgrConfig{IdleStop: 10 * time.Millisecond}, gpu.Caps{Backend: gpu.BackendNVENC, Encoder: "h264_nvenc"})
 	mode := "auto"
 	if err := mt.reg.PatchCameraPolicy("cam-uuid-1", nil, &mode, nil); err != nil {
 		t.Fatal(err)
@@ -421,6 +424,20 @@ func TestServerTCUsesMainSource(t *testing.T) {
 	if ms.Transcode.By != "server" || ms.Transcode.Backend != "nvenc" {
 		t.Fatalf("transcode spec: %+v", ms.Transcode)
 	}
+	// media_ready'dan keyin FFmpeg (fake) ishga tushishi kerak.
+	mt.m.OnMediaReady("ag_1", proto.MediaReady{SessionID: res.SessionID, PublishID: "p1", Path: "cam/ag_1/cam-uuid-1"})
+	waitFor(t, func() bool { return mt.m.deps.Transcode.Count() == 1 }, "transcode boshlanmadi")
+	waitFor(t, func() bool {
+		st, _ := mt.reg.ListActiveSessions()
+		return len(st) == 1 && st[0].State == "playing"
+	}, "playing")
+	// Sessiya yopilsa (o'quvchi qolmasa) transcode ham to'xtaydi.
+	mt.mtx.setReaders(0)
+	if err := mt.m.Stop(res.SessionID, "user"); err != nil {
+		t.Fatal(err)
+	}
+	mt.fc.advance(20 * time.Millisecond)
+	waitFor(t, func() bool { return mt.m.deps.Transcode.Count() == 0 }, "transcode to'xtamadi")
 	if res.PlayURL != "http://192.168.1.50:8889/tc/ag_1/cam-uuid-1/whep" {
 		t.Fatalf("play url tc bo'lishi kerak: %s", res.PlayURL)
 	}

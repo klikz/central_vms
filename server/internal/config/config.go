@@ -46,14 +46,15 @@ type Config struct {
 	} `yaml:"limits"`
 
 	Media struct {
-		IdleStopS       int    `yaml:"idle_stop_s"`           // 10 (preview ~1)
-		SessionTTLMin   int    `yaml:"session_ttl_min"`       // 5
-		SessionRenewMin int    `yaml:"session_renew_min"`     // 2
-		PublishTTLS     int    `yaml:"publish_ttl_s"`         // 60 (media_start.ttl_s)
-		ReadTokenTTLS   int    `yaml:"read_token_ttl_s"`      // 30
-		MaxTranscodes   int    `yaml:"server_max_transcodes"` // 5 boshlang'ich; probe yangilaydi
-		ReadyTOs        int    `yaml:"ready_timeout_s"`       // 5 — media_ready kutiladi
-		FFmpegPath      string `yaml:"ffmpeg_path"`           // default "ffmpeg"
+		IdleStopS        int    `yaml:"idle_stop_s"`           // 10 (preview ~1)
+		SessionTTLMin    int    `yaml:"session_ttl_min"`       // 5
+		SessionRenewMin  int    `yaml:"session_renew_min"`     // 2
+		PublishTTLS      int    `yaml:"publish_ttl_s"`         // 60 (media_start.ttl_s)
+		ReadTokenTTLS    int    `yaml:"read_token_ttl_s"`      // 30
+		MaxTranscodes    int    `yaml:"server_max_transcodes"` // 5 boshlang'ich; probe yangilaydi
+		ReadyTOs         int    `yaml:"ready_timeout_s"`       // 5 — media_ready kutiladi
+		FFmpegPath       string `yaml:"ffmpeg_path"`           // default "ffmpeg"
+		TranscodeBackend string `yaml:"transcode_backend"`     // auto|nvenc|vaapi|amf|cpu (bo'sh/auto = avtomatik aniqlash)
 	} `yaml:"media"`
 
 	RetentionDays int    `yaml:"retention_days"` // sessions/audit_log 90 kun

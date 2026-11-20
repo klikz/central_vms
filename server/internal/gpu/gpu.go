@@ -65,6 +65,35 @@ func SelectBackend(encoders, decoders []string) (Backend, string, string) {
 	}
 }
 
+// Override — operator so'rovi bo'yicha backend'ni majburiy tanlash
+// (config.media.transcode_backend). Imkoniyat bo'lmasa false qaytadi —
+// chaqiruvchi aniqlangan qiymatda qoladi.
+func (c *Caps) Override(name string) bool {
+	if name == "" || name == "auto" {
+		return true
+	}
+	var enc, want string
+	switch Backend(name) {
+	case BackendNVENC:
+		enc, want = "h264_nvenc", string(BackendNVENC)
+	case BackendVAAPI:
+		enc, want = "h264_vaapi", string(BackendVAAPI)
+	case BackendAMF:
+		enc, want = "h264_amf", string(BackendAMF)
+	case BackendSoft:
+		enc, want = "libx264", string(BackendSoft)
+	default:
+		return false
+	}
+	for _, e := range c.Encoders {
+		if e == enc {
+			c.Backend, c.Encoder = Backend(want), enc
+			return true
+		}
+	}
+	return false
+}
+
 // Detect — ffmpeg -encoders/-decoders + nvidia-smi (ixtiyoriy) orqali aniqlash.
 // Xato bo'lsa BackendNone qaytaradi — dastur yiqilmaydi (transcode
 // so'ralganda aniq xato xabari beriladi).

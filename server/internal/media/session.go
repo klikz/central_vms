@@ -66,10 +66,11 @@ type Deps struct {
 	Tokens     *Tokens
 	Clock      Clock
 	Lg         *slog.Logger
-	GPU        gpu.Caps // S2.1 aniqlangan imkoniyatlar
-	PublicHost string   // agent/UI MediaMTX'ga qaysi IP orqali boradi
-	WHEPPort   int      // 8889 (config.mediamtx.webrtc_port)
-	RTSPPort   int      // 8554
+	GPU        gpu.Caps    // S2.1 aniqlangan imkoniyatlar
+	Transcode  *Transcoder // S2.7 (nil bo'lsa server_tc'ga tushmaymiz)
+	PublicHost string      // agent/UI MediaMTX'ga qaysi IP orqali boradi
+	WHEPPort   int         // 8889 (config.mediamtx.webrtc_port)
+	RTSPPort   int         // 8554
 }
 
 // Manager — sessiyalar va publish'larning yagona egasi.
@@ -211,23 +212,29 @@ func (m *Manager) submit(c *cmd) *cmd {
 // --- ichki holat (faqat loop goroutine'sida) ---
 
 type publish struct {
-	id        string
-	publishID string // agent media_ready'da bildirgan ID
-	agentID   string
-	cameraID  string
-	path      string // cam/... yoki tc/...
-	profile   string
-	ingest    string
-	mode      string // direct | server_tc
-	token     string // publish token (agent/ffmpeg uchun)
-	refcount  int
-	sessions  []string
+	id         string
+	publishID  string // agent media_ready'da bildirgan ID
+	agentID    string
+	cameraID   string
+	path       string // cam/... yoki tc/...
+	profile    string
+	ingest     string
+	mode       string // direct | server_tc
+	token      string // publish token (agent/ffmpeg uchun)
+	refcount   int
+	sessions   []string
+	tcPath     string // server_tc bo'lsa tc/... (yo'q bo'lsa bo'sh)
+	tcPubTok   string // tc/... publish ichki tokeni
+	srcReadTok string // cam/... o'qish tokeni (FFmpeg uchun)
+	codecIn    string // h264|h265 — decode tezlashtirish tanlovi uchun
+
 	ready     bool
 	started   time.Time
 	idleOn    bool      // refcount=0 bo'lsa — idle hisob faol (IdleStop=0 ham)
 	stopAt    time.Time // idle hisob tugash vaqti
 	readyTO   time.Time
 	stopSent  bool
+	tcStarted bool
 }
 
 type session struct {

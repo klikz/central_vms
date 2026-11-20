@@ -67,6 +67,9 @@ func (m *Manager) shutdownAll(st *loopState) {
 	for _, s := range snapshotSessions(st) {
 		m.endSessionLocked(st, s, "server_shutdown", true)
 	}
+	if m.deps.Transcode != nil {
+		m.deps.Transcode.StopAll()
+	}
 	clear(st.pubs)
 	clear(st.byKey)
 }
