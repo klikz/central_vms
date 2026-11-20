@@ -57,7 +57,7 @@ const uz: Record<string, string> = {
 
   "admin.clients": "Kompyuterlar",
   "admin.enroll": "Ulash kodi yaratish",
-  "admin.enroll.note": "Kod bir marta ishlatiladi va 24 soat yashaydi",
+  "admin.enroll.note": "8 xonali son — shu sonni clientda -enroll bilan kiriting; bir marta, 24 soat",
   "admin.sessions": "Sessiyalar",
   "admin.users": "Foydalanuvchilar",
   "admin.audit": "Jurnal",

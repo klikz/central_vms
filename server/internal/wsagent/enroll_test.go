@@ -1,7 +1,9 @@
 package wsagent
 
 import (
+	"errors"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -37,6 +39,8 @@ func testEnroll(t *testing.T) (*Enrollment, *registry.Registry, *fakeClock) {
 	return NewEnrollment(db, reg, 24*time.Hour, 5, 5*time.Minute, fc), reg, fc
 }
 
+var codeRe = regexp.MustCompile(`^[0-9]{8}$`)
+
 func TestEnrollFlow(t *testing.T) {
 	e, reg, _ := testEnroll(t)
 	code, exp, err := e.CreateCode(0, 0)
@@ -46,8 +50,8 @@ func TestEnrollFlow(t *testing.T) {
 	if !exp.Equal(time.Date(2026, 11, 21, 5, 0, 0, 0, time.UTC)) {
 		t.Fatalf("ttl: %s", exp)
 	}
-	if len(code) != 19 || strings.Count(code, "-") != 3 {
-		t.Fatalf("kod formati: %q", code)
+	if !codeRe.MatchString(code) {
+		t.Fatalf("kod 8 xonali son bo'lishi kerak: %q", code)
 	}
 	agentID, secret, clientID, err := e.Redeem(code, "joy1", "ubuntu", "10.0.5.9", "0.1.0", "10.0.0.5")
 	if err != nil {
@@ -110,5 +114,48 @@ func TestHashSecretStable(t *testing.T) {
 	h := HashSecret("abc")
 	if len(h) != 64 || HashSecret("abc") != h || HashSecret("abd") == h {
 		t.Fatalf("HashSecret: %s", h)
+	}
+}
+
+// Operator talabi: kod — 8 xonali son, kiritish oson bo'lishi uchun
+// bo'sh joy/tire bilan yozilgani ham qabul qilinadi.
+func TestEnrollCodeIsNumericAndTolerant(t *testing.T) {
+	e, _, _ := testEnroll(t)
+	code, _, err := e.CreateCode(0, 0)
+	if err != nil {
+		t.Fatalf("CreateCode: %v", err)
+	}
+	if !codeRe.MatchString(code) {
+		t.Fatalf("kutilgan 8 xonali son, chiqdi: %q", code)
+	}
+	// Guruhlab yozilgan variant (telefon orqali aytishga qulay).
+	spaced := code[:4] + " " + code[4:]
+	if _, _, _, err := e.Redeem(spaced, "joy2", "ubuntu", "10.0.5.10", "0.1.0", "10.0.0.6"); err != nil {
+		t.Fatalf("bo'sh joyli kod qabul qilinmadi: %v", err)
+	}
+	// Kod bir marta ishlatiladi — ikkinchi urinish rad etilishi kerak.
+	if _, _, _, err := e.Redeem(code, "joy3", "ubuntu", "10.0.5.11", "0.1.0", "10.0.0.7"); !errors.Is(err, ErrAlreadyUsed) {
+		t.Fatalf("takroriy redeem: %v", err)
+	}
+}
+
+// Kodlar tasodifiy va chalkashmasligi kerak (bir xil kod ikki marta
+// yaratilmasin — 10^8 fazada bir necha yuzta kod uchun ehtimol juda kichik,
+// lekin format tekshiruvi shu yerda ham qoladi).
+func TestEnrollCodesUnique(t *testing.T) {
+	e, _, _ := testEnroll(t)
+	seen := map[string]bool{}
+	for i := 0; i < 200; i++ {
+		c, _, err := e.CreateCode(0, 0)
+		if err != nil {
+			t.Fatalf("CreateCode: %v", err)
+		}
+		if !codeRe.MatchString(c) {
+			t.Fatalf("format: %q", c)
+		}
+		if seen[c] {
+			t.Fatalf("takroriy kod: %q", c)
+		}
+		seen[c] = true
 	}
 }

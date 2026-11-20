@@ -58,7 +58,7 @@ readers=0 bo'ladi va `idle_stop_s` keyin agentga `media_stop` yuboriladi
 ## Admin (S1/S4)
 
 `GET/POST/PATCH/DELETE /api/admin/users`;
-`POST /api/admin/enrollments` `{site_name}` → bir martalik kod (24 soat);
+`POST /api/admin/enrollments` `{site_name}` → bir martalik kod (24 soat, **8 xonali son**);
 `GET/POST/PATCH /api/admin/clients` (nom, site, max_uploads, max_transcodes, transcode_mode, o'chirish);
 `PATCH /api/admin/cameras/{id}` `{transcode_mode, play_profile, enabled}` (policy);
 `GET /api/admin/media/state` (faol sessiyalar, FFmpeg jarayonlari, backend, navbat — S2/S4);

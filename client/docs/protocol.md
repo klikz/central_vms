@@ -1,6 +1,6 @@
 # Central VMS — kontrakt: agent (`vmsagent`) ↔ server (`vmsd`)
 
-**Versiya: 1.0-draft.6** · Sana: 2026-11-20 · Holat: **client tomonida yozildi, muzlatildi (frozen)**
+**Versiya: 1.0-draft.7** · Sana: 2026-11-20 · Holat: **client tomonida yozildi, muzlatildi (frozen)**
 
 Bu fayl **yagona manba** (single source of truth). Server S0 bosqichida bu fayl `docs/protocol.md`
 ga ko'chiriladi (yoki symlink bilan bog'ladi) va undan keyin o'zgarish faqat versiya ko'tarib,
@@ -57,7 +57,7 @@ Aniqlangan asosiy tuzatishlar (eski root §7.1 matniga nisbatan):
 POST /api/agent/enroll
 Content-Type: application/json
 
-{ "code": "7F3K-92QX-BD8T",        // admin yaratgan bir martalik kod (24 soat)
+{ "code": "41739265",             // admin yaratgan bir martalik kod (8 xonali son, 24 soat)
   "hostname": "joy-oxangaron-01",
   "os": "Ubuntu 24.04",
   "lan_ip": "192.168.10.20",
@@ -76,6 +76,11 @@ Content-Type: application/json
 429 { "error": "rate_limited", "retry_after_s": 300 }
 ```
 
+Qoidalar:
+- Kod formati: **8 xonali raqamli son** (masalan `41739265`) — telefon orqali aytish
+  va terib kiritish oson bo‘lishi uchun (1.0-draft.7; eski 19 belgili aralash format
+  bekor qilindi). Server qabul qilishda bo‘sh joy, tire va pastki chiziqni yuboradi
+  (`4173 9265` ham ishlaydi). Entropiya 10^8; urinishlar IP bo‘yicha 5 ta / 5 daqiqa.
 Qoidalar:
 - Kod **bir marta** ishlatiladi: muvaffaqiyatli enroll'dan keyin yopiladi. `already_enrolled`
   bo'lsa admin yangi kod yaratadi (lokal UI'da aniq xabar).
@@ -696,6 +701,7 @@ tasodifan qutulgan).
 
 | Versiya | Sana | O'zgarish |
 |---|---|---|
+| 1.0-draft.7 | 2026-11-20 | §3.1: enrollment kodi **8 xonali raqamli son** qilib o‘zgartirildi (operator talabi — kiritish oson bo‘lsin); qabulda bo‘sh joy/tire yuboriladi. Eski formatdagi kodlar endi yuborilmaydi. |
 | 1.0-draft.6 | 2026-11-20 | §15 izohlar: agent WS `ping` kelganda read deadline'ini uzatishi shart (kontrol frame deadline uzarmaydi); WHEP read so'rovida token URL query'da bo'lishi shart (`Authorization` hook'ga yetmaydi); publish GOP 2 s dan katta bo'lmasligi talabi (o'quvchi birinchi keyframe'ni kutadi - 15 fps'da default gop=250 bilan 14.4 s kechikish olchandi); `paths/get` bir object qaytaradi, `readers` massivi. |
 | 1.0-draft.5 | 2026-11-19 | §17.1 ga kamera CRUD endpoint'lari to'liq yozildi (`/api/ui/cams` GET/POST/DELETE, `/api/ui/cams/{id}` PUT, import/eksport) va 501 qoidasi. §8.1 B-frame aniqlash: `profile-level-id` yetarli emas — H.264 SPS VUI `max_num_reorder_frames` o'qiladi (o'z parserimiz, golden + ffprobe orakoli bilan tasdiqlandi). |
 | 1.0-draft.4 | 2026-11-19 | §3.2/§10.1 aniqlashtirildi: state.json'da `secret_ref` yoziladi, shifrlangan secret emas. §3.1 ga kod berish usuli qo'shildi (`-enroll` yoki UI). §18: devserver handshake tartibi (auth→hello→welcome; 4001/4002/4003) va dev persistensiyasi. C1.1–C1.10 amalda ishlagani tasdiqlandi |

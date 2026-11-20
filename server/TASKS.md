@@ -226,6 +226,13 @@ yo'q (`@fontsource` ham olib tashlandi — offline). UI unit testlari 25 ta.
   deydi (CPU to'yinishi). Bir oqim barqaror; 2×2 skrinshot uchun testagent
   oqimi 640×360/10 fps'ga tushirildi.
 
+**Ulanish kodi soddalashtirildi (2026-11-20, operator talabi):** kod endi
+**8 xonali raqamli son** (masalan `41739265`) — avvalgi 19 belgili
+harfli-raqamli format (`J7LJ-ANDR-…`) telefon orqali aytish/qayta terish uchun
+qiyin edi. Server qabul qilishda bo'sh joy/tire yuboradi (`4173 9265` ham
+ishlaydi). Entropiya 10^8, urinishlar IP bo'yicha 5/5 daqiqa — to'liq qidiruv
+yillar talab qiladi, kod bir marta va 24 soatlik. Kontrakt: 1.0-draft.7.
+
 **S3 qoldiqlari:** drag&drop (ro'yxat→katak, katak↔katak) va double-click
 fullscreen brauzer testi, layout saqlash/yuklash/default UI, favorites
 reorder, pagination'da eski oqimlarni darhol stop (kodda bor, brauzer

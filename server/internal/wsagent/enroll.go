@@ -6,11 +6,12 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
-	"encoding/base32"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math/big"
+	"strings"
 	"sync"
 	"time"
 
@@ -116,6 +117,7 @@ func (e *Enrollment) Redeem(code, hostname, os, lanIP, agentVersion, ip string) 
 	if !e.rate.allow(ip) {
 		return "", "", 0, ErrRateLimited
 	}
+	code = normalizeCode(code)
 	if code == "" {
 		return "", "", 0, ErrBadCode
 	}
@@ -166,23 +168,34 @@ func (e *Enrollment) Redeem(code, hostname, os, lanIP, agentVersion, ip string) 
 
 // --- kod/entropy yordamchilari ---
 
-const codeAlphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ" // chalkash belgilar yo'q (0/O/1/I)
+// Kod — 8 xonali RAQAMLI son (10^8 kombinatsiya). Operator talabi: kodni
+// telefon orqali aytib/terib kiritish oson bo'lsin (2026-11-20). Xavf
+// balansi: urinishlar IP bo'yicha 5 ta / 5 daqiqa (§3.1) — bitta IP'da
+// kuniga ~1440 urinish, ya'ni to'liq qidiruv yillar talab qiladi; kod bir
+// marta ishlatiladi va 24 soat yashaydi.
+const codeDigits = 8
 
 func randCode() (string, error) {
-	b := make([]byte, 10)
-	if _, err := rand.Read(b); err != nil {
+	max := new(big.Int).Exp(big.NewInt(10), big.NewInt(codeDigits), nil) // 10^8
+	n, err := rand.Int(rand.Reader, max)
+	if err != nil {
 		return "", fmt.Errorf("enroll kod entropy: %w", err)
 	}
-	s := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b) // 16 belgi
-	out := make([]byte, 0, 19)
-	for i := 0; i < 16; i++ {
-		if i > 0 && i%4 == 0 {
-			out = append(out, '-')
+	return fmt.Sprintf("%0*d", codeDigits, n), nil
+}
+
+// normalizeCode — kiritishni yengillashtiradi: bo'sh joy, tire va
+// pastki chiziq tashlab yuboriladi ("4173 9265" = "4173-9265" = "41739265").
+func normalizeCode(code string) string {
+	out := make([]rune, 0, len(code))
+	for _, r := range code {
+		switch r {
+		case ' ', '\t', '-', '_':
+			continue
 		}
-		idx := int(s[i]) % len(codeAlphabet)
-		out = append(out, codeAlphabet[idx])
+		out = append(out, r)
 	}
-	return string(out), nil
+	return strings.TrimSpace(string(out))
 }
 
 func randHexLower(n int) string {

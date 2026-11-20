@@ -6,7 +6,7 @@ Ubuntu, Docker yo'q, **systemd autostart**, lokal brauzer UI `:8082`.
 Bu fayl root `../REJA.md` ga taylanadi (§ raqamlari o'sha yerdan).
 
 Vazifalar ro'yxati: `TASKS.md` (shu papkada). Implementatsiya bosqichlari: **C0 → C4**.
-**Kontrakt manbasi: `docs/protocol.md`** (shu papkada, versiya 1.0-draft.6 — muzlatilgan).
+**Kontrakt manbasi: `docs/protocol.md`** (shu papkada, versiya 1.0-draft.7 — muzlatilgan).
 Server S0'da bu fayl `docs/protocol.md` ga ko'chiriladi; ziddiyat bo'lsa `client/docs/protocol.md` kuchli.
 
 ---
@@ -26,7 +26,7 @@ Server S0'da bu fayl `docs/protocol.md` ga ko'chiriladi; ziddiyat bo'lsa `client
 
 **Tasdiqlangan (root §1/§17):** kameralar asosan **Dahua, RTSP orqali**; ONVIF ixtiyoriy. Server offline bo'lsa joyda **lokal ko'rish kerak emas** — lokal UI faqat CRUD/sozlamalar/status uchun. Kamera paroli serverga hech qachon uzatilmaydi (faqat mask'langan URL).
 
-## 2. Chegara kontraktlari (yagona manba: **`docs/protocol.md`** — bu papkada, 1.0-draft.6, muzlatilgan)
+## 2. Chegara kontraktlari (yagona manba: **`docs/protocol.md`** — bu papkada, 1.0-draft.7, muzlatilgan)
 
 To'liq xabar sxemalari, maydon nomlari, reason kodlari va misollar `docs/protocol.md` da. Bu yerda faqat qisqacha:
 
