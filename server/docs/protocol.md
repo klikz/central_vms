@@ -1,6 +1,6 @@
 # Central VMS — kontrakt: agent (`vmsagent`) ↔ server (`vmsd`)
 
-**Versiya: 1.0-draft.7** · Sana: 2026-11-20 · Holat: **client tomonida yozildi, muzlatildi (frozen)**
+**Versiya: 1.0-draft.8** · Sana: 2026-11-20 · Holat: **client tomonida yozildi, muzlatildi (frozen)**
 
 Bu fayl **yagona manba** (single source of truth). Server S0 bosqichida bu fayl `docs/protocol.md`
 ga ko'chiriladi (yoki symlink bilan bog'ladi) va undan keyin o'zgarish faqat versiya ko'tarib,
@@ -621,7 +621,10 @@ UI — SPA; ma'lumotlar shu endpoint'lar orqali olinadi. Barcha javoblar JSON
 |---|---|---|
 | `/healthz` | GET | `{status, version}` — systemd/probe uchun |
 | `/api/ui/status` | GET | `{version, server_online, cams_total, cams_online, publishes, cams_epoch, ffmpeg_ok}` |
-| `/api/ui/settings` | GET / PUT | `server_url`, `log_level`. PUT — PIN talab qiladi (§10.3) |
+| `/api/ui/settings` | GET / PUT | `server_url`, `log_level`. PUT — PIN talab qiladi (§10.3).
+  PUT qiymatlarni **konfiguratsiya fayliga yozadi**, `state.json`dagi manzilni yangilaydi va
+  sessiyani qayta boshlaydi (eski xulq: faqat xotirada qolardi, agent esa eski manzilga
+  ulanaverardi — 1.0-draft.8) |
 | `/api/ui/log?limit=N` | GET | `{lines:[…], count}` — oxirgi N qator, **eski → yangi**. `limit` default 200, maksimal 1000. Qatorlar §10.2 bo'yicha **yashirilgan** holida beriladi |
 | `/api/ui/cams` | GET | `{cams:[…], count}` — §3.2 sxemasi. **Parol qiymati hech qachon chiqmaydi**, faqat `secret_ref` (§10.2) |
 | `/api/ui/cams` | POST | Yangi kamera (`id` agentda UUIDv4, §5). Jism: `name,host,port,main_path,sub_path,enabled,position,secret`. PIN talab |
@@ -631,6 +634,10 @@ UI — SPA; ma'lumotlar shu endpoint'lar orqali olinadi. Barcha javoblar JSON
 | `/api/ui/cams/export` | GET | `text/csv` — parollar `***`. `?with_secrets=1` faqat PIN bilan (§16.3) |
 | `/api/ui/discovery*` | POST/GET | WS-Discovery boshlash/natija (C2) |
 | `/api/ui/selftest` | POST | Self-test ishga tushirish (C4) |
+| `/api/ui/enroll` | POST | `{code}` — §3.1 ro‘yxatdan o‘tish (kod 8 xonali son;
+  bo‘sh joy/tire yuboriladi). Muvaffaqiyatda agent_id/secret saqlanadi va sessiya darhol
+  qayta boshlanadi. Xatolar: `400 code_required`, `409 already_enrolled`,
+  `502 enroll_failed` (server rad etdi), `401 pin_required`. PIN talab |
 | `/favicon.ico`, `/favicon.svg` | GET | SVG ikonka — brauzer avtomatik so'raydi, 404 bo'lmasligi kerak |
 
 **Qoidalar:**
@@ -701,6 +708,10 @@ tasodifan qutulgan).
 
 | Versiya | Sana | O'zgarish |
 |---|---|---|
+| 1.0-draft.8 | 2026-11-20 | §17.1: `/api/ui/settings` PUT endi qiymatlarni faylga yozadi va
+  sessiyani qayta boshlaydi (avval faqat xotirada edi — operator „Save‘ qilsa ham agent eski
+  manzilga ulanaverardi). `/api/ui/enroll` POST qo‘shildi: UI orqali §3.1 ro‘yxatdan o‘tish.
+  UI‘dagi „Enroll‘ tugmasi shu endpoint‘ga ulandi.
 | 1.0-draft.7 | 2026-11-20 | §3.1: enrollment kodi **8 xonali raqamli son** qilib o‘zgartirildi (operator talabi — kiritish oson bo‘lsin); qabulda bo‘sh joy/tire yuboriladi. Eski formatdagi kodlar endi yuborilmaydi. |
 | 1.0-draft.6 | 2026-11-20 | §15 izohlar: agent WS `ping` kelganda read deadline'ini uzatishi shart (kontrol frame deadline uzarmaydi); WHEP read so'rovida token URL query'da bo'lishi shart (`Authorization` hook'ga yetmaydi); publish GOP 2 s dan katta bo'lmasligi talabi (o'quvchi birinchi keyframe'ni kutadi - 15 fps'da default gop=250 bilan 14.4 s kechikish olchandi); `paths/get` bir object qaytaradi, `readers` massivi. |
 | 1.0-draft.5 | 2026-11-19 | §17.1 ga kamera CRUD endpoint'lari to'liq yozildi (`/api/ui/cams` GET/POST/DELETE, `/api/ui/cams/{id}` PUT, import/eksport) va 501 qoidasi. §8.1 B-frame aniqlash: `profile-level-id` yetarli emas — H.264 SPS VUI `max_num_reorder_frames` o'qiladi (o'z parserimiz, golden + ffprobe orakoli bilan tasdiqlandi). |
