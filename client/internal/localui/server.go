@@ -62,6 +62,9 @@ type Status struct {
 type Settings struct {
 	ServerURL string `json:"server_url"`
 	LogLevel  string `json:"log_level"`
+	// Name — serverda ko'rinadigan nom ("Oxangaron"). PUT'dan keyin agent
+	// qayta ulanadi va `hello.name` orqali serverga yetkazadi.
+	Name string `json:"name,omitempty"`
 }
 
 // CamService — kamera CRUD (camsvc.Service bu interfeysni qanoatlantiradi).
@@ -90,7 +93,7 @@ type Deps struct {
 	// sessiya yangi manzil bilan qayta boshlanadi (runtime bajaradi).
 	// Avval bu yo'q edi: UI o'z nusxasini o'zgartirardi, agent esa eski
 	// manzilga ulanishda davom etardi (2026-11-20 operator xatosi).
-	SetSettings func(serverURL, logLevel string) error
+	SetSettings func(s Settings) error
 	// Enroll — UI orqali ro'yxatdan o'tish (§3.1): kod bilan serverga
 	// so'rov, natijada agent_id/secret saqlanadi va sessiya boshlanadi.
 	Enroll func(ctx context.Context, code string) error
@@ -105,7 +108,7 @@ type Server struct {
 	selftestRun  func(ctx context.Context) []selftest.Result
 	selftestLast func() []selftest.Result
 	logLines     func(limit int) []string
-	setSettings  func(serverURL, logLevel string) error
+	setSettings  func(s Settings) error
 	enroll       func(ctx context.Context, code string) error
 	cams         CamService
 	discovery    DiscoveryService
@@ -231,7 +234,7 @@ func (s *Server) handleSelftest(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, Settings{ServerURL: s.cfg.ServerURL, LogLevel: s.cfg.LogLevel})
+		writeJSON(w, http.StatusOK, Settings{ServerURL: s.cfg.ServerURL, LogLevel: s.cfg.LogLevel, Name: s.cfg.ClientName})
 	case http.MethodPut, http.MethodPost:
 		if !s.checkPin(r) {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "pin_required"})
@@ -257,17 +260,46 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad_log_level"})
 			return
 		}
+		in.Name = sanitizeName(in.Name)
 		if s.setSettings != nil {
-			if err := s.setSettings(strings.TrimSpace(in.ServerURL), in.LogLevel); err != nil {
+			if err := s.setSettings(Settings{
+				ServerURL: strings.TrimSpace(in.ServerURL),
+				LogLevel:  in.LogLevel,
+				Name:      in.Name,
+			}); err != nil {
 				s.log.Warn("sozlama saqlanmadi", "err", err.Error())
 				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "save_failed", "detail": err.Error()})
 				return
 			}
 		}
-		writeJSON(w, http.StatusOK, Settings{ServerURL: s.cfg.ServerURL, LogLevel: s.cfg.LogLevel})
+		writeJSON(w, http.StatusOK, Settings{ServerURL: s.cfg.ServerURL, LogLevel: s.cfg.LogLevel, Name: s.cfg.ClientName})
 	default:
 		methodErr(w)
 	}
+}
+
+// sanitizeName — operator nomini tozalash (uzunlik 64, boshqariladigan
+// belgilar yo'q). Bo'sh qolsa "" — server avtomatik nomni saqlaydi.
+func sanitizeName(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	out := make([]rune, 0, len(raw))
+	for _, r := range raw {
+		if r == '\n' || r == '\r' || r == '\t' {
+			r = ' '
+		}
+		if r < 0x20 || r == 0x7f {
+			continue
+		}
+		out = append(out, r)
+	}
+	s2 := strings.Join(strings.Fields(string(out)), " ")
+	if len([]rune(s2)) > 64 {
+		s2 = string([]rune(s2)[:64])
+	}
+	return s2
 }
 
 // ErrAlreadyEnrolled — UI orqali qayta ro'yxatdan o'tishga urinish

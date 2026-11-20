@@ -82,6 +82,8 @@ export function useStore(): Store {
               ? {
                   ...c,
                   status: e.data.status ?? c.status,
+                  // Agent `hello.name` orqali nomini yuboradi — darhol ko'rsatamiz.
+                  name: e.data.name ?? c.name,
                   version: e.data.version ?? c.version,
                   cameras_count: e.data.cameras_count ?? c.cameras_count,
                   online_count: e.data.online_count ?? c.online_count,

@@ -8,6 +8,7 @@
 server_url: ws://192.168.1.10:8081      # ws:// yoki wss:// (host:port majburiy)
 ui_bind: 127.0.0.1:8082                 # LAN manzili qo'yilsa ui_pin MAJBURIY (§10.3)
 ui_pin: ""                              # bo'sh = PIN yo'q (faqat localhost holatida ruxsat)
+client_name: ""                       # serverda ko‘rinadigan nom (masalan: Oxangaron)
 state_dir: /var/lib/vmsagent
 key_file: /etc/vmsagent/agent.key
 log_level: info                         # debug|info|warn|error

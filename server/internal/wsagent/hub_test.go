@@ -64,7 +64,7 @@ func (e *testEnv) enroll(t *testing.T) (agentID, secret string) {
 	if err != nil {
 		t.Fatalf("kod: %v", err)
 	}
-	agentID, secret, _, err = en.Redeem(code, "joy", "ubuntu", "10.0.0.9", "0.1.0", "127.0.0.1")
+	agentID, secret, _, err = en.Redeem(EnrollInput{Code: code, Hostname: "joy", OS: "ubuntu", LanIP: "10.0.0.9", AgentVersion: "0.1.0"}, "127.0.0.1")
 	if err != nil {
 		t.Fatalf("redeem: %v", err)
 	}
@@ -95,6 +95,16 @@ func startHB(t *testing.T, ws *websocket.Conn) {
 
 func dialHandshake(t *testing.T, e *testEnv, agentID, secret string, protoVer int) (*websocket.Conn, proto.Welcome) {
 	t.Helper()
+	return dialHandshakeWith(t, e, agentID, secret, proto.Hello{
+		ProtocolVersion: protoVer, AgentVersion: "t", OS: "linux",
+		Hostname: "h", CamsEpoch: 0, Caps: proto.Caps{GPU: "none"},
+	})
+}
+
+// dialHandshakeWith — hello maydonlarini to'liq nazorat qilish uchun
+// (masalan `name` bilan qayta ulanishni sinash).
+func dialHandshakeWith(t *testing.T, e *testEnv, agentID, secret string, hello proto.Hello) (*websocket.Conn, proto.Welcome) {
+	t.Helper()
 	ws, _, err := websocket.DefaultDialer.Dial(wsURL(e.srv.URL)+"?agent_id="+agentID, nil)
 	if err != nil {
 		t.Fatalf("dial: %v", err)
@@ -107,8 +117,7 @@ func dialHandshake(t *testing.T, e *testEnv, agentID, secret string, protoVer in
 		}
 	}
 	send(proto.MsgAuth, proto.Auth{AgentID: agentID, Secret: secret})
-	send(proto.MsgHello, proto.Hello{ProtocolVersion: protoVer, AgentVersion: "t", OS: "linux",
-		Hostname: "h", CamsEpoch: 0, Caps: proto.Caps{GPU: "none"}})
+	send(proto.MsgHello, hello)
 	env := readEnv(t, ws)
 	if env.Type != proto.MsgWelcome {
 		t.Fatalf("birinchi xabar %q", env.Type)
@@ -414,4 +423,39 @@ func TestIdleNoResponseCloses(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+}
+
+// Agent UI'da nom o'zgarsa (masalan "Oxangaron") serverda ham darhol
+// ko'rinishi kerak: hello.name mijoz nomini yangilaydi.
+func TestHelloNameRenamesClient(t *testing.T) {
+	e := newTestEnv(t)
+	agentID, secret := e.enroll(t)
+	before, err := e.reg.GetClientByAgentID(agentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(before.Name, "agent-") {
+		t.Fatalf("enroll avtomatik nom bermadi: %q", before.Name)
+	}
+	ws, _ := dialHandshake(t, e, agentID, secret, 1)
+	_ = ws
+	// Ikkinchi ulanish (qayta ulanish) yangi nom bilan keladi.
+	agentID2, secret2 := agentID, secret
+	ws2, _ := dialHandshakeNamed(t, e, agentID2, secret2, 1, "Oxangaron  ")
+	_ = ws2
+	after, err := e.reg.GetClientByAgentID(agentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Name != "Oxangaron" {
+		t.Fatalf("nom yangilanmadi: %q (avvalgi %q)", after.Name, before.Name)
+	}
+}
+
+func dialHandshakeNamed(t *testing.T, e *testEnv, agentID, secret string, ver int, name string) (*websocket.Conn, proto.Welcome) {
+	t.Helper()
+	return dialHandshakeWith(t, e, agentID, secret, proto.Hello{
+		ProtocolVersion: ver, AgentVersion: "t", OS: "linux", Hostname: "h", Name: name,
+		Caps: proto.Caps{GPU: "none"},
+	})
 }

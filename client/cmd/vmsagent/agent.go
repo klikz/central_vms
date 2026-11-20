@@ -89,13 +89,19 @@ func hintPerm(err error, path string) error {
 // Bu bo'lmaganda UI'dagi Server URL faqat UI'ning o'z nusxasida o'zgalar edi:
 // agent esa state.json'dagi eski manzilga ulanishda davom etardi
 // (2026-11-20 operator xatosi — "log hali 192.168.1.10 da").
-func (r *runtime) setSettings(serverURL, logLevel string) error {
+func (r *runtime) setSettings(in localui.Settings) error {
+	serverURL, logLevel, name := in.ServerURL, in.LogLevel, in.Name
 	upd := map[string]string{}
 	if serverURL != "" {
 		upd["server_url"] = serverURL
 	}
 	if logLevel != "" {
 		upd["log_level"] = logLevel
+	}
+	// Nom: bo'sh ham yuborilishi mumkin (o'chirish), lekin biz faqat
+	// to'lganini yozamiz — aks holda UI'da maydon bo'sh qolsa nom yo'qoladi.
+	if name != "" {
+		upd["client_name"] = name
 	}
 	if len(upd) == 0 {
 		return nil
@@ -115,6 +121,11 @@ func (r *runtime) setSettings(serverURL, logLevel string) error {
 	if logLevel != "" {
 		r.cfg.LogLevel = logLevel
 	}
+	nameChanged := false
+	if name != "" && name != r.cfg.ClientName {
+		r.cfg.ClientName = name
+		nameChanged = true
+	}
 	if r.st != nil {
 		if serverURL != "" && r.st.ServerURL != serverURL {
 			r.st.ServerURL = serverURL
@@ -130,10 +141,10 @@ func (r *runtime) setSettings(serverURL, logLevel string) error {
 			return fmt.Errorf("state saqlanmadi: %w", err)
 		}
 	}
-	if urlChanged {
+	if urlChanged || nameChanged {
 		r.requestReload(true)
-		r.log.Info("server_url yangilandi — sessiya qayta boshlanadi",
-			"server", redact.String(serverURL))
+		r.log.Info("sozlama saqlandi — sessiya qayta boshlanadi",
+			"server", redact.String(r.cfg.ServerURL), "name", r.cfg.ClientName)
 	}
 	return nil
 }
@@ -223,8 +234,12 @@ func (r *runtime) bootstrap(ctx context.Context, enrollCode string) error {
 // enroll — §3.1: agent_id/agent_secret olib, keystore+state'ga saqlash.
 func (r *runtime) enroll(ctx context.Context, code string) error {
 	host, _ := os.Hostname()
+	r.mu.Lock()
+	cname := r.cfg.ClientName
+	r.mu.Unlock()
 	res, err := agent.Enroll(ctx, r.st.ServerURL, agent.EnrollInfo{
 		Code: code, Hostname: host, OS: osVersion(), LanIP: lanIP(), AgentVersion: version,
+		Name: cname,
 	})
 	if err != nil {
 		r.setError(err)
@@ -246,9 +261,13 @@ func (r *runtime) enroll(ctx context.Context, code string) error {
 
 func (r *runtime) newSession() *agent.Session {
 	secret, _ := r.ks.Get(keystore.RefAgentSecret)
+	r.mu.Lock()
+	cname := r.cfg.ClientName
+	r.mu.Unlock()
 	cfg := agent.SessionConfig{
 		ServerURL: r.st.ServerURL, AgentID: r.st.AgentID, Secret: secret,
 		AgentVersion: version, OS: osVersion(), Hostname: hostname(), LanIP: lanIP(),
+		Name:   cname,
 		BootID: bootID(), CamsEpoch: r.st.CamsEpoch, Caps: r.caps,
 		Clock: clockReal(), Log: r.log,
 		OnDisconnect: func(error) {

@@ -135,6 +135,7 @@ async function loadSettings() {
     const st = await api("/api/ui/settings");
     if (st) {
       if (!$("#set-server").value) $("#set-server").value = st.server_url || "";
+      if ($("#set-name") && !$("#set-name").value) $("#set-name").value = st.name || "";
       if (st.log_level) $("#set-loglevel").value = st.log_level;
     }
   } catch (e) { /* eski versiyalarda bo'lmasligi mumkin */ }
@@ -194,7 +195,11 @@ document.addEventListener("click", (ev) => {
   const act = btn.dataset.act;
   if (act === "save") {
     api("/api/ui/settings", { method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ server_url: $("#set-server").value, log_level: $("#set-loglevel").value }) })
+      body: JSON.stringify({
+        server_url: $("#set-server").value,
+        log_level: $("#set-loglevel").value,
+        name: $("#set-name") ? $("#set-name").value : "",
+      }) })
       .then(() => { toast(I18N.savedReconnect, "ok"); setTimeout(loadStatus, 1200); })
       .catch(() => toast(I18N.saveFailed, "err"));
   } else if (act === "enroll") {

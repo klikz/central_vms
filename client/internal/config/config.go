@@ -15,9 +15,12 @@ type Config struct {
 	ServerURL string `yaml:"server_url"`
 	UIBind    string `yaml:"ui_bind"`
 	UIPin     string `yaml:"ui_pin"`
-	StateDir  string `yaml:"state_dir"`
-	KeyFile   string `yaml:"key_file"`
-	LogLevel  string `yaml:"log_level"`
+	// ClientName — serverda ko'rinadigan nom (masalan "Oxangaron"). Bo'sh
+	// bo'lsa server avtomatik `agent-…` nomini saqlaydi.
+	ClientName string `yaml:"client_name"`
+	StateDir   string `yaml:"state_dir"`
+	KeyFile    string `yaml:"key_file"`
+	LogLevel   string `yaml:"log_level"`
 
 	// Log fayli (talab 2026-11-19): xatolar terminal+BILAN faylga ham.
 	// Client fayli ALLOHIIDA (serverniki vmsd o'z faylida).
@@ -64,6 +67,7 @@ func Default() Config {
 	c.ServerURL = ""
 	c.UIBind = "127.0.0.1:8082"
 	c.UIPin = ""
+	c.ClientName = ""
 	c.StateDir = "/var/lib/vmsagent"
 	c.KeyFile = "/etc/vmsagent/agent.key"
 	c.LogLevel = "info"
@@ -155,6 +159,7 @@ func Parse(src []byte) (Config, error) {
 		{"server_url", func() error { return setStr("server_url", &c.ServerURL) }},
 		{"ui_bind", func() error { return setStr("ui_bind", &c.UIBind) }},
 		{"ui_pin", func() error { return setStr("ui_pin", &c.UIPin) }},
+		{"client_name", func() error { return setStr("client_name", &c.ClientName) }},
 		{"state_dir", func() error { return setStr("state_dir", &c.StateDir) }},
 		{"key_file", func() error { return setStr("key_file", &c.KeyFile) }},
 		{"log_level", func() error { return setStr("log_level", &c.LogLevel) }},
@@ -213,7 +218,7 @@ func Parse(src []byte) (Config, error) {
 // knownKeys — §11 sxemasidagi ruxsat etilgan kalitlar. Noma'lum kalit xato:
 // printy xatosi yoki eski konfiguratsiya jimgina ishlatilmasin.
 var knownKeys = map[string]bool{
-	"server_url": true, "ui_bind": true, "ui_pin": true, "state_dir": true,
+	"server_url": true, "ui_bind": true, "ui_pin": true, "client_name": true, "state_dir": true,
 	"key_file": true, "log_level": true, "log_file": true, "log_max_mb": true,
 	"log_keep": true, "probe": true, "limits": true,
 	"onvif": true, "discovery": true, "publish": true,

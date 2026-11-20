@@ -155,13 +155,17 @@ func (d *Deps) handleEnroll(w http.ResponseWriter, r *http.Request) {
 		OS           string          `json:"os"`
 		LanIP        string          `json:"lan_ip"`
 		AgentVersion string          `json:"agent_version"`
+		Name         string          `json:"name"` // ko‘rinadigan nom ("Oxangaron")
 		Caps         json.RawMessage `json:"caps"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_json", "")
 		return
 	}
-	agentID, secret, _, err := d.Enr.Redeem(in.Code, in.Hostname, in.OS, in.LanIP, in.AgentVersion, clientIP(r))
+	agentID, secret, _, err := d.Enr.Redeem(wsagent.EnrollInput{
+		Code: in.Code, Hostname: in.Hostname, OS: in.OS, LanIP: in.LanIP,
+		AgentVersion: in.AgentVersion, Name: in.Name,
+	}, clientIP(r))
 	switch {
 	case errors.Is(err, wsagent.ErrRateLimited):
 		writeErr(w, http.StatusTooManyRequests, "rate_limited", "")

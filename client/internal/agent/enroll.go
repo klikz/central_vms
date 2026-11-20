@@ -20,6 +20,8 @@ type EnrollInfo struct {
 	OS           string
 	LanIP        string
 	AgentVersion string
+	// Name — §3.1: mijozning ko'rinadigan nomi (config `client_name`).
+	Name string
 }
 
 // EnrollResult — §3.1 javobi.
@@ -84,6 +86,7 @@ func Enroll(ctx context.Context, serverURL string, info EnrollInfo) (*EnrollResu
 	body, err := json.Marshal(map[string]string{
 		"code": info.Code, "hostname": info.Hostname, "os": info.OS,
 		"lan_ip": info.LanIP, "agent_version": info.AgentVersion,
+		"name": info.Name,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("enroll: so'rov yig'ilmadi: %w", err)

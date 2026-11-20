@@ -68,24 +68,25 @@ func postJSON(t *testing.T, url string, body any, pin string) *http.Response {
 // "Save" sozlamani qaytarib berish bilan cheklanmasligi kerak: u runtime'ga
 // yetib borishi shart (faylga yozish + qayta ulanish shu yerda boshlanadi).
 func TestSettings_SaveReachesRuntime(t *testing.T) {
-	var gotURL, gotLevel string
+	var got Settings
 	ts := newDepsServer(t, "", Deps{
-		SetSettings: func(u, l string) error { gotURL, gotLevel = u, l; return nil },
+		SetSettings: func(v Settings) error { got = v; return nil },
 	})
 	res := putJSON(t, ts.URL+"/api/ui/settings", map[string]string{
 		"server_url": "ws://192.168.0.27:8081", "log_level": "debug",
+		"name": "  Oxangaron  UI   ",
 	}, "")
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("holat: %d", res.StatusCode)
 	}
-	if gotURL != "ws://192.168.0.27:8081" || gotLevel != "debug" {
-		t.Fatalf("runtime'ga yetmadi: %q %q", gotURL, gotLevel)
+	if got.ServerURL != "ws://192.168.0.27:8081" || got.LogLevel != "debug" {
+		t.Fatalf("runtime'ga yetmadi: %+v", got)
 	}
 }
 
 func TestSettings_SaveRejectedURL(t *testing.T) {
 	called := false
-	ts := newDepsServer(t, "", Deps{SetSettings: func(u, l string) error { called = true; return nil }})
+	ts := newDepsServer(t, "", Deps{SetSettings: func(Settings) error { called = true; return nil }})
 	res := putJSON(t, ts.URL+"/api/ui/settings", map[string]string{"server_url": "http://192.168.0.27:8081"}, "")
 	if res.StatusCode != http.StatusBadRequest {
 		t.Fatalf("ws:// bo'lmagan manzil qabul qilindi: %d", res.StatusCode)
@@ -96,7 +97,7 @@ func TestSettings_SaveRejectedURL(t *testing.T) {
 }
 
 func TestSettings_SaveFailureReported(t *testing.T) {
-	ts := newDepsServer(t, "", Deps{SetSettings: func(u, l string) error {
+	ts := newDepsServer(t, "", Deps{SetSettings: func(Settings) error {
 		return fmt.Errorf("diskda yozib bo'lmadi")
 	}})
 	res := putJSON(t, ts.URL+"/api/ui/settings", map[string]string{"server_url": "ws://x:1"}, "")
@@ -173,5 +174,19 @@ func TestEnrollEndpoint_RequiresPin(t *testing.T) {
 	res = postJSON(t, ts.URL+"/api/ui/enroll", map[string]string{"code": "11112222"}, "1234")
 	if res.StatusCode != http.StatusOK || !called {
 		t.Fatalf("PIN bilan ishlamadi: %d called=%v", res.StatusCode, called)
+	}
+}
+
+// Nom — serverda ko'rinadigan nom: UI'da ortiqcha bo'sh joylar tozalanadi
+// va so'rov runtime'ga tozalangan holda yetadi.
+func TestSettings_NameSanitized(t *testing.T) {
+	var got Settings
+	ts := newDepsServer(t, "", Deps{SetSettings: func(v Settings) error { got = v; return nil }})
+	res := putJSON(t, ts.URL+"/api/ui/settings", map[string]string{"name": "  Oxangaron\tuy   "}, "")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("holat: %d", res.StatusCode)
+	}
+	if got.Name != "Oxangaron uy" {
+		t.Fatalf("nom tozalanmadi: %q", got.Name)
 	}
 }

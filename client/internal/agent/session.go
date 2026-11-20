@@ -48,11 +48,14 @@ type SessionConfig struct {
 	AgentVersion string
 	OS           string
 	Hostname     string
-	LanIP        string
-	BootID       string
-	StartedAt    time.Time
-	CamsEpoch    int64
-	Caps         proto.Caps
+	// Name — serverda ko'rinadigan nom (config `client_name`); bo'sh bo'lsa
+	// server avtomatik nomni saqlaydi.
+	Name      string
+	LanIP     string
+	BootID    string
+	StartedAt time.Time
+	CamsEpoch int64
+	Caps      proto.Caps
 
 	Clock clock.Clock  // nil → Real
 	Log   *slog.Logger // nil → Discard
@@ -227,6 +230,7 @@ func (s *Session) handshake(ctx context.Context, conn *websocket.Conn) error {
 		AgentVersion:    s.cfg.AgentVersion,
 		OS:              s.cfg.OS,
 		Hostname:        s.cfg.Hostname,
+		Name:            s.cfg.Name,
 		LanIP:           s.cfg.LanIP,
 		BootID:          s.cfg.BootID,
 		StartedAt:       s.cfg.StartedAt.UTC(),

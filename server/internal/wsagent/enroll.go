@@ -110,10 +110,25 @@ func (e *Enrollment) CreateCode(siteID, createdByUserID int64) (string, time.Tim
 	return raw, exp, nil
 }
 
+// EnrollInput — §3.1 so'rov maydonlari (struct: pozitsion parametrlar
+// chalkash bo'lib ketdi, yangi maydon qo'shish xatolik tug'dirardi).
+type EnrollInput struct {
+	Code         string
+	Hostname     string
+	OS           string
+	LanIP        string
+	AgentVersion string
+	// Name — operator bergan ko'rinadigan nom (masalan "Oxangaron").
+	// Bo'sh bo'lsa avtomatik `agent-…` nomi qo'llanadi; admin keyin
+	// o'zgartirishi mumkin (PATCH /api/clients/{id}).
+	Name string
+}
+
 // Redeem — ochiq endpoint mantiqi. ip bo'yicha rate-limit.
-// Muvaffaqiyatda: yangi client (nom avtomatik — admin keyin PATCH qiladi),
+// Muvaffaqiyatda: yangi client (nom — so'rovda berilgan yoki avtomatik),
 // agent_id `ag_…`, agent_secret BIR MARTA qaytariladi (DB'da sha256).
-func (e *Enrollment) Redeem(code, hostname, os, lanIP, agentVersion, ip string) (agentID, secret string, clientID int64, err error) {
+func (e *Enrollment) Redeem(in EnrollInput, ip string) (agentID, secret string, clientID int64, err error) {
+	code := in.Code
 	if !e.rate.allow(ip) {
 		return "", "", 0, ErrRateLimited
 	}
@@ -146,7 +161,11 @@ func (e *Enrollment) Redeem(code, hostname, os, lanIP, agentVersion, ip string) 
 		return "", "", 0, fmt.Errorf("enroll: entropy: %w", errors.New("rand ishlamadi"))
 	}
 	secret = randToken(32)
-	clientID, err = e.registry.CreateClient("agent-"+agentID[3:], 0, agentID, HashSecret(secret))
+	displayName := registry.SanitizeName(in.Name)
+	if displayName == "" {
+		displayName = "agent-" + agentID[3:] // avtomatik: admin keyin PATCH qiladi
+	}
+	clientID, err = e.registry.CreateClient(displayName, 0, agentID, HashSecret(secret))
 	if err != nil {
 		if errors.Is(err, registry.ErrExists) {
 			return "", "", 0, ErrAlreadyUsed

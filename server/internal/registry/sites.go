@@ -2,6 +2,7 @@ package registry
 
 import (
 	"fmt"
+	"strings"
 )
 
 // Site — joy (nom unikal, root §5 izoh).
@@ -171,6 +172,42 @@ func (r *Registry) MarkClientOffline(clientID int64) error {
 	// Kameralar ham offline bo'ladi (root §17: "client offline → kameralar offline").
 	_, err = r.db.Exec(`UPDATE cameras SET status='offline' WHERE client_id=? AND status!='error'`, clientID)
 	return wrap(err, "cameras offline")
+}
+
+// SanitizeName — operator nomini saqlashga yaroqli holatga keltiradi:
+// qirib-tartib, uzunlik 64 belgi (rune), boshqariladigan belgilar olib
+// tashlanadi. Bo‘sh qolsa "" qaytadi (chaqiruvchi avtomatik nomni ishlatadi).
+func SanitizeName(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	out := make([]rune, 0, len(raw))
+	for _, r := range raw {
+		if r == '\n' || r == '\r' || r == '\t' {
+			r = ' '
+		}
+		if r < 0x20 || r == 0x7f {
+			continue
+		}
+		out = append(out, r)
+	}
+	s2 := strings.Join(strings.Fields(string(out)), " ")
+	if len([]rune(s2)) > 64 {
+		s2 = string([]rune(s2)[:64])
+	}
+	return s2
+}
+
+// UpdateClientName — mijozning ko‘rinadigan nomini yangilaydi.
+// Bo‘sh nom berilsa hech narsa qilinmaydi (avtomatik nomni yo‘q qilmaslik uchun).
+func (r *Registry) UpdateClientName(clientID int64, name string) error {
+	name = SanitizeName(name)
+	if name == "" {
+		return nil
+	}
+	_, err := r.db.Exec(`UPDATE clients SET name=? WHERE id=?`, name, clientID)
+	return wrap(err, "client nomi")
 }
 
 // UpdateClientSecret — secret_rotate keyin DB hash (S1.13).

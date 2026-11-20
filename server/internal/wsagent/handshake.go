@@ -12,6 +12,7 @@ import (
 
 	"central-vms/server/internal/auth"
 	"central-vms/server/internal/proto"
+	"central-vms/server/internal/registry"
 )
 
 var upgrader = websocket.Upgrader{
@@ -119,6 +120,19 @@ func (h *Hub) handshake(ws *websocket.Conn, agentID string) (*Conn, error) {
 
 	if err := h.registry.UpdateClientHello(client.ID, hello.AgentVersion, hello.OS, hello.LanIP, mustJSON(hello.Caps)); err != nil {
 		h.lg.Warn("hello saqlash", "agent_id", agentID, "err", err)
+	}
+	// Operator nomi (`hello.name`): agent UI'da nomni o'zgartirsa, shu
+	// yerda serverga yetib keladi va interfeysda darhol ko'rinadi.
+	if nm := registry.SanitizeName(hello.Name); nm != "" && nm != client.Name {
+		if err := h.registry.UpdateClientName(client.ID, nm); err != nil {
+			h.lg.Warn("client nomi yangilanmadi", "agent_id", agentID, "err", err)
+		} else {
+			h.lg.Info("client nomi yangilandi", "agent_id", agentID, "name", nm)
+			h.uiEvent(EvClientStatus, map[string]any{
+				"client_id": client.ID, "agent_id": agentID,
+				"status": "online", "name": nm,
+			})
+		}
 	}
 	// welcome — handshake bosqichida writeLoop hali yo'q: to'g'ridan-to'g'ri yozamiz.
 	w := h.buildWelcome(conn, hello, proto.Compat{OK: true})

@@ -53,9 +53,20 @@ func TestEnrollFlow(t *testing.T) {
 	if !codeRe.MatchString(code) {
 		t.Fatalf("kod 8 xonali son bo'lishi kerak: %q", code)
 	}
-	agentID, secret, clientID, err := e.Redeem(code, "joy1", "ubuntu", "10.0.5.9", "0.1.0", "10.0.0.5")
+	agentID, secret, clientID, err := e.Redeem(EnrollInput{
+		Code: code, Hostname: "joy1", OS: "ubuntu", LanIP: "10.0.5.9",
+		AgentVersion: "0.1.0", Name: "Oxangaron",
+	}, "10.0.0.5")
 	if err != nil {
 		t.Fatalf("Redeem: %v", err)
+	}
+	// Operator nomi (§3.1 `name`): client shu nom bilan ko'rinadi.
+	c1, err := reg.GetClientByAgentID(agentID)
+	if err != nil {
+		t.Fatalf("mijoz topilmadi: %v", err)
+	}
+	if c1.Name != "Oxangaron" {
+		t.Fatalf("nom saqlanmadi: %q", c1.Name)
 	}
 	if !strings.HasPrefix(agentID, "ag_") || len(secret) < 40 {
 		t.Fatalf("agentID=%s secret len=%d", agentID, len(secret))
@@ -76,19 +87,19 @@ func TestEnrollFlow(t *testing.T) {
 		t.Fatal("secret hash noto'g'ri")
 	}
 	// Bir martalik: ikkinchi urinish — 409.
-	if _, _, _, err := e.Redeem(code, "joy2", "ubuntu", "", "", "10.0.0.6"); !strings.Contains(err.Error(), "allaqachon") {
+	if _, _, _, err := e.Redeem(EnrollInput{Code: code, Hostname: "joy2", OS: "ubuntu"}, "10.0.0.6"); !strings.Contains(err.Error(), "allaqachon") {
 		t.Fatalf("takror redeem: %v", err)
 	}
 }
 
 func TestEnrollBadCodeAndExpiry(t *testing.T) {
 	e, _, fc := testEnroll(t)
-	if _, _, _, err := e.Redeem("YOQ-KOD-XYYY", "", "", "", "", "1.1.1.1"); !strings.Contains(err.Error(), "kod noto'g'ri") {
+	if _, _, _, err := e.Redeem(EnrollInput{Code: "YOQ-KOD-XYYY"}, "1.1.1.1"); !strings.Contains(err.Error(), "kod noto'g'ri") {
 		t.Fatalf("yo'q kod: %v", err)
 	}
 	code, _, _ := e.CreateCode(0, 0)
 	fc.Add(24*time.Hour + time.Minute)
-	if _, _, _, err := e.Redeem(code, "", "", "", "", "1.1.1.1"); !strings.Contains(err.Error(), "kod noto'g'ri") {
+	if _, _, _, err := e.Redeem(EnrollInput{Code: code}, "1.1.1.1"); !strings.Contains(err.Error(), "kod noto'g'ri") {
 		t.Fatalf("muddati o'tgan kod: %v", err)
 	}
 }
@@ -98,14 +109,14 @@ func TestEnrollRateLimit(t *testing.T) {
 	_, _, _ = e.CreateCode(0, 0)
 	var lastErr error
 	for i := range 7 {
-		_, _, _, lastErr = e.Redeem("YOMOQ-XYYY-ZZZZ-QQQQ", "", "", "", "", "9.9.9.9")
+		_, _, _, lastErr = e.Redeem(EnrollInput{Code: "YOMOQ-XYYY-ZZZZ-QQQQ"}, "9.9.9.9")
 		_ = i
 	}
 	if lastErr == nil || !strings.Contains(lastErr.Error(), "juda ko'p") {
 		t.Fatalf("rate-limit ishlamadi: %v", lastErr)
 	}
 	// Boshqa IP ga ta'sir yo'q (kod noto'g'ri bo'lsa ham rate emas).
-	if _, _, _, err := e.Redeem("", "", "", "", "", "9.9.9.8"); strings.Contains(err.Error(), "juda ko'p") {
+	if _, _, _, err := e.Redeem(EnrollInput{}, "9.9.9.8"); strings.Contains(err.Error(), "juda ko'p") {
 		t.Fatalf("boshqa IP rate-limitga uchradi: %v", err)
 	}
 }
@@ -130,11 +141,11 @@ func TestEnrollCodeIsNumericAndTolerant(t *testing.T) {
 	}
 	// Guruhlab yozilgan variant (telefon orqali aytishga qulay).
 	spaced := code[:4] + " " + code[4:]
-	if _, _, _, err := e.Redeem(spaced, "joy2", "ubuntu", "10.0.5.10", "0.1.0", "10.0.0.6"); err != nil {
+	if _, _, _, err := e.Redeem(EnrollInput{Code: spaced, Hostname: "joy2", OS: "ubuntu", LanIP: "10.0.5.10", AgentVersion: "0.1.0"}, "10.0.0.6"); err != nil {
 		t.Fatalf("bo'sh joyli kod qabul qilinmadi: %v", err)
 	}
 	// Kod bir marta ishlatiladi — ikkinchi urinish rad etilishi kerak.
-	if _, _, _, err := e.Redeem(code, "joy3", "ubuntu", "10.0.5.11", "0.1.0", "10.0.0.7"); !errors.Is(err, ErrAlreadyUsed) {
+	if _, _, _, err := e.Redeem(EnrollInput{Code: code, Hostname: "joy3", OS: "ubuntu", LanIP: "10.0.5.11", AgentVersion: "0.1.0"}, "10.0.0.7"); !errors.Is(err, ErrAlreadyUsed) {
 		t.Fatalf("takroriy redeem: %v", err)
 	}
 }

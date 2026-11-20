@@ -119,15 +119,18 @@ type Caps struct {
 
 // Hello — birinchi xabar (auth'dan keyin).
 type Hello struct {
-	ProtocolVersion int       `json:"protocol_version"`
-	AgentVersion    string    `json:"agent_version"`
-	OS              string    `json:"os"`
-	Hostname        string    `json:"hostname"`
-	LanIP           string    `json:"lan_ip"`
-	BootID          string    `json:"boot_id"`
-	StartedAt       time.Time `json:"started_at"`
-	CamsEpoch       int64     `json:"cams_epoch"`
-	Caps            Caps      `json:"caps"`
+	ProtocolVersion int    `json:"protocol_version"`
+	AgentVersion    string `json:"agent_version"`
+	OS              string `json:"os"`
+	Hostname        string `json:"hostname"`
+	// Name — operator beradigan ko‘rinadigan nom (masalan "Oxangaron").
+	// Bo‘sh bo‘lsa server avtomatik nomni (agent-…) saqlaydi.
+	Name      string    `json:"name,omitempty"`
+	LanIP     string    `json:"lan_ip"`
+	BootID    string    `json:"boot_id"`
+	StartedAt time.Time `json:"started_at"`
+	CamsEpoch int64     `json:"cams_epoch"`
+	Caps      Caps      `json:"caps"`
 }
 
 // CameraProfilePair — main/sub juftliklari uchun.
