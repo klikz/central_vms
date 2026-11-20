@@ -15,19 +15,47 @@ import (
 	"central-vms/server/internal/registry"
 )
 
-// enrollAgent — admin kod → agent enroll → WS handshake (test yordamchisi).
+// joinAgent — §3 oqimi: agent so‘rov yuboradi → admin tasdiqlaydi →
+// agent polling orqali agent_id oladi (test yordamchisi).
+func joinAgent(t *testing.T, srv *httptest.Server, adminTok, hostname string) (agentID, secret string) {
+	t.Helper()
+	joinKey := "a1" + strings.Repeat("b2", 31)
+	secret = "sir-" + strings.Repeat("7c", 24)
+	body := `{"join_key":"` + joinKey + `","agent_secret":"` + secret +
+		`","hostname":"` + hostname + `","name":"` + hostname + `"}`
+	code, m, raw := do(t, http.MethodPost, srv.URL+"/api/agent/join", body, "")
+	if code != 200 || m["status"] != "pending" {
+		t.Fatalf("join: %d %s", code, raw)
+	}
+	reqID := int64(m["request_id"].(float64))
+	_, lm, lraw := do(t, http.MethodGet, srv.URL+"/api/admin/joins?status=pending", "", adminTok)
+	reqs, ok := lm["requests"].([]any)
+	if !ok || len(reqs) == 0 {
+		t.Fatalf("joins list: %s", lraw)
+	}
+	_ = reqID
+	_, am, araw := do(t, http.MethodPost,
+		srv.URL+"/api/admin/joins/"+itoaTest(int64(reqs[0].(map[string]any)["id"].(float64)))+"/approve",
+		`{"name":"`+hostname+`"}`, adminTok)
+	if am == nil {
+		t.Fatalf("approve: %s", araw)
+	}
+	agentID, ok = am["agent_id"].(string)
+	if !ok {
+		t.Fatalf("approve natija: %s", araw)
+	}
+	// Polling — tasdiqlangan holat keladi.
+	if code, pm, praw := do(t, http.MethodPost, srv.URL+"/api/agent/join", body, ""); code != 200 ||
+		pm["status"] != "approved" || pm["agent_id"] != agentID {
+		t.Fatalf("join polling: %d %s", code, praw)
+	}
+	return agentID, secret
+}
+
+// enrollAgent — join → WS handshake (test yordamchisi).
 func enrollAgent(t *testing.T, srv *httptest.Server, adminTok, camName string) (agentID, secret string, cams []registry.Camera) {
 	t.Helper()
-	code, m, raw := do(t, http.MethodPost, srv.URL+"/api/admin/enrollments", `{}`, adminTok)
-	if code != 201 {
-		t.Fatalf("enroll create: %d %s", code, raw)
-	}
-	code, m, raw = do(t, http.MethodPost, srv.URL+"/api/agent/enroll",
-		`{"code":"`+m["code"].(string)+`","hostname":"joy-9"}`, "")
-	if code != 200 {
-		t.Fatalf("enroll: %d %s", code, raw)
-	}
-	agentID, secret = m["agent_id"].(string), m["agent_secret"].(string)
+	agentID, secret = joinAgent(t, srv, adminTok, "joy-9")
 
 	ws, _, err := websocket.DefaultDialer.Dial("ws://"+strings.TrimPrefix(srv.URL, "http://")+"/api/agent/ws?agent_id="+agentID, nil)
 	if err != nil {
@@ -61,7 +89,7 @@ func enrollAgent(t *testing.T, srv *httptest.Server, adminTok, camName string) (
 	}
 	// Kameralarni API orqali olib qaytamiz.
 	var clients []registry.Client
-	_, _, raw = do(t, http.MethodGet, srv.URL+"/api/clients", "", adminTok)
+	_, _, raw := do(t, http.MethodGet, srv.URL+"/api/clients", "", adminTok)
 	_ = json.Unmarshal([]byte(raw), &clients)
 	if len(clients) == 0 {
 		t.Fatal("client yo'q")
@@ -176,11 +204,7 @@ func TestPreviewLimit(t *testing.T) {
 	srv, reg, _, _, _, _ := newServer(t)
 	adminTok := login(t, srv, "admin1")
 	// 3 ta kamera.
-	code, m, _ := do(t, http.MethodPost, srv.URL+"/api/admin/enrollments", `{}`, adminTok)
-	_ = code
-	_, m, _ = do(t, http.MethodPost, srv.URL+"/api/agent/enroll",
-		`{"code":"`+m["code"].(string)+`","hostname":"joy-lim"}`, "")
-	agentID, secret := m["agent_id"].(string), m["agent_secret"].(string)
+	agentID, secret := joinAgent(t, srv, adminTok, "joy-lim")
 	ws, _, err := websocket.DefaultDialer.Dial("ws://"+strings.TrimPrefix(srv.URL, "http://")+"/api/agent/ws?agent_id="+agentID, nil)
 	if err != nil {
 		t.Fatal(err)

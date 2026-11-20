@@ -26,12 +26,18 @@ var ErrSchema = errors.New("state.json sxemasi bu agentdan yangi — agentni yan
 
 // State — state.json mazmuni.
 type State struct {
-	Schema    int           `json:"schema"`
-	ServerURL string        `json:"server_url"`
-	AgentID   string        `json:"agent_id,omitempty"`
-	SecretRef string        `json:"secret_ref,omitempty"` // keystore'dagi ref (§10.1)
-	CamsEpoch int64         `json:"cams_epoch"`
-	Cameras   []cams.Camera `json:"cameras"`
+	Schema    int    `json:"schema"`
+	ServerURL string `json:"server_url"`
+	AgentID   string `json:"agent_id,omitempty"`
+	SecretRef string `json:"secret_ref,omitempty"` // keystore'dagi ref (§10.1)
+	// JoinKey — §3.1: agentning doimiy ulanish kaliti (hex). So'rov
+	// egalligini isbotlash uchun ishlatiladi; tasdiqdan keyin shu kalit
+	// bilan agent_id so'raladi.
+	JoinKey string `json:"join_key,omitempty"`
+	// JoinStatus — oxirgi so'rov holati: pending | approved | rejected.
+	JoinStatus string        `json:"join_status,omitempty"`
+	CamsEpoch  int64         `json:"cams_epoch"`
+	Cameras    []cams.Camera `json:"cameras"`
 	// PendingDeletes — o'chirilgan kameralar id'si; serverga `cams_sync {op:"delete"}`
 	// yetmagunicha saqlanadi (§6.5.3) — restart'dan keyin ham yo'qolmaydi.
 	PendingDeletes []string `json:"pending_deletes,omitempty"`

@@ -33,10 +33,9 @@ type Config struct {
 		RefreshTTLD  int    `yaml:"refresh_ttl_days"` // default 7
 	} `yaml:"auth"`
 
-	Enrollment struct {
-		TTLH      int `yaml:"ttl_h"`       // bir martalik kod amaldagi muddati (24)
-		RatePer5m int `yaml:"rate_per_5m"` // /api/agent/enroll rate-limit (5)
-	} `yaml:"enrollment"`
+	Join struct {
+		RatePer5m int `yaml:"rate_per_5m"` // /api/agent/join rate-limit (5/5 min)
+	} `yaml:"join"`
 
 	Limits struct {
 		UserMaxSessions   int `yaml:"user_max_sessions"`   // 16
@@ -83,8 +82,7 @@ func Default() Config {
 
 	c.Auth.AccessTTLMin = 15
 	c.Auth.RefreshTTLD = 7
-	c.Enrollment.TTLH = 24
-	c.Enrollment.RatePer5m = 5
+	c.Join.RatePer5m = 5
 
 	c.Limits.UserMaxSessions = 16
 	c.Limits.GlobalMaxSessions = 48

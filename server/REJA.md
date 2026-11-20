@@ -30,7 +30,7 @@ S0'da bu fayl `docs/protocol.md` ga ko'chiriladi (yoki symlink); keyin o'zgarish
    - `media_start` ichida: `session_id, camera_id, profile, kind, ttl_s, ingest: whip|rtsp_tcp,
      publish:{token, urls:{whip, rtsp, rtsp_tc}, header_name, query_name}, transcode:{mode, by, backend, params}, reason`
      (`whip_url`/`publish_token` eski maydonlari **bekor**).
-2. **Enrollment:** `POST /api/agent/enroll` (ochiq endpoint, rate-limit 5/5 min) → `{agent_id, agent_secret, protocol_version}`;
+2. **Ulanish so‘rovi:** `POST /api/agent/join` (ochiq endpoint, yangi so‘rovlar 5/5 min) → `{status, request_id, agent_id?}`; `agent_secret`ni agent yaratadi (serverda faqat hash), mijoz admin tasdig‘idan keyin yaratiladi (1.0-draft.10);
    `agent_id` ni server beradi (`ag_…`), `agent_secret` DB'da sha256 hash. Kamera `id` ni **agent** beradi (UUIDv4, o'zgarmas).
 3. **Ingest rejimi (tasdiqlangan):** H.264 → **WHIP (UDP, pion/webrtc v4)**; H.265 → **RTSP/TCP publish (gortsplib v4)**.
    **pion/webrtc v4'da H.265 packetizer yo'q** — H.265 WHIP orqali yuborilmaydi (protocol.md §8).
@@ -39,7 +39,7 @@ S0'da bu fayl `docs/protocol.md` ga ko'chiriladi (yoki symlink); keyin o'zgarish
    `action: publish|read|playback|api|metrics|pprof` (**`update` yo'q**); token: RTSP'da `?token=`,
    **WHIP/WHEP'da `Authorization: Bearer`**; token **bir martalik emas** (TTL davomida bitta session/path/action);
    javobda `expireAt` berilsa MediaMTX sessiyani o'zi yopadi; `tc/...` publish'i uchun alohida ichki token.
-6. **HTTP API** — root §6 (+ `POST /api/agent/enroll`).
+6. **HTTP API** — root §6 (+ `POST /api/agent/join`, admin `joins`/`preauth`).
 7. `client/docs/protocol.md` **muzlatilgan** — client shu shartnomaga qarab kod yozadi; o'zgarish faqat kelishib.
 8. **Proto Go tiplari (tasdiqlangan 2026-11-20):** server `internal/proto` paketi — client tiplarining **nusxasi** (modullar mustaqil qoladi, umumiy `shared/` modul YO'Q). Sinxronlik `testdata/protocol/*.json` golden fixture'lari orqali (protocol.md'dagi JSON misollar ko'chiriladi, encode/decode round-trip) — kontrakt o'zgarsa fixture'da ko'rinadi.
 
@@ -54,6 +54,8 @@ S0'da bu fayl `docs/protocol.md` ga ko'chiriladi (yoki symlink); keyin o'zgarish
 | 5 | **GPU modeli oldindan belgilangan emas** — prod serverga istalgan GPU o'rnatilishi mumkin yoki umuman bo'lmasligi mumkin. Transcode backend'i ishga tushishda avtomatik aniqlanadi: `h264_nvenc`(+`hevc_cuvid`) → `h264_vaapi`/`h264_amf` → `libx264` (software). Parallel limit `make probe` bilan har mashinada o'lchanadi. Kodda GPU modeli **hardcode taqiqlangan**. |
 | 6 | **Runtime probe (2026-11-20, amalda kuzatilgan):** `ffmpeg -encoders` ro'yxatida bo'lishi encoder HAQIQATAN ishlashini anglatmaydi — dev mashinada `h264_nvenc` ro'yxatda bor, lekin drayver eski (`Required: 13.1, Found: 13.0`) va birinchi kadrdanoq yiqiladi. Shuning uchun: (a) ishga tushishda `gpu.Probe` har backend'da 1 kadr encode qilib ko'radi va ishlaydiganini tanlaydi; (b) transcode jarayoni 5 s ichida yiqilsa Transcoder o'sha backend'ni "yomon" deb belgilaydi, menejer zanjir bo'yicha (nvenc → vaapi → amf → libx264) qayta urinishadi; (c) `make probe` parallel sig'imni o'lchab `settings.server_max_transcodes` ga yozadi. GPU almashtirilsa yoki drayver eskirsa qayta qurish/sozlash talab qilinmaydi. |
 | 7 | **O'qish kechikishi GOP bilan belgilanadi (2026-11-20, o'lchangan):** yangi o'quvchi birinchi keyframe'ni kutadi - x264 default `gop=250` kadr (15 fps'da ~17 s) o'qish ochilishini 14.4 s kechiktirdi; GOP 30 (2 s) bilan 2.4 s. Shuning uchun **agent publish GOP'i <= 2 s** (`-g = 2xfps`, `keyint_min` bir xil, `sc_threshold 0`) bo'lishi shart (protocol.md §15 izohi); kamera GOP sozlamasi 1-2 s tavsiya etiladi. Test agent shu qiymat bilan publish qiladi. |
+| 8 | **Ulanish huquqi faqat server tasdiqi bilan (2026-11-20, operator talabi):** bir martalik ulanish kodi olib tashlandi. Agent `POST /api/agent/join` bilan so‘rov yuboradi (`join_key` — doimiy kalit, `agent_secret` — agent yaratgan sir), server uni `join_requests`ga qo‘yadi va mijoz **faqat admin Boshqaruv sahifasida tasdiqlagandan keyin** yaratiladi. Qo‘shimcha: server UI'dan **IP bo‘yicha oldindan ruxsat** (`preauth_ips`, aniq IP yoki CIDR) yozilsa — shu manzildan kelgan so‘rov avtomatik tasdiqlanadi. Agent tasdiqni 15 s davrda polling qiladi. Kontrakt: 1.0-draft.10. |
+| 9 | **Lokal UI PIN'i olib tashlandi (2026-11-20, operator talabi):** yozuv amallari PIN'siz; `ui_pin` kaliti eski fayllarda o'qiladi-yu ishlatilmaydi, agent LAN'ga bind qilingan bo'lsa ogohlantiradi. Eski §10.3 qoidasi (PIN hash, `X-Agent-Pin`) bekor qilindi. |
 
 ## 3. Komponentlar
 

@@ -39,7 +39,7 @@ func TestAddAndList(t *testing.T) {
 	}
 	// user_id NULL holati (0 → NULL).
 	lg := New(db)
-	if err := lg.Add(0, EnrollUse, "ag_test"); err != nil {
+	if err := lg.Add(0, JoinRequest, "ag_test"); err != nil {
 		t.Fatalf("add anonim: %v", err)
 	}
 	if err := lg.Add(1, Login, "admin1"); err != nil {

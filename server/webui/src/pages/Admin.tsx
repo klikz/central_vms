@@ -1,7 +1,14 @@
 // Boshqaruv sahifasi: kompyuterlar (ulash kodi, maxfiy kodni almashtirish,
 // o'chirish), sessiyalar, foydalanuvchilar. Uslub — client konsoli bilan bir xil.
 import { useCallback, useEffect, useState } from "react";
-import { api, type Client, type SessionRow, type User } from "../lib/api";
+import {
+  api,
+  type Client,
+  type JoinRequest,
+  type PreauthIP,
+  type SessionRow,
+  type User,
+} from "../lib/api";
 import { t } from "../lib/i18n";
 import { toast } from "../toast";
 
@@ -9,13 +16,19 @@ export function AdminPage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [users, setUsers] = useState<User[]>([]);
-  const [code, setCode] = useState("");
+  const [joins, setJoins] = useState<JoinRequest[]>([]);
+  const [preauth, setPreauth] = useState<PreauthIP[]>([]);
+  const [jnames, setJnames] = useState<Record<number, string>>({});
+  const [newIP, setNewIP] = useState("");
+  const [newIPName, setNewIPName] = useState("");
 
   const load = useCallback(async () => {
     setClients(await api.clients());
     setSessions(await api.sessions());
     try {
       setUsers(await api.admin.users());
+      setJoins((await api.admin.joins()).requests);
+      setPreauth((await api.admin.preauth()).items);
     } catch {
       /* viewer */
     }
@@ -33,25 +46,8 @@ export function AdminPage() {
         <h1>{t("nav.admin")}</h1>
         <div className="actions">
           <button className="btn" onClick={() => void load()}>{t("admin.refresh")}</button>
-          <button
-            className="btn btn-primary"
-            onClick={async () => {
-              const r = await api.admin.enrollments();
-              setCode(r.code);
-              toast(t("admin.enroll.note"), "warn", 8000);
-            }}
-          >
-            {t("admin.enroll")}
-          </button>
         </div>
       </div>
-
-      {code && (
-        <div className="banner banner-warn">
-          {t("admin.enroll")}: <span className="code">{code}</span>
-          <span className="muted" style={{ marginLeft: 10 }}>{t("admin.enroll.note")}</span>
-        </div>
-      )}
 
       <div className="cards">
         <div className="card ok">
@@ -71,6 +67,134 @@ export function AdminPage() {
           <span>{t("admin.users")}</span>
         </div>
       </div>
+
+      {/* §3 (1.0-draft.10): ulanish so'rovlari — mijoz faqat shu
+          yerda tasdiqlangandan keyin qo'shiladi (ulanish kodi yo'q). */}
+      <p className="side-title mt">{t("admin.joins")}</p>
+      <table className="grid">
+        <thead>
+          <tr>
+            <th>{t("admin.j.name")}</th>
+            <th>{t("admin.j.host")}</th>
+            <th>{t("admin.j.ip")}</th>
+            <th>{t("admin.j.os")}</th>
+            <th>{t("admin.j.when")}</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {joins.map((j) => (
+            <tr key={j.id}>
+              <td>
+                <input
+                  className="inp"
+                  value={jnames[j.id] ?? j.name ?? ""}
+                  placeholder={j.hostname}
+                  onChange={(e) => setJnames({ ...jnames, [j.id]: e.target.value })}
+                />
+              </td>
+              <td className="mono">{j.hostname}</td>
+              <td className="mono">{j.source_ip || j.lan_ip || "—"}</td>
+              <td className="mono">{j.os || "—"}{j.agent_version ? ` · ${j.agent_version}` : ""}</td>
+              <td className="mono">{(j.created_at ?? "").replace("T", " ").replace("Z", "")}</td>
+              <td>
+                <div className="row" style={{ margin: 0, gap: 6 }}>
+                  <button
+                    className="btn btn-primary"
+                    onClick={async () => {
+                      try {
+                        const r = await api.admin.approveJoin(j.id, jnames[j.id] ?? j.name ?? "");
+                        toast(`${t("toast.approved")}: ${r.agent_id}`, "info");
+                        void load();
+                      } catch (e) {
+                        toast(e instanceof Error && e.message.includes("name_taken")
+                          ? t("admin.name_taken") : t("admin.approve_failed"), "err");
+                      }
+                    }}
+                  >
+                    {t("admin.approve")}
+                  </button>
+                  <button
+                    className="btn"
+                    onClick={async () => {
+                      await api.admin.rejectJoin(j.id);
+                      toast(t("toast.rejected"));
+                      void load();
+                    }}
+                  >
+                    {t("admin.reject")}
+                  </button>
+                  <button
+                    className="btn btn-danger"
+                    onClick={async () => {
+                      await api.admin.deleteJoin(j.id);
+                      toast(t("toast.deleted"));
+                      void load();
+                    }}
+                  >
+                    {t("admin.delete")}
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+          {joins.length === 0 && (
+            <tr><td colSpan={6} className="empty">{t("admin.empty_joins")}</td></tr>
+          )}
+        </tbody>
+      </table>
+
+      {/* IP bo'yicha oldindan ruxsat: shu manzildan kelgan so'rov
+          avtomatik tasdiqlanadi (operator IP'ni shu yerdan yozadi). */}
+      <p className="side-title mt">{t("admin.preauth")}</p>
+      <div className="row" style={{ margin: "0 0 8px", gap: 6 }}>
+        <input className="inp" placeholder="192.168.0.27 / 192.168.0.0/22"
+          value={newIP} onChange={(e) => setNewIP(e.target.value)} />
+        <input className="inp" placeholder={t("admin.j.name")}
+          value={newIPName} onChange={(e) => setNewIPName(e.target.value)} />
+        <button
+          className="btn btn-primary"
+          onClick={async () => {
+            if (!newIP.trim()) return;
+            try {
+              await api.admin.addPreauth(newIP.trim(), newIPName.trim());
+              setNewIP(""); setNewIPName("");
+              toast(t("toast.preauth_added"));
+              void load();
+            } catch {
+              toast(t("admin.preauth_failed"), "err");
+            }
+          }}
+        >
+          {t("admin.add")}
+        </button>
+      </div>
+      <table className="grid">
+        <tbody>
+          {preauth.map((p) => (
+            <tr key={p.id}>
+              <td className="mono">{p.ip}</td>
+              <td>{p.name || "—"}</td>
+              <td className="mono muted">{(p.created_at ?? "").replace("T", " ").replace("Z", "")}</td>
+              <td>
+                <button
+                  className="btn btn-danger"
+                  onClick={async () => {
+                    await api.admin.deletePreauth(p.id);
+                    toast(t("toast.deleted"));
+                    void load();
+                  }}
+                >
+                  {t("admin.delete")}
+                </button>
+              </td>
+            </tr>
+          ))}
+          {preauth.length === 0 && (
+            <tr><td colSpan={4} className="empty">{t("admin.empty_preauth")}</td></tr>
+          )}
+        </tbody>
+      </table>
 
       <p className="side-title">{t("admin.clients")}</p>
       <table className="grid">

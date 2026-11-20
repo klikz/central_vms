@@ -180,43 +180,20 @@ func TestSettings_RejectsBadValues(t *testing.T) {
 	}
 }
 
-func TestPin_RequiredForWrites(t *testing.T) {
-	ts := newTestServer(t, "1234")
-
-	// PIN siz yozish → 401
+// 1.0-draft.10: PIN tizimi olib tashlangan — yozuv amallari PIN'siz
+// (va PIN yuborilsa ham PIN'siz) bajariladi.
+func TestWrites_WorkWithoutPin(t *testing.T) {
+	ts := newTestServer(t, "1234") // eski konfiguratsiyada PIN yozilgan bo'lsa ham
 	req, _ := http.NewRequest(http.MethodPut, ts.URL+"/api/ui/settings", strings.NewReader(`{"log_level":"warn"}`))
 	res, err := ts.Client().Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	res.Body.Close()
-	if res.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("PIN siz yozish: %d, kutilgan 401", res.StatusCode)
-	}
-
-	// PIN bilan → 200
-	req2, _ := http.NewRequest(http.MethodPut, ts.URL+"/api/ui/settings", strings.NewReader(`{"log_level":"warn"}`))
-	req2.Header.Set("X-Agent-Pin", "1234")
-	res2, err := ts.Client().Do(req2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	res2.Body.Close()
-	if res2.StatusCode != http.StatusOK {
-		t.Fatalf("PIN bilan yozish: %d", res2.StatusCode)
-	}
-
-	// O'qish PIN talab qilmaydi (§10.3: yozuv endpoint'lari)
-	res3, err := ts.Client().Get(ts.URL + "/api/ui/status")
-	if err != nil {
-		t.Fatal(err)
-	}
-	res3.Body.Close()
-	if res3.StatusCode != http.StatusOK {
-		t.Fatalf("o'qish: %d", res3.StatusCode)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("PIN'siz yozish: %d, kutilgan 200", res.StatusCode)
 	}
 }
-
 func TestRun_GracefulShutdown(t *testing.T) {
 	cfg := config.Default()
 	s, err := NewServer(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), "test", Deps{})

@@ -69,12 +69,20 @@ say "3. admin → enroll → testagent (-publish)"
 TOK=$(curl -s -X POST http://127.0.0.1:8081/api/auth/login -d '{"username":"e2eadmin","password":"E2e-Salom-2026"}' \
   | python3 -c 'import sys,json;print(json.load(sys.stdin).get("access",""))')
 [ -n "$TOK" ] && ok "login (JWT)" || { bad "login"; exit 1; }
-CODE=$(curl -s -X POST http://127.0.0.1:8081/api/admin/enrollments -H "Authorization: Bearer $TOK" -d '{}' \
-  | python3 -c 'import sys,json;print(json.load(sys.stdin).get("code",""))')
-[ -n "$CODE" ] && ok "enroll kodi olindi" || { bad "enroll kodi"; exit 1; }
-./build/testagent -server ws://127.0.0.1:8081 -code "$CODE" -cams 1 -publish -hostname e2e-joy > var/log/e2e-agent.log 2>&1 &
+# §3 (1.0-draft.10): kod yo'q — agent so'rov yuboradi, admin tasdiqlaydi.
+./build/testagent -server ws://127.0.0.1:8081 -join -name "E2e-joy" -cams 1 -publish -hostname e2e-joy > var/log/e2e-agent.log 2>&1 &
 AGENTPID=$!
-sleep 2
+RID=""
+for i in $(seq 1 20); do
+  RID=$(curl -s "http://127.0.0.1:8081/api/admin/joins?status=pending" -H "Authorization: Bearer $TOK" \
+    | python3 -c 'import sys,json;d=json.load(sys.stdin);r=d.get("requests") or [];print(r[0]["id"] if r else "")')
+  [ -n "$RID" ] && break
+  sleep 0.5
+done
+[ -n "$RID" ] && ok "ulanish so'rovi keldi (#$RID)" || { bad "so'rov kelmadi"; cat var/log/e2e-agent.log; exit 1; }
+AP=$(curl -s -X POST "http://127.0.0.1:8081/api/admin/joins/$RID/approve" -H "Authorization: Bearer $TOK" -d '{"name":"E2e-joy"}')
+echo "$AP" | grep -q '"agent_id"' && ok "admin tasdiqladi" || { bad "tasdiq: $AP"; exit 1; }
+sleep 4
 CID=$(curl -s http://127.0.0.1:8081/api/clients -H "Authorization: Bearer $TOK" \
   | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d[0]["id"] if d else "")')
 CAM=$(curl -s "http://127.0.0.1:8081/api/clients/$CID/cameras" -H "Authorization: Bearer $TOK" \

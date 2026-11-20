@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,17 +27,19 @@ func connectAgent(t *testing.T, ts *httptest.Server, code string) *testAgent {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	t.Cleanup(cancel)
-	res, err := agent.Enroll(ctx, ts.URL, agent.EnrollInfo{
-		Hostname: "sim", LanIP: "10.0.0.9", Code: code, AgentVersion: "0.4.0",
+	secret := "sim-sir-" + strings.Repeat("7c", 24)
+	res, err := agent.Join(ctx, ts.URL, agent.JoinInfo{
+		JoinKey: code + strings.Repeat("0", 32-len(code)), AgentSecret: secret,
+		Hostname: "sim", LanIP: "10.0.0.9", AgentVersion: "0.4.0",
 	})
 	if err != nil {
-		t.Fatalf("enroll: %v", err)
+		t.Fatalf("join: %v", err)
 	}
 	ag := &testAgent{ID: res.AgentID, welcomed: make(chan struct{}, 1),
 		disc: make(chan error, 4), done: make(chan error, 1)}
 	cfg := agent.SessionConfig{
 		ServerURL: "ws://" + ts.Listener.Addr().String() + "/api/agent/ws",
-		AgentID:   res.AgentID, Secret: res.AgentSecret,
+		AgentID:   res.AgentID, Secret: secret,
 		AgentVersion: "0.4.0", Hostname: "sim", BootID: "b1",
 		HbInterval:   100 * time.Millisecond,
 		Log:          slog.New(slog.NewTextHandler(discardW{}, nil)),
@@ -66,7 +69,7 @@ func newSimServer(t *testing.T, opts Options) *httptest.Server {
 // OnWelcome hook'i — welcome'dan keyin server→agent xabarlarini skriptlaydi.
 func TestSim_OnWelcomeSendsConfigPush(t *testing.T) {
 	got := make(chan proto.ConfigPush, 1)
-	srv := New(Options{EnrollCode: "C1", AuthTimeout: 2 * time.Second})
+	srv := New(Options{AuthTimeout: 2 * time.Second})
 	srv.SetOnWelcome(func(agentID string) {
 		// Test agent'ining dispatch'ini tekshirish o'rniga: server yuboradigan
 		// xabar sxemasi to'g'riligini shu yerda tasdiqlaymiz.
@@ -98,7 +101,7 @@ func TestSim_OnWelcomeSendsConfigPush(t *testing.T) {
 
 // MediaStart/Stop/Refresh/CodecFix yordamchilari xabar turini to'g'ri yuboradi.
 func TestSim_MessageHelpers(t *testing.T) {
-	srv := New(Options{EnrollCode: "C2"})
+	srv := New(Options{})
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 	ag := connectAgent(t, ts, "C2")
@@ -130,7 +133,7 @@ func TestSim_MessageHelpers(t *testing.T) {
 
 // Taymaut simulyatsiyasi: CloseAfter — agentni d muddatda belgilangan kod bilan uzadi.
 func TestSim_CloseAfter(t *testing.T) {
-	srv := New(Options{EnrollCode: "C3"})
+	srv := New(Options{})
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 	ag := connectAgent(t, ts, "C3")

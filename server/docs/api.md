@@ -58,7 +58,11 @@ readers=0 bo'ladi va `idle_stop_s` keyin agentga `media_stop` yuboriladi
 ## Admin (S1/S4)
 
 `GET/POST/PATCH/DELETE /api/admin/users`;
-`POST /api/admin/enrollments` `{site_name}` → bir martalik kod (24 soat, **8 xonali son**);
+`GET /api/admin/joins?status=pending` — ulanish so‘rovlari;
+`POST /api/admin/joins/{id}/approve` `{name}` → `{agent_id}` (nom band bo‘lsa `409 name_taken`);
+`POST /api/admin/joins/{id}/reject` `{note}`; `DELETE /api/admin/joins/{id}`;
+`GET/POST/DELETE /api/admin/preauth` `{ip, name, note}` — IP bo‘yicha oldindan
+ruxsat (1.0-draft.10; bir martalik kod oqimi bekor qilindi);
 `GET/POST/PATCH /api/admin/clients` (nom, site, max_uploads, max_transcodes, transcode_mode, o'chirish);
 `PATCH /api/admin/cameras/{id}` `{transcode_mode, play_profile, enabled}` (policy);
 `GET /api/admin/media/state` (faol sessiyalar, FFmpeg jarayonlari, backend, navbat — S2/S4);
@@ -67,13 +71,16 @@ readers=0 bo'ladi va `idle_stop_s` keyin agentga `media_stop` yuboriladi
 ## Agent (ochiq endpoint — protocol.md §3)
 
 ```
-POST /api/agent/enroll
-  {code, hostname, name, os, lan_ip, agent_version, caps}
-  → 200 {agent_id, agent_secret, protocol_version}
-  → 401 bad_code | 409 already_enrolled | 409 name_taken | 429 rate_limited (5/5 min)
-  `name` — operator bergan ko‘rinadigan nom (masalan "Oxangaron"); bo‘sh bo‘lsa
-  server avtomatik `agent-<id qoldig‘i>` nomini qo‘yadi. Nom band bo‘lsa
-  `name_taken` — kod isrof bo‘lmaydi, boshqa nom tanlanadi (protocol.md §3.1).
+POST /api/agent/join
+  {join_key, agent_secret, hostname, name, os, lan_ip, agent_version}
+  → 200 {status: "pending"|"approved", request_id, agent_id?}
+  → 403 rejected (admin izohi bilan) | 400 bad_key | 429 rate_limited (5/5 min/IP)
+  Agent so‘rov yuboradi va tasdiqni polling orqali kutadi. `agent_secret`ni
+  agent o‘zi yaratadi — server uni faqat sha256 hash saqlaydi va hech
+  qachon qaytarmaydi; tasdiqdan keyin faqat `agent_id` qaytadi.
+  `name` — operator bergan ko‘rinadigan nom (masalan "Oxangaron").
+  Mijoz faqat admin tasdig'idan yoki IP preauth mosligidan keyin yaratiladi
+  (protocol.md §3.1–§3.3).
 WS   /api/agent/ws?agent_id=…   (auth/welcome handshake — protocol.md §4)
 ```
 

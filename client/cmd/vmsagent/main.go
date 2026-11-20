@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"central-vms/client/internal/camsvc"
 	"central-vms/client/internal/config"
@@ -44,7 +45,6 @@ func main() {
 	var (
 		cfgPath     = flag.String("config", "config/client.yaml", "konfiguratsiya fayli (YAML)")
 		showVersion = flag.Bool("version", false, "versiyani chiqarib chiqish")
-		enrollCode  = flag.String("enroll", "", "bir martalik enrollment kodi (§3.1, bir marta ishlatiladi)")
 	)
 	flag.Parse()
 
@@ -66,7 +66,7 @@ func main() {
 
 	// run() xatoni o'zi loglaydi — FAYL ham ulangan logger orqali
 	// (main'dagi log hali faylsiz: yo'l konfigdan bilinadi).
-	if err := run(ctx, log, *cfgPath, *enrollCode, sighup, ring); err != nil {
+	if err := run(ctx, log, *cfgPath, sighup, ring); err != nil {
 		os.Exit(1)
 	}
 	log.Info("vmsagent to'xtatildi")
@@ -131,7 +131,7 @@ func openLogFile(cfg *config.Config) (*logx.Writer, error) {
 	return w2, err // zaxira ochildi; asosiy xato bilan qaytamiz
 }
 
-func run(ctx context.Context, log *slog.Logger, cfgPath, enrollCode string,
+func run(ctx context.Context, log *slog.Logger, cfgPath string,
 	sighup <-chan os.Signal, ring *logbuf.Ring) (runErr error) {
 
 	// BARCHA xatolar terminal + faylga: chiqish nuqtasida bir marta,
@@ -185,8 +185,20 @@ func run(ctx context.Context, log *slog.Logger, cfgPath, enrollCode string,
 	})
 	rt.publishes = publish.New(clockReal(), rt.log, rt.media.OnReady, rt.media.OnStopped)
 	rt.media.SetRegistry(rt.publishes)
-	if err := rt.bootstrap(ctx, enrollCode); err != nil {
+	if err := rt.bootstrap(ctx); err != nil {
 		return err
+	}
+	// §3 (1.0-draft.10): agent ulanish so'rovi yuboradi va admin tasdig'ini
+	// kutadi — tasdiqlangach sessiya avtomatik boshlanadi.
+	if rt.st != nil && rt.st.AgentID == "" {
+		go rt.joinLoop(ctx, 15*time.Second)
+	}
+	if cfg.UIPin != "" {
+		log.Warn("ui_pin kaliti endi ishlatilmaydi (§10.3 bekor qilindi) — fayldan olib tashlang")
+	}
+	if h := strings.SplitN(cfg.UIBind, ":", 2)[0]; h != "127.0.0.1" && h != "localhost" && h != "::1" {
+		log.Warn("lokal UI tarmoqda ochiq — PIN olib tashlangan, shuning uchun bu manzilga "+
+			"faqat ishonchli tarmoqda ruxsat bering", "ui_bind", cfg.UIBind)
 	}
 
 	// UI (§17): holat chizig'i sessiya holatini ko'rsatadi (C1.13)
@@ -202,10 +214,10 @@ func run(ctx context.Context, log *slog.Logger, cfgPath, enrollCode string,
 		SelftestRun:  func(ctx context.Context) []selftest.Result { return rt.selftest.Run(ctx) },
 		SelftestLast: func() []selftest.Result { return rt.selftest.Last() },
 		// UI "Save" → faylga yozish + sessiyani qayta boshlash;
-		// UI "Enroll" → §3.1 ro'yxatdan o'tish va darhol ulanish.
+		// UI "Join" → §3.1 ulanish so'rovini yuborish/holatini so'rash.
 		SetSettings: rt.setSettings,
 		GetSettings: rt.currentSettings,
-		Enroll:      rt.enrollFromUI,
+		JoinNow:     rt.joinFromUI,
 	})
 	if err != nil {
 		return fmt.Errorf("lokal UI: %w", err)

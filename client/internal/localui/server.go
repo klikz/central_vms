@@ -2,7 +2,6 @@ package localui
 
 import (
 	"context"
-	"crypto/subtle"
 	"embed"
 	"encoding/json"
 	"errors"
@@ -39,8 +38,11 @@ func loadFavicon() []byte {
 
 // Status — UI status chizig'i uchun holat (agent/publish modullari beradi).
 type Status struct {
-	Version      string `json:"version"`
-	AgentID      string `json:"agent_id,omitempty"`
+	Version string `json:"version"`
+	AgentID string `json:"agent_id,omitempty"`
+	// JoinStatus — §3.2: pending | approved | rejected (agent_id bo'sh
+	// bo'lsa operator nima kutishini shu maydondan biladi).
+	JoinStatus   string `json:"join_status,omitempty"`
 	ServerOnline bool   `json:"server_online"`
 	CamsTotal    int    `json:"cams_total"`
 	CamsOnline   int    `json:"cams_online"`
@@ -100,7 +102,9 @@ type Deps struct {
 	GetSettings func() Settings
 	// Enroll — UI orqali ro'yxatdan o'tish (§3.1): kod bilan serverga
 	// so'rov, natijada agent_id/secret saqlanadi va sessiya boshlanadi.
-	Enroll func(ctx context.Context, code string) error
+	// JoinNow — UI tugmasi: §3.1 ulanish so'rovini darhol yuborish
+	// (yoki tasdiq holatini so'rash). Kod so'ralmaydi.
+	JoinNow func(ctx context.Context) error
 }
 
 // Server — lokal UI (:8082). Faqat 127.0.0.1 bind qilinishi shart (§10.3).
@@ -114,7 +118,7 @@ type Server struct {
 	logLines     func(limit int) []string
 	setSettings  func(s Settings) error
 	getSettings  func() Settings
-	enroll       func(ctx context.Context, code string) error
+	joinNow      func(ctx context.Context) error
 	cams         CamService
 	discovery    DiscoveryService
 	snap         SnapshotSource
@@ -135,8 +139,8 @@ func NewServer(cfg config.Config, log *slog.Logger, version string, d Deps) (*Se
 	s := &Server{cfg: cfg, log: log, version: version, status: d.Status,
 		selftestRun: d.SelftestRun, selftestLast: d.SelftestLast,
 		logLines: d.LogLines, setSettings: d.SetSettings, getSettings: d.GetSettings,
-		enroll: d.Enroll,
-		cams:   d.Cams, discovery: d.Discovery, snap: d.Snapshots, mux: http.NewServeMux()}
+		joinNow: d.JoinNow,
+		cams:    d.Cams, discovery: d.Discovery, snap: d.Snapshots, mux: http.NewServeMux()}
 	s.routes()
 	return s, nil
 }
@@ -160,7 +164,7 @@ func (s *Server) routes() {
 		writeJSON(w, http.StatusOK, s.status())
 	})
 	s.mux.HandleFunc("/api/ui/settings", s.handleSettings)
-	s.mux.HandleFunc("POST /api/ui/enroll", s.handleEnroll)
+	s.mux.HandleFunc("POST /api/ui/join", s.handleJoin)
 	s.mux.HandleFunc("/api/ui/selftest", s.handleSelftest)
 	s.camRoutes()
 	s.discoveryRoutes()
@@ -242,10 +246,6 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		writeJSON(w, http.StatusOK, s.currentSettings())
 	case http.MethodPut, http.MethodPost:
-		if !s.checkPin(r) {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "pin_required"})
-			return
-		}
 		var in Settings
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad_json"})
@@ -320,63 +320,44 @@ func sanitizeName(raw string) string {
 // ErrAlreadyEnrolled — UI orqali qayta ro'yxatdan o'tishga urinish
 // (runtime bu xatoni o'rab qaytaradi; javobda aniq kod ko'rsatiladi).
 var (
-	// ErrCodeInvalid — kod noto‘g‘ri yoki muddati tugagan (§3.1 bad_code).
-	ErrCodeInvalid = errors.New("localui: kod noto‘g‘ri")
-	// ErrCodeUsed — kod allaqachon biriktirilgan (already_enrolled).
-	ErrCodeUsed = errors.New("localui: kod ishlatilgan")
-	// ErrNameTaken — serverda bunday mijoz nomi band (name_taken).
-	ErrNameTaken = errors.New("localui: nom band")
+	// ErrJoinRejected — server so'rovni rad etgan (§3.2 rejected).
+	ErrJoinRejected = errors.New("localui: so'rov rad etilgan")
+	// ErrBadKey — kalit/sir yaroqsiz (server `bad_key`).
+	ErrBadKey = errors.New("localui: kalit yaroqsiz")
 	// ErrRateLimited — server urinishlarni chekladi (rate_limited).
-	ErrRateLimited = errors.New("localui: juda ko‘p urinish")
+	ErrRateLimited = errors.New("localui: juda ko'p urinish")
 )
 
 var ErrAlreadyEnrolled = errors.New("localui: agent allaqachon ro'yxatdan o'tgan")
 
-// handleEnroll — POST /api/ui/enroll {code}. Kod 8 xonali son (§3.1),
-// lekin foydalanuvchi qulayligi uchun bo'sh joy/tire yuboriladi.
-func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
-	if !s.checkPin(r) {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "pin_required"})
+// handleJoin — POST /api/ui/join: §3.1 ulanish so'rovi (1.0-draft.10:
+// bir martalik kod bekor qilindi — so'rov admin tasdig'ini kutadi).
+func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodErr(w)
 		return
 	}
-	if s.enroll == nil {
-		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "enroll_unavailable"})
+	if s.joinNow == nil {
+		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "join_unavailable"})
 		return
 	}
-	var in struct {
-		Code string `json:"code"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad_json"})
-		return
-	}
-	code := normalizeCode(in.Code)
-	if code == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "code_required"})
-		return
-	}
-	if err := s.enroll(r.Context(), code); err != nil {
+	if err := s.joinNow(r.Context()); err != nil {
 		switch {
 		case errors.Is(err, ErrAlreadyEnrolled):
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "already_enrolled"})
-		case errors.Is(err, ErrCodeInvalid):
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "code_invalid"})
-		case errors.Is(err, ErrCodeUsed):
-			writeJSON(w, http.StatusConflict, map[string]string{"error": "code_used"})
-		case errors.Is(err, ErrNameTaken):
-			writeJSON(w, http.StatusConflict, map[string]string{"error": "name_taken"})
+		case errors.Is(err, ErrJoinRejected):
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "rejected", "detail": err.Error()})
 		case errors.Is(err, ErrRateLimited):
 			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "rate_limited"})
+		case errors.Is(err, ErrBadKey):
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad_key", "detail": err.Error()})
 		default:
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "enroll_failed", "detail": err.Error()})
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "join_failed", "detail": err.Error()})
 		}
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
-
-// normalizeCode — bo'sh joy/tire/pastki chiziqni yuborish (server ham
-// shunday qiladi; UI'da "4173 9265" deb yozish mumkin).
 func normalizeCode(code string) string {
 	out := make([]rune, 0, len(code))
 	for _, r := range code {
@@ -387,21 +368,6 @@ func normalizeCode(code string) string {
 		out = append(out, r)
 	}
 	return strings.TrimSpace(string(out))
-}
-
-// checkPin — yozuv amallari uchun PIN (§10.3). Bo'sh PIN = talab qilinmaydi
-// (faqat localhost bind holatida; config Validate buni tekshiradi).
-func (s *Server) checkPin(r *http.Request) bool {
-	if s.cfg.UIPin == "" {
-		return true
-	}
-	got := r.Header.Get("X-Agent-Pin")
-	if got == "" {
-		if c, err := r.Cookie("vmsagent_pin"); err == nil {
-			got = c.Value
-		}
-	}
-	return subtle.ConstantTimeCompare([]byte(got), []byte(s.cfg.UIPin)) == 1
 }
 
 // Run — serverni ishga tushiradi va ctx bekor qilinganda mayin to'xtatadi (§9.4).

@@ -5,6 +5,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"time"
 
@@ -146,43 +147,39 @@ func (d *Deps) handleMe(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleEnroll — OCHIQ endpoint (protocol.md §3.1): bir martalik kod +
-// IP rate-limit (5/5 min).
-func (d *Deps) handleEnroll(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		Code         string          `json:"code"`
-		Hostname     string          `json:"hostname"`
-		OS           string          `json:"os"`
-		LanIP        string          `json:"lan_ip"`
-		AgentVersion string          `json:"agent_version"`
-		Name         string          `json:"name"` // ko‘rinadigan nom ("Oxangaron")
-		Caps         json.RawMessage `json:"caps"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+// handleJoin — OCHIQ endpoint (protocol.md §3.1): agent ulanish so'rovi
+// yuboradi. Mijoz faqat admin tasdig'idan (yoki IP oldindan ruxsat
+// etilgan bo'lsa avtomatik) keyin yaratiladi. Bir martalik kod
+// 1.0-draft.10 bilan bekor qilindi.
+func (d *Deps) handleJoin(w http.ResponseWriter, r *http.Request) {
+	var in wsagent.JoinInput
+	if err := json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&in); err != nil {
 		writeErr(w, http.StatusBadRequest, "bad_json", "")
 		return
 	}
-	agentID, secret, _, err := d.Enr.Redeem(wsagent.EnrollInput{
-		Code: in.Code, Hostname: in.Hostname, OS: in.OS, LanIP: in.LanIP,
-		AgentVersion: in.AgentVersion, Name: in.Name,
-	}, clientIP(r))
+	out, err := d.Join.Request(in, clientIP(r))
 	switch {
 	case errors.Is(err, wsagent.ErrRateLimited):
 		writeErr(w, http.StatusTooManyRequests, "rate_limited", "")
-	case errors.Is(err, wsagent.ErrAlreadyUsed):
-		writeErr(w, http.StatusConflict, "already_enrolled", "")
-	case errors.Is(err, wsagent.ErrNameTaken):
-		writeErr(w, http.StatusConflict, "name_taken", "bunday nom band — boshqa nom tanlang")
-	case err != nil && errors.Is(err, wsagent.ErrBadCode):
-		writeErr(w, http.StatusUnauthorized, "bad_code", "")
+	case errors.Is(err, wsagent.ErrBadKey):
+		writeErr(w, http.StatusBadRequest, "bad_key", err.Error())
+	case errors.Is(err, wsagent.ErrRejected):
+		writeJSON(w, http.StatusForbidden, map[string]any{
+			"status": "rejected", "request_id": out.RequestID,
+			"error": "rejected", "detail": err.Error(),
+		})
 	case err != nil:
-		d.Lg.Error("enroll", "ip", clientIP(r), "err", err)
+		d.Lg.Error("join", "ip", clientIP(r), "err", err)
 		writeErr(w, http.StatusInternalServerError, "internal", "")
 	default:
-		_ = d.Audit.Add(0, audit.EnrollUse, agentID)
-		writeJSON(w, http.StatusOK, map[string]any{
-			"agent_id": agentID, "agent_secret": secret, "protocol_version": 1,
-		})
+		if out.Status == "approved" {
+			_ = d.Audit.Add(0, audit.JoinApprove, out.AgentID)
+		}
+		resp := map[string]any{"status": out.Status, "request_id": out.RequestID}
+		if out.AgentID != "" {
+			resp["agent_id"] = out.AgentID
+		}
+		writeJSON(w, http.StatusOK, resp)
 	}
 }
 

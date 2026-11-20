@@ -335,3 +335,20 @@ Lokal UI’dagi `PUT /api/ui/settings` javobi endi **yangi** qiymatlarni
 qaytaradi (`GetSettings`): avval Server o‘zidagi eski konfiguratsiya
 nusxasini qaytaryotgandi. Server xato kodlari UI’da aniq matnga aylanadi:
 `code_invalid`, `code_used`, `name_taken`, `rate_limited`. Kontrakt: 1.0-draft.9.
+
+**Ulanish: so‘rov + server tasdig‘i, PIN yo‘q (2026-11-20, operator talabi):**
+- Sozlamalar sahifasidagi **Enroll** tugmasi ishlamas edi (kod maydoni va
+  `Enroll` mantig'i o'zaro bog'liq edi). Endi tugma **Request access**:
+  `POST /api/ui/join` orqali ulanish so‘rovi yuboriladi va holat
+  (`pending` / `approved` / `rejected`) sahifada ko‘rsatiladi.
+- Ulanish kodi butunlay olib tashlandi: agent `join_key` (doimiy) va o'zi
+  yaratgan `agent_secret` bilan so'rov yuboradi; mijoz server admini
+  tasdiqlagandan keyin paydo bo'ladi. Agent tasdiqni 15 s davrda
+  avtomatik tekshirib turadi (`joinLoop`), tasdiqlangach sessiya o'zi
+  boshlanadi. `-enroll KOD` flag'i olib tashlandi.
+- **UI PIN olib tashlandi:** `checkPin`/`X-Agent-Pin`/cookie butun
+  o'chirildi; `ui_pin` kaliti eski konfiguratsiyalarda o'qiladi-yu
+  ishlatilmaydi (ogohlantirish beriladi). `ui_bind` LAN manzilida bo'lsa
+  agent xavf haqida ogohlantiradi.
+- `state.json`ga `join_key` va `join_status` qo'shildi; sir avvalgi kabi
+  keystore'da (§10.1). Kontrakt: 1.0-draft.10.

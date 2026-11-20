@@ -37,7 +37,9 @@ func wrap(err error, what string) error {
 	case err == nil:
 		return nil
 	case isConstraint(err):
-		return fmt.Errorf("%s: %w", what, ErrExists)
+		// Sabab ham qo‘shiladi: "band" xatolari qaysi ustun bo‘yicha
+		// kelganini bilmaslik tuzatishni qiyinlashtiradi (2026-11-20).
+		return fmt.Errorf("%s: %v: %w", what, err, ErrExists)
 	case errors.Is(err, sql.ErrNoRows):
 		return fmt.Errorf("%s: %w", what, ErrNotFound)
 	default:

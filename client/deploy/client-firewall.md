@@ -6,7 +6,7 @@ etilsa yetarli:
 
 | Yo'nalish | Port/protokol | Nima uchun |
 |---|---|---|
-| `vmsd` serveriga | **TCP 8081** | WS `/api/agent/ws` + enrollment (`/api/agent/enroll`) |
+| `vmsd` serveriga | **TCP 8081** | WS `/api/agent/ws` + ulanish so‘rovi (`/api/agent/join`) |
 | MediaMTX WHIP/WHEP | **TCP 8889** | publish (WHIP) SDP almashinuvi |
 | MediaMTX ICE | **UDP 8189** (fallback TCP 8189) | RTP media oqimi (STUN/TURN o'sha portda) |
 | MediaMTX RTSP publish | **TCP 8554** | `rtsp_tcp` ingest zaxira zanjiri |

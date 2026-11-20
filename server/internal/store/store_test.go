@@ -61,12 +61,16 @@ func TestMigrateUp_Down_Idempotent(t *testing.T) {
 		t.Fatalf("status: applied=%v available=%v", applied, available)
 	}
 
-	v, err := MigrateDown(db, migDir)
-	if err != nil {
-		t.Fatalf("MigrateDown: %v", err)
-	}
-	if v == 0 {
-		t.Fatal("down versiya qaytmadi")
+	// Har bir migratsiya o‘z .down.sql‘i bilan qaytariladi: ro‘yxat
+	// to‘languncha pasaytamiz (2026-11-20: migratsiyalar soni o‘sdi).
+	for range 10 {
+		v, err := MigrateDown(db, migDir)
+		if err != nil {
+			t.Fatalf("MigrateDown: %v", err)
+		}
+		if v == 0 {
+			break
+		}
 	}
 	applied, _, err = Status(db, migDir)
 	if err != nil {
@@ -87,7 +91,7 @@ func TestSchema_TablesAndIndexes(t *testing.T) {
 		t.Fatalf("MigrateUp: %v", err)
 	}
 	want := []string{"users", "sites", "clients", "cameras", "favorites", "layouts",
-		"sessions", "audit_log", "settings", "enrollment_codes", "media_tokens"}
+		"sessions", "audit_log", "settings", "join_requests", "preauth_ips", "media_tokens"}
 	for _, tbl := range want {
 		var n int
 		q := "SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?"

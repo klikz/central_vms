@@ -3,12 +3,15 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"strconv"
-	"time"
 
 	"central-vms/server/internal/audit"
 	"central-vms/server/internal/auth"
+	"central-vms/server/internal/registry"
+	"central-vms/server/internal/wsagent"
 )
 
 func (d *Deps) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
@@ -88,31 +91,139 @@ func (d *Deps) handleAdminUserPatch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-// handleEnrollCreate — bir martalik kod (24 soat, config.enrollment.ttl_h).
-func (d *Deps) handleEnrollCreate(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		SiteName string `json:"site_name"`
-	}
-	_ = json.NewDecoder(r.Body).Decode(&in)
-	var siteID int64
-	if in.SiteName != "" {
-		s, err := d.Reg.GetSiteByName(in.SiteName)
-		if err != nil {
-			regErr(w, err)
-			return
-		}
-		siteID = s.ID
-	}
-	code, exp, err := d.Enr.CreateCode(siteID, claimsSub(r))
+// --- Ulanish so'rovlari (protocol.md §3.3) ---
+
+// handleJoinsList — so'rovlar ro'yxati (?status=pending|approved|rejected).
+func (d *Deps) handleJoinsList(w http.ResponseWriter, r *http.Request) {
+	list, err := d.Reg.ListJoinRequests(r.URL.Query().Get("status"))
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal", err.Error())
+		regErr(w, err)
 		return
 	}
-	_ = d.Audit.Add(claimsSub(r), audit.EnrollCreate, in.SiteName)
-	writeJSON(w, http.StatusCreated, map[string]any{
-		"code": code, "expires_at": exp.Format(time.RFC3339),
-		"note": "kod faqat shu javobda ko'rinadi — bir marta ishlatiladi",
+	if list == nil {
+		list = []registry.JoinRequest{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"requests": list, "count": len(list)})
+}
+
+// handleJoinApprove — mijozni yaratadi va so'rovni bog'laydi. Nom
+// berilmasa so'rovdagi nom ishlatiladi; band bo'lsa 409 name_taken.
+func (d *Deps) handleJoinApprove(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_id", "")
+		return
+	}
+	var in struct {
+		Name string `json:"name"`
+	}
+	_ = json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&in)
+	out, err := d.Join.Approve(id, in.Name, claimsSub(r))
+	if err != nil {
+		switch {
+		case errors.Is(err, wsagent.ErrNameTaken):
+			writeErr(w, http.StatusConflict, "name_taken", err.Error())
+		case errors.Is(err, wsagent.ErrBadKey):
+			writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+		default:
+			regErr(w, err)
+		}
+		return
+	}
+	_ = d.Audit.Add(claimsSub(r), audit.JoinApprove, out.AgentID)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status": "approved", "agent_id": out.AgentID, "request_id": out.RequestID,
 	})
+}
+
+// handleJoinReject — so'rovni rad etadi (sabab agent UI'sida ko'rsatiladi).
+func (d *Deps) handleJoinReject(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_id", "")
+		return
+	}
+	var in struct {
+		Note string `json:"note"`
+	}
+	_ = json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&in)
+	if err := d.Join.Reject(id, in.Note, claimsSub(r)); err != nil {
+		regErr(w, err)
+		return
+	}
+	_ = d.Audit.Add(claimsSub(r), audit.JoinReject, strconv.FormatInt(id, 10))
+	writeJSON(w, http.StatusOK, map[string]string{"status": "rejected"})
+}
+
+// handleJoinDelete — eski so'rovni o'chiradi.
+func (d *Deps) handleJoinDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_id", "")
+		return
+	}
+	if err := d.Join.Delete(id); err != nil {
+		regErr(w, err)
+		return
+	}
+	_ = d.Audit.Add(claimsSub(r), audit.JoinDelete, strconv.FormatInt(id, 10))
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+// --- IP bo'yicha oldindan ruxsat (§3.3) ---
+
+func (d *Deps) handlePreauthList(w http.ResponseWriter, r *http.Request) {
+	list, err := d.Reg.ListPreauth()
+	if err != nil {
+		regErr(w, err)
+		return
+	}
+	if list == nil {
+		list = []registry.PreauthIP{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": list, "count": len(list)})
+}
+
+// handlePreauthAdd — operator IP yozib qo'yadi: shu manzildan kelgan
+// so'rov avtomatik tasdiqlanadi.
+func (d *Deps) handlePreauthAdd(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		IP   string `json:"ip"`
+		Name string `json:"name"`
+		Note string `json:"note"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&in); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_json", "")
+		return
+	}
+	id, err := d.Reg.AddPreauth(in.IP, in.Name, in.Note, claimsSub(r))
+	if err != nil {
+		switch {
+		case errors.Is(err, registry.ErrBadInput):
+			writeErr(w, http.StatusBadRequest, "bad_ip", err.Error())
+		case errors.Is(err, registry.ErrExists):
+			writeErr(w, http.StatusConflict, "exists", err.Error())
+		default:
+			regErr(w, err)
+		}
+		return
+	}
+	_ = d.Audit.Add(claimsSub(r), audit.PreauthAdd, in.IP)
+	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "ip": in.IP})
+}
+
+func (d *Deps) handlePreauthDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_id", "")
+		return
+	}
+	if err := d.Reg.DeletePreauth(id); err != nil {
+		regErr(w, err)
+		return
+	}
+	_ = d.Audit.Add(claimsSub(r), audit.PreauthDel, strconv.FormatInt(id, 10))
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
 func (d *Deps) handleClientPatch(w http.ResponseWriter, r *http.Request) {

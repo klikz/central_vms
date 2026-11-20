@@ -30,7 +30,10 @@ Server S0'da bu fayl `docs/protocol.md` ga ko'chiriladi; ziddiyat bo'lsa `client
 
 To'liq xabar sxemalari, maydon nomlari, reason kodlari va misollar `docs/protocol.md` da. Bu yerda faqat qisqacha:
 
-1. **Enrollment (protocol.md §3):** `POST /api/agent/enroll` (ochiq endpoint, rate-limit 5/5 min)
+1. **Ulanish so‘rovi (protocol.md §3, 1.0-draft.10):** `POST /api/agent/join` (ochiq
+endpoint, yangi so‘rovlar uchun 5/5 min) — mijoz faqat server admini
+(Boshqaruv sahifasi) tasdiqlagandan yoki IP preauth mos kelgandan keyin yaratiladi;
+bir martalik kod oqimi bekor qilindi.
    `{code, hostname, os, lan_ip, agent_version, caps}` → `{agent_id, agent_secret, protocol_version}`.
    Kod bir marta; `401 bad_code`, `409 already_enrolled`, `429 rate_limited`. `agent_id` ni **server**
    beradi (`ag_…`), `agent_secret` DB'da sha256 hash, faqat bir marta chiqadi.
@@ -176,7 +179,7 @@ matritsasi, §6), **`stress`** (`CAMS=2000`), **`ui-lint`** (HTML/CSS tekshiruvi
 
 ## 6. Test strategiyasi (server tayyor bo'lmaganda ham)
 
-- **`devserver` mock** (`make devserver`, C1): `POST /api/agent/enroll` + `/api/agent/ws` +
+- **`devserver` mock** (`make devserver`, C1): `POST /api/agent/join` (so‘rovlar avtomatik tasdiqlanadi) + `/api/agent/ws` +
   `auth/hello/welcome` + `cams_request/cams_ack` + `media_start/stop/refresh` + `codec_fix` +
   `config_push` + `secret_rotate` + `media_ready` taymaut simulyatsiyasi — agent C2/C3 ishlarini
   server kutmasdan tekshirish mumkin (protocol.md §18).
@@ -242,7 +245,9 @@ To'liq spesifikasiya: **protocol.md §17**. Qisqacha:
 - **Responsiv:** ≥1280 px optimal, 1024 px'da ustunlar kamayadi (mobil mo'ljallanmagan).
 - **Holatlar:** server offline banner, skan bo'sh, parol xato, FFmpeg yo'q banner, GPU topilmadi badge,
   disk to'lgan (state yozilmadi) ogohlantirishi.
-- **Himoya:** bind `127.0.0.1:8082`; LAN'ga chiqarish faqat `--allow-lan` + `ui_pin` majburiy
+- **Himoya:** bind `127.0.0.1:8082`. **PIN tizimi olib tashlandi**
+  (1.0-draft.10, operator talabi): yozuv amallari PIN'siz; LAN bind
+  taqiqlanmaydi, lekin agent ishga tushishda ogohlantiradi
   (yozuv endpoint'lari `X-Agent-Pin`, sessiya cookie 12 soat).
 
 ## 9. Medium effort rejimida ishlash (xatosizlik kafolati)

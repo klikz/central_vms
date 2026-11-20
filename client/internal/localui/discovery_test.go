@@ -131,12 +131,13 @@ func TestDiscovery_Add(t *testing.T) {
 	}
 }
 
-func TestDiscovery_AddPINKerak(t *testing.T) {
+// 1.0-draft.10: PIN yo'q — qo'shish PIN'siz bajariladi.
+func TestDiscovery_AddNoPinNeeded(t *testing.T) {
 	svc := &fakeDiscovery{}
 	s := newDiscServer(t, svc, "1234")
 	rec := doReq(s, "POST", "/api/ui/discovery/add", `{"keys":["ip:1.2.3.4:554"]}`, "")
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("PIN'siz add = %d, 401 kutilardi", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Errorf("PIN'siz add = %d, 200 kutilardi", rec.Code)
 	}
 }
 

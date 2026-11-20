@@ -14,7 +14,10 @@ import (
 type Config struct {
 	ServerURL string `yaml:"server_url"`
 	UIBind    string `yaml:"ui_bind"`
-	UIPin     string `yaml:"ui_pin"`
+	// UIPin — 1.0-draft.10 bilan BEKOR qilindi: lokal UI'da PIN
+	// so'ralmaydi (operator talabi). Kalit eski konfiguratsiyalarda
+	// qolsa tushirib qoldiriladi va ogohlantirish beriladi.
+	UIPin string `yaml:"ui_pin"`
 	// ClientName — serverda ko'rinadigan nom (masalan "Oxangaron"). Bo'sh
 	// bo'lsa server avtomatik `agent-…` nomini saqlaydi.
 	ClientName string `yaml:"client_name"`
@@ -286,12 +289,11 @@ func (c Config) Validate() error {
 	if p, err := strconv.Atoi(port); err != nil || p < 1 || p > 65535 {
 		return fmt.Errorf("ui_bind: port noto'g'ri: %q", port)
 	}
-	if host != "127.0.0.1" && host != "localhost" && host != "::1" {
-		// §10.3: LAN'ga chiqarish faqat PIN bilan ruxsat etiladi.
-		if c.UIPin == "" {
-			return fmt.Errorf("ui_bind: LAN manzili (%s) uchun ui_pin majburiy", host)
-		}
-	}
+	// 1.0-draft.10: PIN olib tashlangani uchun LAN bind endi cheklanmaydi
+	// (§10.3 qoidasi bekor qilindi). Xavf: ui_bind LAN manzili bo'lsa,
+	// tarmoqdagi har qanday PC lokal UI orqali kamera qo'sha oladi —
+	// buni main.go ishga tushishda ogohlantiradi.
+	_ = host
 
 	switch c.Probe.StatusKeepalive {
 	case "auto", "get_parameter", "options", "describe":

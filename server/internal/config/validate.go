@@ -77,10 +77,7 @@ func (c *Config) Validate() error {
 	if err := positive("retention_days", c.RetentionDays); err != nil {
 		return err
 	}
-	if err := positive("enrollment.ttl_h", c.Enrollment.TTLH); err != nil {
-		return err
-	}
-	if err := positive("enrollment.rate_per_5m", c.Enrollment.RatePer5m); err != nil {
+	if err := positive("join.rate_per_5m", c.Join.RatePer5m); err != nil {
 		return err
 	}
 	for name, p := range map[string]int{

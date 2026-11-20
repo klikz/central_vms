@@ -249,12 +249,7 @@ func TestC3_MediaStartToReadyAndStop(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	res, err := agent.Enroll(ctx, h.srv.URL, agent.EnrollInfo{
-		Code: "KOD-1", Hostname: "joy-c3", OS: "Ubuntu 24.04", LanIP: "10.0.0.9", AgentVersion: "0.4.0",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	agentID, secret := joinAgent(t, h.srv.URL, "KEY-joy-c3", "joy-c3")
 	keyPath := filepath.Join(h.tempDir, "agent.key")
 	if _, err := keystore.NewKeyFile(keyPath); err != nil {
 		t.Fatal(err)
@@ -263,7 +258,7 @@ func TestC3_MediaStartToReadyAndStop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ks.Put(keystore.RefAgentSecret, res.AgentSecret)
+	ks.Put(keystore.RefAgentSecret, secret)
 	if err := ks.Save(); err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +266,7 @@ func TestC3_MediaStartToReadyAndStop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st.AgentID, st.ServerURL = res.AgentID, h.wsURL
+	st.AgentID, st.ServerURL = agentID, h.wsURL
 	cam := cams.Camera{ID: "cam-7", Host: "10.0.0.7", Port: 554, MainPath: "/media",
 		CodecMain: "h264", Enabled: true}
 	// Kamera manzilini fake kameraga qo'yamiz (Host:Port = fake).
@@ -287,7 +282,7 @@ func TestC3_MediaStartToReadyAndStop(t *testing.T) {
 
 	// WS sessiyasi avval yaratiladi — media hodisalari shu orqali yuboriladi.
 	cfg := agent.SessionConfig{
-		ServerURL: h.wsURL, AgentID: res.AgentID, Secret: res.AgentSecret,
+		ServerURL: h.wsURL, AgentID: agentID, Secret: secret,
 		AgentVersion: "0.4.0", Hostname: "joy-c3", BootID: "b-c3",
 		HbInterval: 200 * time.Millisecond, Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
@@ -310,12 +305,12 @@ func TestC3_MediaStartToReadyAndStop(t *testing.T) {
 	sess.SetOnMessage(hnd.Handle)
 
 	go func() { _ = sess.Run(ctx) }()
-	if !h.dev.WaitConnected(res.AgentID, 5*time.Second) {
+	if !h.dev.WaitConnected(agentID, 5*time.Second) {
 		t.Fatal("agent ulanmadi")
 	}
 
 	// Server media_start yuboradi (§5.2: rtsp_tcp ingest).
-	if err := h.dev.SendMediaStart(res.AgentID, proto.MediaStart{
+	if err := h.dev.SendMediaStart(agentID, proto.MediaStart{
 		SessionID: "se_c3", CameraID: "cam-7", Profile: "main", Kind: "play",
 		TTLS: 60, Ingest: "rtsp_tcp",
 		Publish: proto.Publish{Token: "tk-c3", URLs: proto.PublishURLs{RTSP: ing.url()}, QueryName: "vmsaccesstoken"},
@@ -357,7 +352,7 @@ func TestC3_MediaStartToReadyAndStop(t *testing.T) {
 	t.Logf("OK: ANNOUNCE + %d RTP freym ingest'da, kamera AULARI=%d", ing.frames.Load(), camAUs.Load())
 
 	// media_stop → media_stopped{user_close} + transport yopiladi.
-	if err := h.dev.SendMediaStop(res.AgentID, proto.MediaStop{
+	if err := h.dev.SendMediaStop(agentID, proto.MediaStop{
 		SessionID: "se_c3", CameraID: "cam-7", Reason: "user_close"}); err != nil {
 		t.Fatal(err)
 	}

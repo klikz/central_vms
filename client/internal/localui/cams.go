@@ -59,10 +59,6 @@ func (s *Server) handleCamsCreate(w http.ResponseWriter, r *http.Request) {
 	if !s.camsReady(w) {
 		return
 	}
-	if !s.checkPin(r) {
-		pinErr(w)
-		return
-	}
 	req, err := decodeCamRequest(r)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -78,10 +74,6 @@ func (s *Server) handleCamsCreate(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCamsUpdate(w http.ResponseWriter, r *http.Request) {
 	if !s.camsReady(w) {
-		return
-	}
-	if !s.checkPin(r) {
-		pinErr(w)
 		return
 	}
 	id := r.PathValue("id")
@@ -104,10 +96,6 @@ func (s *Server) handleCamsUpdate(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCamsDelete(w http.ResponseWriter, r *http.Request) {
 	if !s.camsReady(w) {
-		return
-	}
-	if !s.checkPin(r) {
-		pinErr(w)
 		return
 	}
 	var in struct {
@@ -134,10 +122,6 @@ func (s *Server) handleCamsImport(w http.ResponseWriter, r *http.Request) {
 	if !s.camsReady(w) {
 		return
 	}
-	if !s.checkPin(r) {
-		pinErr(w)
-		return
-	}
 	withSecrets := r.URL.Query().Get("with_secrets") == "1"
 	defer r.Body.Close()
 	rep, err := s.cams.ImportCSV(io.LimitReader(r.Body, 4<<20), withSecrets)
@@ -153,10 +137,6 @@ func (s *Server) handleCamsExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	withSecrets := r.URL.Query().Get("with_secrets") == "1"
-	if withSecrets && !s.checkPin(r) {
-		pinErr(w)
-		return
-	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="cameras.csv"`)
 	if err := s.cams.ExportCSV(w, withSecrets); err != nil {
@@ -191,10 +171,6 @@ func secretOf(req camRequest) string {
 		return ""
 	}
 	return *req.Secret
-}
-
-func pinErr(w http.ResponseWriter) {
-	writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "pin_required"})
 }
 
 type err2msg string

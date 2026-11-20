@@ -27,9 +27,8 @@ type Deps struct {
 	Reg     *registry.Registry
 	Tokens  *auth.Tokens
 	Login   *auth.Rate // 5/5 min (root §9)
-	Enroll  *auth.Rate // /api/agent/enroll rate-limit
 	Audit   *audit.Log
-	Enr     *wsagent.Enrollment
+	Join    *wsagent.Joiner // §3: ulanish so'rovlari (kod bekor qilindi)
 	Agent   *wsagent.Hub
 	Media   *media.Manager // S2: sessiya menejeri (nil bo'lsa 503)
 	MTXHook http.Handler   // /internal/auth (MediaMTX → vmsd)
@@ -47,7 +46,8 @@ func Routes(d *Deps) http.Handler {
 	mux.HandleFunc("POST /api/auth/login", d.handleLogin)
 	mux.HandleFunc("POST /api/auth/refresh", d.handleRefresh)
 	mux.HandleFunc("POST /api/auth/logout", d.handleLogout)
-	mux.HandleFunc("POST /api/agent/enroll", d.handleEnroll)
+	// §3.1: ulanish so'rovi (ochiq endpoint; IP rate-limit §3.1).
+	mux.HandleFunc("POST /api/agent/join", d.handleJoin)
 
 	// Agent WS — hub o'zi handshake'ni boshqaradi (protocol.md §4/§18).
 	mux.HandleFunc("/api/agent/ws", func(w http.ResponseWriter, r *http.Request) {
@@ -97,7 +97,14 @@ func Routes(d *Deps) http.Handler {
 	mux.Handle("GET /api/admin/users", admin(d.handleAdminUsers))
 	mux.Handle("POST /api/admin/users", admin(d.handleAdminUserCreate))
 	mux.Handle("PATCH /api/admin/users/{id}", admin(d.handleAdminUserPatch))
-	mux.Handle("POST /api/admin/enrollments", admin(d.handleEnrollCreate))
+	// Ulanish so'rovlari va IP bo'yicha oldindan ruxsat (protocol.md §3.3).
+	mux.Handle("GET /api/admin/joins", admin(d.handleJoinsList))
+	mux.Handle("POST /api/admin/joins/{id}/approve", admin(d.handleJoinApprove))
+	mux.Handle("POST /api/admin/joins/{id}/reject", admin(d.handleJoinReject))
+	mux.Handle("DELETE /api/admin/joins/{id}", admin(d.handleJoinDelete))
+	mux.Handle("GET /api/admin/preauth", admin(d.handlePreauthList))
+	mux.Handle("POST /api/admin/preauth", admin(d.handlePreauthAdd))
+	mux.Handle("DELETE /api/admin/preauth/{id}", admin(d.handlePreauthDelete))
 	mux.Handle("PATCH /api/admin/clients/{id}", admin(d.handleClientPatch))
 	mux.Handle("DELETE /api/admin/clients/{id}", admin(d.handleClientDelete))
 	mux.Handle("PATCH /api/admin/cameras/{id}", admin(d.handleCameraPolicy))

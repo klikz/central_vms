@@ -17,6 +17,16 @@ import (
 )
 
 // devEnv — devserver + ws manzil + enroll qilinggan agent ma'lumotlari
+// test uchun doimiy kalit/sir (§3.1: sirni agent o'zi yaratadi).
+var secretOf = strings.Repeat("9f", 24)
+
+func testJoinInfo() JoinInfo {
+	return JoinInfo{
+		JoinKey: strings.Repeat("ab", 32), AgentSecret: secretOf,
+		Hostname: "test-joy", Name: "Test-joy",
+	}
+}
+
 type devEnv struct {
 	srv     *devserver.Server
 	wsURL   string
@@ -27,9 +37,6 @@ type devEnv struct {
 
 func startDev(t *testing.T, o devserver.Options) *devEnv {
 	t.Helper()
-	if o.EnrollCode == "" {
-		o.EnrollCode = "KOD"
-	}
 	srv := devserver.New(o)
 	base := srv.Handler()
 	var dials atomic.Int64
@@ -41,7 +48,7 @@ func startDev(t *testing.T, o devserver.Options) *devEnv {
 	}))
 	t.Cleanup(ts.Close)
 
-	id, secret, code := enrollViaHTTP(t, ts.URL)
+	id, secret, code := joinViaHTTP(t, ts.URL)
 	if code != http.StatusOK {
 		t.Fatalf("enroll: %d", code)
 	}
@@ -54,17 +61,19 @@ func startDev(t *testing.T, o devserver.Options) *devEnv {
 	}
 }
 
-func enrollViaHTTP(t *testing.T, url string) (string, string, int) {
+// joinViaHTTP — §3: so‘rov yuborib, tasdiqlangan agent_id ni oladi
+// (devserver tasdiqni avtomatik bajaradi).
+func joinViaHTTP(t *testing.T, url string) (agentID, secret string, status int) {
 	t.Helper()
-	res, err := Enroll(context.Background(), url, EnrollInfo{Code: "KOD", Hostname: "test-joy"})
+	res, err := Join(context.Background(), url, testJoinInfo())
 	if err != nil {
-		var ee *EnrollError
-		if errors.As(err, &ee) {
-			return "", "", ee.Status
+		var je *JoinError
+		if errors.As(err, &je) {
+			return "", "", je.Status
 		}
 		t.Fatal(err)
 	}
-	return res.AgentID, res.AgentSecret, http.StatusOK
+	return res.AgentID, secretOf, http.StatusOK
 }
 
 func baseCfg(env *devEnv, c clock.Clock) SessionConfig {

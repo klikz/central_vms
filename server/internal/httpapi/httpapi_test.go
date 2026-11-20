@@ -126,11 +126,10 @@ func newServer(t *testing.T) (*httptest.Server, *registry.Registry, *wsagent.Hub
 	t.Cleanup(mgr.Close)
 	d := &Deps{
 		Cfg: config.Default(), Reg: reg, Tokens: tokens, Media: mgr, UI: uiHub, MTXHook: media.NewHook(media.NewTokens(db, nil), lg),
-		Login:  auth.NewRate(5, 5*time.Minute, nil),
-		Enroll: auth.NewRate(5, 5*time.Minute, nil),
-		Audit:  audit.New(db),
-		Enr:    wsagent.NewEnrollment(db, reg, 24*time.Hour, 5, 5*time.Minute, nil),
-		Agent:  hub, Lg: lg,
+		Login: auth.NewRate(5, 5*time.Minute, nil),
+		Audit: audit.New(db),
+		Join:  wsagent.NewJoiner(db, reg, lg, 20, nil),
+		Agent: hub, Lg: lg,
 	}
 	d.Mux = Routes(d)
 	srv := httptest.NewServer(d.Mux)
@@ -243,35 +242,73 @@ func TestViewerIsolation(t *testing.T) {
 	if code, _, _ := do(t, http.MethodGet, srv.URL+"/api/admin/users", "", view); code != 403 {
 		t.Fatalf("viewer admin endpoint'da: %d", code)
 	}
-	if code, _, _ := do(t, http.MethodPost, srv.URL+"/api/admin/enrollments", `{}`, view); code != 403 {
-		t.Fatalf("viewer enrollment yaratdi: %d", code)
+	if code, _, _ := do(t, http.MethodGet, srv.URL+"/api/admin/joins", "", view); code != 403 {
+		t.Fatalf("viewer so‘rovlar ro‘yxatiga kirdi: %d", code)
+	}
+	if code, _, _ := do(t, http.MethodPost, srv.URL+"/api/admin/preauth", `{"ip":"10.0.0.0/8"}`, view); code != 403 {
+		t.Fatalf("viewer preauth qo‘shdi: %d", code)
 	}
 }
 
-// TestEnrollToCamerasFlow — S1 qabul mezonining yadrosi:
-// admin kod yaratadi → agent enroll → WS cams_sync → API'da kameralar.
-func TestEnrollToCamerasFlow(t *testing.T) {
+// TestJoinToCamerasFlow — S1 qabul mezonining yadrosi (1.0-draft.10
+// oqimi bilan): agent so‘rov yuboradi → admin tasdiqlaydi → agent
+// polling orqali agent_id oladi → WS cams_sync → API'da kameralar.
+func TestJoinToCamerasFlow(t *testing.T) {
 	srv, reg, hub, _, _, _ := newServer(t)
 	adminTok := login(t, srv, "admin1")
 
-	code, m, raw := do(t, http.MethodPost, srv.URL+"/api/admin/enrollments", `{"site_name":""}`, adminTok)
-	if code != 201 {
-		t.Fatalf("enroll create: %d %s", code, raw)
-	}
-	enrollCode := m["code"].(string)
+	joinKey := "ab" + strings.Repeat("cd", 31) // 64 belgi hex
+	secret := "joy-sir-" + strings.Repeat("9f", 24)
 
-	// Ochiq endpoint orqali enroll (bitta urinish).
-	code, m, raw = do(t, http.MethodPost, srv.URL+"/api/agent/enroll",
-		`{"code":"`+enrollCode+`","hostname":"joy-1","os":"ubuntu","lan_ip":"10.0.5.9","agent_version":"0.1.0"}`, "")
+	// 1) Ochiq endpoint: so‘rov pending, mijoz hali yaratilmagan.
+	code, m, raw := do(t, http.MethodPost, srv.URL+"/api/agent/join",
+		`{"join_key":"`+joinKey+`","agent_secret":"`+secret+`","hostname":"joy-1",`+
+			`"os":"ubuntu","lan_ip":"10.0.5.9","agent_version":"0.1.0","name":"Joy-1"}`, "")
 	if code != 200 {
-		t.Fatalf("agent enroll: %d %s", code, raw)
+		t.Fatalf("agent join: %d %s", code, raw)
+	}
+	if m["status"] != "pending" {
+		t.Fatalf("so‘rov holati: %v", m)
+	}
+	reqID := int64(m["request_id"].(float64))
+	if _, err := reg.GetClientByAgentID(""); err == nil {
+		t.Fatal("tasdiqdan oldin tekshiruv kutilmagan")
+	}
+
+	// 2) Admin so‘rovni ko‘radi va tasdiqlaydi.
+	code, m, raw = do(t, http.MethodGet, srv.URL+"/api/admin/joins?status=pending", "", adminTok)
+	if code != 200 {
+		t.Fatalf("joins list: %d %s", code, raw)
+	}
+	reqs := m["requests"].([]any)
+	if len(reqs) != 1 {
+		t.Fatalf("so‘rovlar soni: %v", m)
+	}
+	if rq := reqs[0].(map[string]any); rq["hostname"] != "joy-1" || rq["name"] != "Joy-1" ||
+		rq["source_ip"] == "" || rq["join_key_hash"] != nil {
+		t.Fatalf("so‘rov maydonlari: %v", rq)
+	}
+	code, m, raw = do(t, http.MethodPost,
+		srv.URL+"/api/admin/joins/"+itoaTest(reqID)+"/approve", `{"name":"Joy-1"}`, adminTok)
+	if code != 200 {
+		t.Fatalf("approve: %d %s", code, raw)
 	}
 	agentID := m["agent_id"].(string)
-	secret := m["agent_secret"].(string)
 
-	// Takror kod → 409.
-	if code, _, _ = do(t, http.MethodPost, srv.URL+"/api/agent/enroll", `{"code":"`+enrollCode+`"}`, ""); code != 409 {
-		t.Fatalf("takror kod: %d", code)
+	// 3) Agent polling: shu kalit bilan agent_id oladi (sir qaytmaydi).
+	code, m, raw = do(t, http.MethodPost, srv.URL+"/api/agent/join",
+		`{"join_key":"`+joinKey+`","agent_secret":"`+secret+`"}`, "")
+	if code != 200 || m["status"] != "approved" || m["agent_id"] != agentID {
+		t.Fatalf("polling: %d %s", code, raw)
+	}
+	if _, ok := m["agent_secret"]; ok {
+		t.Fatal("javobda sir qaytdi")
+	}
+
+	// 4) Tasdiqlangan so‘rovni qayta tasdiqlab bo'lmaydi.
+	if code, _, _ = do(t, http.MethodPost,
+		srv.URL+"/api/admin/joins/"+itoaTest(reqID)+"/approve", `{}`, adminTok); code != 409 {
+		t.Fatalf("takroriy tasdiq: %d", code)
 	}
 
 	// WS orqali cams_sync (100 kamera — S1 qabul mezoni).
@@ -397,4 +434,16 @@ func itoa64(v int64) string {
 		v /= 10
 	}
 	return string(b[i:])
+}
+
+func itoaTest(n int64) string {
+	if n == 0 {
+		return "0"
+	}
+	var b []byte
+	for n > 0 {
+		b = append([]byte{byte('0' + n%10)}, b...)
+		n /= 10
+	}
+	return string(b)
 }

@@ -18,6 +18,27 @@ export interface Site {
   name: string;
 }
 
+export interface JoinRequest {
+  id: number;
+  hostname: string;
+  name: string;
+  os: string;
+  lan_ip: string;
+  source_ip: string;
+  agent_version: string;
+  status: "pending" | "approved" | "rejected";
+  created_at: string;
+  note?: string;
+  client_id?: number;
+}
+
+export interface PreauthIP {
+  id: number;
+  ip: string;
+  name: string;
+  note: string;
+  created_at: string;
+}
 export interface Client {
   id: number;
   name: string;
@@ -199,7 +220,17 @@ export const api = {
     createUser: (username: string, password: string, role: Role) =>
       req("POST", "/api/admin/users", { username, password, role }),
     patchUser: (id: number, patch: unknown) => req("PATCH", `/api/admin/users/${id}`, patch),
-    enrollments: (site_name = "") => req<{ code: string; expires_at: string }>("POST", "/api/admin/enrollments", { site_name }),
+    // §3 (1.0-draft.10): ulanish so'rovlari va IP bo'yicha oldindan ruxsat.
+    joins: (status = "pending") =>
+      req<{ requests: JoinRequest[]; count: number }>("GET", `/api/admin/joins?status=${status}`),
+    approveJoin: (id: number, name: string) =>
+      req<{ agent_id: string }>("POST", `/api/admin/joins/${id}/approve`, { name }),
+    rejectJoin: (id: number, note = "") => req("POST", `/api/admin/joins/${id}/reject`, { note }),
+    deleteJoin: (id: number) => req("DELETE", `/api/admin/joins/${id}`),
+    preauth: () => req<{ items: PreauthIP[]; count: number }>("GET", "/api/admin/preauth"),
+    addPreauth: (ip: string, name = "", note = "") =>
+      req<{ id: number; ip: string }>("POST", "/api/admin/preauth", { ip, name, note }),
+    deletePreauth: (id: number) => req("DELETE", `/api/admin/preauth/${id}`),
     patchClient: (id: number, patch: unknown) => req("PATCH", `/api/admin/clients/${id}`, patch),
     deleteClient: (id: number) => req("DELETE", `/api/admin/clients/${id}`),
     rotateSecret: (id: number) => req<{ agent_secret: string }>("POST", `/api/admin/clients/${id}/secret-rotate`),

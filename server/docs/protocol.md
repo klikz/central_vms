@@ -1,6 +1,6 @@
 # Central VMS — kontrakt: agent (`vmsagent`) ↔ server (`vmsd`)
 
-**Versiya: 1.0-draft.9** · Sana: 2026-11-20 · Holat: **client tomonida yozildi, muzlatildi (frozen)**
+**Versiya: 1.0-draft.10** · Sana: 2026-11-20 · Holat: **client tomonida yozildi, muzlatildi (frozen)**
 
 Bu fayl **yagona manba** (single source of truth). Server S0 bosqichida bu fayl `docs/protocol.md`
 ga ko'chiriladi (yoki symlink bilan bog'ladi) va undan keyin o'zgarish faqat versiya ko'tarib,
@@ -49,67 +49,81 @@ Aniqlangan asosiy tuzatishlar (eski root §7.1 matniga nisbatan):
 - Ketma-ketlik: agent barcha buyruqlarni **accept-then-execute** qiladi — darhol qabul qiladi,
   bajarish natijasi alohida xabar bilan (`media_ready` / `media_stopped`).
 
-## 3. Enrollment (birinchi ulanish)
+## 3. Ulanish: so‘rov va admin tasdig‘i (1.0-draft.10)
 
-### 3.1 HTTP endpoint (serverda ochiq, auth talab qilmaydi)
+Avval: bir martalik kod orqali enroll. Operator talabi (2026-11-20):
+„ulanish kodini olib tashla. ulanish ruhsati faqat server UI dan
+tasdiqlanadi“. Kod oqimi butunlay olib tashlandi; `enrollment_codes`
+jadvali migratsiya **0002**da tushirildi, o‘rniga `join_requests` va
+`preauth_ips` keldi.
+
+### 3.1 Ulanish so‘rovi (serverda ochiq endpoint)
 
 ```
-POST /api/agent/enroll
+POST /api/agent/join
 Content-Type: application/json
 
-{ "code": "41739265",             // admin yaratgan bir martalik kod (8 xonali son, 24 soat)
+{ "join_key": "<64 ta hex belgi>",     // agent birinchi marta yaratadi va doimiy saqlaydi
+  "agent_secret": "<kamida 32 belgi>", // sirni AGENT yaratadi (serverda faqat sha256 hash)
   "hostname": "joy-oxangaron-01",
-  "name": "Oxangaron",              // operator bergan ko‘rinadigan nom (ixtiyoriy, 1.0-draft.9)
-  "os": "Ubuntu 24.04",
-  "lan_ip": "192.168.10.20",
-  "agent_version": "0.3.1",
-  "caps": { "gpu": "nvenc|vaapi|amf|none", "cpu_cores": 8, "ram_mb": 8192,
-            "ffmpeg_version": "n9.0.2" } }
+  "name": "Oxangaron",                 // ko‘rinadigan nom (ixtiyoriy, §3.5)
+  "os": "Ubuntu 24.04", "lan_ip": "192.168.10.20", "agent_version": "0.3.1" }
 
-200:
-{ "agent_id": "ag_9f2c1a7e",
-  "agent_secret": "<base64url(32 bait tasodifiy)>",
-  "server_time": "2026-11-19T10:00:00Z",
-  "protocol_version": 1 }
-
-401 { "error": "bad_code" }        // kod noto'g'ri/muddati o'tgan/ishlatilgan
-409 { "error": "already_enrolled" } // bu kod allaqachon bitta agentga biriktirilgan
-409 { "error": "name_taken" }       // `name` band (clients.name UNIQUE) — kod hali yaroqli
-429 { "error": "rate_limited", "retry_after_s": 300 }
+200 { "status": "pending",  "request_id": 12 }           // admin tasdig‘i kutilmoqda
+200 { "status": "approved", "agent_id": "ag_9f2c1a7e" }  // tasdiqlangan (polling javobi)
+403 { "status": "rejected", "error": "rejected", "detail": "<admin izohi>" }
+400 { "error": "bad_key" }        // join_key/agent_secret talablari bajarilmagan
+429 { "error": "rate_limited" }   // IP bo‘yicha 5 urinish / 5 daqiqa
 ```
 
 Qoidalar:
-- Kod formati: **8 xonali raqamli son** (masalan `41739265`) — telefon orqali aytish
-  va terib kiritish oson bo‘lishi uchun (1.0-draft.7; eski 19 belgili aralash format
-  bekor qilindi). Server qabul qilishda bo‘sh joy, tire va pastki chiziqni yuboradi
-  (`4173 9265` ham ishlaydi). Entropiya 10^8; urinishlar IP bo‘yicha 5 ta / 5 daqiqa.
-Qoidalar:
-- Kod **bir marta** ishlatiladi: muvaffaqiyatli enroll'dan keyin yopiladi. `already_enrolled`
-  bo'lsa admin yangi kod yaratadi (lokal UI'da aniq xabar).
-- Rate-limit: **5 urinish / 5 min / IP**.
-- `agent_secret` DB'da **sha256 hash** saqlanadi, faqat enroll javobida bir marta chiqadi.
-- `agent_id` ni **server** beradi (`ag_` + 8 hex); `client_id` (registry) server ichida
-  `agent_id` orqali topiladi.
-- Mijozning ko‘rinadigan nomi (**1.0-draft.9**): operator lokal UI’da `client_name`
-  kiritadi va agent uni enroll’da (`name`) va har `hello`da yuboradi. Server:
-  enroll’da bo‘sh bo‘lsa avtomatik `agent-<agent_id qoldig‘i>` nomini qo‘yadi;
-  `hello.name` bo‘sh bo‘lmasa mijoz nomini yangilaydi. Admin istalgan payt
-  `PATCH /api/admin/clients/{id}` bilan o‘zgartirishi mumkin.
-- Nom **unikal** (`clients.name UNIQUE`): band bo‘lsa enroll `name_taken` qaytaradi —
-  bu xatoda kod isrof bo‘lmaydi, operator boshqa nom tanlab yangi kod so‘raydi.
+- So‘rov takrorlanishi mumkin: `join_key` bo‘yicha **bitta** qator ochiladi,
+  ma‘lumotlar yangilanadi (idempotent polling). Agent tasdiqni shu
+  chaqiruvni takrorlab kutadi (vmsagent: 15 s davr).
+- **Sir sxemasi:** `agent_secret`ni agent o‘zi yaratadi. Server uni faqat
+  sha256 hash ko‘rinishida saqlaydi va tasdiqdan keyin **hech qachon
+  qaytarmaydi** — agentda allaqachon bor. (Eski oqimda sirni server
+  yaratib bir marta qaytariardi; endi agent diski qayta tiklansa ham
+  sir yo‘qolmaydi.)
+- `agent_id` ni server beradi (`ag_` + 16 hex) — **tasdiq paytida**.
+- Tasdiqdan oldin mijoz DB'da **yaratilmaydi**: serverda „noma‘lum
+  client“ holati paydo bo‘lmaydi, chunki ulanish faqat ro‘yxatdan
+  o‘tgan mijoz uchun ochiq.
 
+### 3.2 Admin tasdig‘i (server UI)
 
-**Kod qayerdan:** `vmsagent -enroll <KOD>` (bir marta, keyin o'chiriladi) yoki lokal
-UI'dagi **Sozlamalar → Ulanish (enroll)** orqali. Kod diskda saqlanmaydi.
+Boshqaruv sahifasida **Ulanish so‘rovlari** jadvali: kompyuter nomi,
+operator nomi, kelgan IP, tizim/versiya, vaqt. Amallar:
+- **Tasdiqlash** — nom tahrirlanadi (bo‘sh bo‘lsa so‘rovdagi nom);
+  nom band bo‘lsa `409 name_taken` (admin nomni o‘zgartiradi).
+- **Rad etish** — izoh bilan; agent lokal UI‘sida „request rejected“
+  ko‘rinadi va so‘rov rad holatida qoladi.
+- **O‘chirish** — eski so‘rov; agent qayta so‘rov yuborsa yangi qator
+  ochiladi.
+DB: `join_requests(join_key_hash UNIQUE, agent_secret_hash, hostname, name,
+os, lan_ip, source_ip, agent_version, status, decided_at, decided_by,
+client_id, note)`.
 
-### 3.2 Agent tomonida saqlash
+### 3.3 IP bo‘yicha oldindan ruxsat (preauth)
+
+Operator server UI‘dan mijoz IP manzilini yozib qo‘yadi (aniq IP yoki
+CIDR, masalan `192.168.0.0/22`). Shu manzildan kelgan so‘rov **avtomatik
+tasdiqlanadi** — admin kutmasdan client qo‘shiladi. Nom: preauth‘dagi
+nom (bo‘sh bo‘lsa so‘rovdagi nom, u ham bo‘sh bo‘lsa `agent-…`);
+nom band bo‘lsa avtomatik ` (2)` raqami qo‘shiladi (hech kim qarab
+turgan emas, jarayon to‘xtamasligi kerak).
+DB: `preauth_ips(ip UNIQUE, name, note, created_by)`.
+
+### 3.4 Agent tomonida saqlash
 
 `/var/lib/vmsagent/state.json` (0600, atomik yozish: `*.tmp` → `rename`):
 ```json
 { "schema": 1,
   "server_url": "ws://192.168.1.10:8081",
-  "agent_id": "ag_9f2c1a7e",
-  "secret_ref": "agent_secret_enc",   // §10.1: parol/secret state.json'da YO'Q — faqat ref
+  "join_key": "<64 hex>",              // doimiy; so‘rov egalligini isbotlash uchun
+  "join_status": "pending",            // pending | approved | rejected
+  "agent_id": "ag_9f2c1a7e",           // tasdiqlangach to‘ladi
+  "secret_ref": "agent_secret_enc",    // §10.1: sir state.json'da YO‘Q — faqat ref
   "cams_epoch": 7,
   "cameras": [ { "id": "UUIDv4", "name": "...", "host": "...", "port": 554,
                  "main_path": "/cam/realmonitor?channel=1&subtype=0",
@@ -121,8 +135,21 @@ UI'dagi **Sozlamalar → Ulanish (enroll)** orqali. Kod diskda saqlanmaydi.
                  "status": "online", "last_check_at": "...", "codec_probe_at": "..." } ] }
 ```
 Parollar va `agent_secret` alohida **shifrlangan** faylda (§11).
+Agent diski yo‘qolsa: yangi `join_key` bilan yangi so‘rov (admin tasdiqi
+qayta kerak). Tasdiqlangan so‘rov qatori saqlangan bo‘lsa va agent eski
+kalitini saqlab qolgan bo‘lsa, server bir xil `agent_id` ni qaytaradi.
 
-### 3.3 WS auth qo'l berishish (handshake)
+### 3.5 Mijozning ko‘rinadigan nomi (1.0-draft.9)
+
+Operator lokal UI‘da `client_name` kiritadi; agent uni join so‘rovida
+(`name`) va har `hello`da yuboradi. Server: so‘rovda/tasdiqda bo‘sh
+bo‘lsa avtomatik `agent-<agent_id qoldig‘i>` nomi qo‘yiladi;
+`hello.name` bo‘sh bo‘lmasa mijoz nomi yangilanadi va UI‘ga
+`client_status{name}` yuboriladi. Admin `PATCH /api/admin/clients/{id}`
+bilan istalgan payt o‘zgartiradi. Nom **unikal** (`clients.name UNIQUE`):
+band bo‘lsa admin tasdig‘ida `409 name_taken`.
+
+### 3.6 WS auth qo'l berishish (handshake)
 
 ```
 agent → server : { "type": "auth", "data": { "agent_id": "ag_...", "secret": "..." } }   // ulanishdan keyin ≤5 s
@@ -130,7 +157,7 @@ server → agent : { "type": "welcome", "data": { ... } }    // §4.1, yoki 4001
 ```
 - `auth` kelmasa server 5 sdan keyin yopadi (code **4002**).
 - Secret noto'g'ri → code **4003** (`agent_revoked` bo'lsa `4004`). Agent 4003'da backoff'ni
-  60 s dan boshlaydi va lokal UI'da "secret rad etildi — qayta enroll qiling" deydi.
+  60 s dan boshlaydi va lokal UI'da "secret rad etildi — qayta ulanish so‘rovi yuboring" deydi.
 
 ## 4. Xabarlar: agent → server
 
@@ -435,11 +462,16 @@ nisbatan yangi, RTSP esa barqaror (root §17).
   xabarlari shu orqali chiqadi.
 - Xato xabarlari (UI'ga ko'rsatiladigan) ham redaktor orqali o'tadi.
 
-### 10.3 Lokal UI bind va himoyasi
-- Bind: `127.0.0.1:8082` (config'da o'zgartirib bo'lmaydi; LAN'ga chiqarish faqat `--allow-lan`
-  + `ui_pin` **majburiy** holatda).
-- `ui_pin` (4–8 belgi) bo'lsa barcha yozuv endpoint'lari PIN bilan (`X-Agent-Pin`); PIN
-  `secrets.bin` da hash holda. Sessiya tokeni `HttpOnly` cookie, 12 soat.
+### 10.3 Lokal UI bind va himoyasi (1.0-draft.10)
+- Bind: `127.0.0.1:8082` (standart). **PIN tizimi olib tashlandi** — operator
+  talabi (2026-11-20: „ui pin olib tashla“). Yozuv amallari (kameralar,
+  sozlamalar, discovery, snapshot, join) PIN'siz bajariladi.
+- `ui_pin` kaliti eski konfiguratsiyalarda **o'qiladi, lekin ishlatilmaydi**
+  (agent ogohlantiradi). `ui_bind` LAN manziliga qo'yilsa agent ishga
+  tushishda xavf haqida ogohlantiradi: tarmoqdagi har qanday PC lokal UI
+  orqali kamera qo'sha oladi.
+- Eski qoida (PIN `secrets.bin`da hash, `X-Agent-Pin`, 12 soatlik cookie)
+  bekor qilindi; kod va hujjatlarda tarix sifatida qoldi.
 
 ### 10.4 Resurs chegaralari (defensive)
 - `max_uploads` (server `config_push`) — agent o'zi ham tekshiradi: limit band bo'lsa
@@ -451,7 +483,7 @@ nisbatan yangi, RTSP esa barqaror (root §17).
 ### 10.5 Client tomonida ochiq portlar (faqat chiqish)
 | Yo'nalish | Port/protokol |
 |---|---|
-| server → `vmsd` | TCP 8081 (`/api/agent/ws`, `/api/agent/enroll`) |
+| server → `vmsd` | TCP 8081 (`/api/agent/ws`, `/api/agent/join`) |
 | server → MediaMTX WHIP | TCP 8889 (HTTP) |
 | server → MediaMTX ICE | **UDP 8189** (fallback: TCP 8189) |
 | server → MediaMTX RTSP publish | TCP 8554 |
@@ -462,7 +494,7 @@ nisbatan yangi, RTSP esa barqaror (root §17).
 ```yaml
 server_url: ws://192.168.1.10:8081      # ws:// yoki wss://
 ui_bind: 127.0.0.1:8082
-ui_pin: ""                              # bo'sh = PIN yo'q (faqat localhost holatida ruxsat)
+ui_pin: ""                              # BEKOR qilindi (1.0-draft.10) — o‘qiladi, ishlatilmaydi
 client_name: ""                         # serverda ko‘rinadigan nom (masalan "Oxangaron")
 state_dir: /var/lib/vmsagent
 key_file: /etc/vmsagent/agent.key
@@ -631,7 +663,7 @@ UI — SPA; ma'lumotlar shu endpoint'lar orqali olinadi. Barcha javoblar JSON
 |---|---|---|
 | `/healthz` | GET | `{status, version}` — systemd/probe uchun |
 | `/api/ui/status` | GET | `{version, server_online, cams_total, cams_online, publishes, cams_epoch, ffmpeg_ok}` |
-| `/api/ui/settings` | GET / PUT | `server_url`, `log_level`, `name` (1.0-draft.9). PUT — PIN talab qiladi (§10.3).
+| `/api/ui/settings` | GET / PUT | `server_url`, `log_level`, `name` (1.0-draft.9). PIN talab qilinmaydi (1.0-draft.10).
   PUT qiymatlarni **konfiguratsiya fayliga yozadi**, `state.json`dagi manzilni yangilaydi va
   sessiyani qayta boshlaydi (eski xulq: faqat xotirada qolardi, agent esa eski manzilga
   ulanaverardi — 1.0-draft.8). `name` maydoni qo‘shildi: UI’da „Connection name‘
@@ -646,10 +678,11 @@ UI — SPA; ma'lumotlar shu endpoint'lar orqali olinadi. Barcha javoblar JSON
 | `/api/ui/cams/export` | GET | `text/csv` — parollar `***`. `?with_secrets=1` faqat PIN bilan (§16.3) |
 | `/api/ui/discovery*` | POST/GET | WS-Discovery boshlash/natija (C2) |
 | `/api/ui/selftest` | POST | Self-test ishga tushirish (C4) |
-| `/api/ui/enroll` | POST | `{code}` — §3.1 ro‘yxatdan o‘tish (kod 8 xonali son;
-  bo‘sh joy/tire yuboriladi). Muvaffaqiyatda agent_id/secret saqlanadi va sessiya darhol
-  qayta boshlanadi. Xatolar: `400 code_required`, `409 already_enrolled`,
-  `502 enroll_failed` (server rad etdi), `401 pin_required`. PIN talab |
+| `/api/ui/join` | POST | §3.1 ulanish so‘rovi (jism talab qilinmaydi). Agent
+  so‘rovni yuboradi/holatini so‘raydi; tasdiqlansa `agent_id` saqlanadi va sessiya
+  qayta boshlanadi. Xatolar: `409 already_enrolled`, `403 rejected`,
+  `429 rate_limited`, `400 bad_key`, `502 join_failed`. Kod maydoni yo‘q
+  (1.0-draft.10) |
 | `/favicon.ico`, `/favicon.svg` | GET | SVG ikonka — brauzer avtomatik so'raydi, 404 bo'lmasligi kerak |
 
 **Qoidalar:**
@@ -667,13 +700,13 @@ UI — SPA; ma'lumotlar shu endpoint'lar orqali olinadi. Barcha javoblar JSON
 
 ## 18. Test va mock (`devserver`)
 
-- `make devserver` — client repoda **mock vmsd**: `/api/agent/enroll`, `/api/agent/ws`,
+- `make devserver` — client repoda **mock vmsd**: `/api/agent/join`, `/api/agent/ws`,
   `auth/hello/welcome`, `cams_request`, `cams_sync` qabul (log + hisob), `media_start/stop/refresh`,
   `codec_fix`, `config_push`, `secret_rotate`, token tekshiruvi (soxta), `media_ready` taymaut simulyatsiyasi.
 - **Handshake tartibi (amalda):** `auth` → `hello` → `welcome`. `auth` yoki `hello` 5 s ichida
   kelmasa **4002**, secret noto'g'ri **4003**, `protocol_version` oralikdan tashqarida avval
   `welcome{compat.ok:false}` yuborilib **4001** bilan yopiladi (§1, §3.3).
-- **Dev persistensiyasi:** `-state build/devserver.state.json` — enroll qilingan agentlar faylga
+- **Dev persistensiyasi:** `-state build/devserver.state.json` — ulangan (join_key bo‘yicha) agentlar faylga
   yoziladi, mock qayta boshlansa ham agentlar yo'qolmaydi (faqat mock; haqiqiy serverda Postgres).
   Server har 30 s WS `ping` yuboradi (§2).
 - Mock MediaMTX o'rniga: lokal `mediamtx` (server repodagi binary nusxasi) yoki `gortsplib` server.
@@ -700,7 +733,7 @@ UI — SPA; ma'lumotlar shu endpoint'lar orqali olinadi. Barcha javoblar JSON
 
 ## 19. Qabul mezoni (kontrakt bo'yicha)
 
-- Agent `devserver` mock bilan to'liq siklni o'tadi: enroll → auth → hello → cams_sync (chunk) →
+- Agent `devserver` mock bilan to'liq siklni o'tadi: join → auth → hello → cams_sync (chunk) →
   cam_status → media_start → media_ready → media_stats → media_stop → media_stopped.
 - `media_ready` 10 s ichida; refcount tufayli bitta kameraga **bitta** publish; TTL watchdog
   WS uzilganda ham publish'ni yopadi.
@@ -720,6 +753,17 @@ tasodifan qutulgan).
 
 | Versiya | Sana | O'zgarish |
 |---|---|---|
+| 1.0-draft.10 | 2026-11-20 | **Ulanish tartibi: kod → so‘rov + admin tasdiqi**
+  (operator talabi). §3 qayta yozildi: `POST /api/agent/join` (`join_key`,
+  agent o‘zi yaratgan `agent_secret`, `name`, hostname, IP), holatlar
+  `pending/approved/rejected`, polling; `agent_id` tasdiq paytida beriladi va
+  sir serverdan qaytmaydi. §3.3 IP bo‘yicha oldindan ruxsat (preauth)
+  qo‘shildi — operator server UI'dan IP yozadi, shu manzildan kelgan
+  so‘rov avtomatik tasdiqlanadi. `enrollment_codes` jadvali tushirildi
+  (migratsiya 0002), `join_requests`/`preauth_ips` keldi. Server UI'da
+  „Ulanish so‘rovlari“ va preauth paneli. **Lokal UI PIN'i butunlay
+  olib tashlandi** (§10.3): yozuv amallari PIN'siz; `ui_pin` kaliti
+  o'qiladi-yu ishlatilmaydi. §17.1: `/api/ui/enroll` o'rniga `/api/ui/join`. |
 | 1.0-draft.9 | 2026-11-20 | Mijozning **ko‘rinadigan nomi** endi agentdan keladi:
   §3.1 enroll jismiga `name`, §4.1 `hello`ga `name`, §11 ga `client_name` kaliti,
   §17.1 `/api/ui/settings`ga `name` qo‘shildi. Server: `hello.name` bo‘sh bo‘lmasa

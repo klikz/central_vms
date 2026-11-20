@@ -24,7 +24,6 @@ import (
 
 // Options — mock sozlamalari.
 type Options struct {
-	EnrollCode  string        // bir martalik kod
 	AuthTimeout time.Duration // auth/hello uchun limit (default 5 s, §3.3)
 	MinVersion  int           // protocol_version oralig'i (§1)
 	MaxVersion  int
@@ -78,10 +77,9 @@ type Server struct {
 
 	onWelcome func(agentID string) // skenariy hook'i (C1.14)
 
-	mu       sync.Mutex
-	codes    map[string]time.Time
-	enrolled map[string]stored
-	byID     map[string]string
+	mu    sync.Mutex
+	byKey map[string]stored // join_key → agent (devserver avtomatik tasdiqlaydi)
+	byID  map[string]string
 	// camsSeen/camsEpoch — cams_sync hisobi (§4.2/§4.3, testlar uchun)
 	camsSeen  map[string][]proto.CamsSync
 	camsEpoch map[string]int64
@@ -94,28 +92,17 @@ func New(o Options) *Server {
 	o.withDefaults()
 	s := &Server{
 		o:         o,
-		codes:     map[string]time.Time{},
-		enrolled:  map[string]stored{},
+		byKey:     map[string]stored{},
 		byID:      map[string]string{},
 		attempts:  map[string][]time.Time{},
 		conns:     map[string]*agentConn{},
 		camsSeen:  map[string][]proto.CamsSync{},
 		camsEpoch: map[string]int64{},
 	}
-	if o.EnrollCode != "" {
-		s.codes[o.EnrollCode] = time.Now().Add(24 * time.Hour)
-	}
 	if o.StateFile != "" {
 		s.loadState()
 	}
 	return s
-}
-
-// AddCode — yangi bir martalik kod (test/CLI uchun).
-func (s *Server) AddCode(code string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.codes[code] = time.Now().Add(24 * time.Hour)
 }
 
 // Handler — barcha marshrutlar.
@@ -124,7 +111,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "role": "devserver-mock"})
 	})
-	mux.HandleFunc("/api/agent/enroll", s.handleEnroll)
+	mux.HandleFunc("/api/agent/join", s.handleJoin)
 	mux.HandleFunc("/api/agent/ws", s.handleWS)
 	return mux
 }
@@ -136,19 +123,14 @@ func (s *Server) OnlineAgents() []string {
 	return append([]string(nil), s.online...)
 }
 
-func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeErr(w, http.StatusMethodNotAllowed, "method_not_allowed")
-		return
-	}
-	ip := clientIP(r)
-	if !s.allowRate(ip) {
-		writeErr(w, http.StatusTooManyRequests, "rate_limited")
-		return
-	}
+// handleJoin — §3.1: ulanish so‘rovi. Dev-mock server tasdiqni
+// avtomatik bajaradi (haqiqiy serverda admin UI orqali tasdiqlanadi).
+func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Code         string `json:"code"`
+		JoinKey      string `json:"join_key"`
+		AgentSecret  string `json:"agent_secret"`
 		Hostname     string `json:"hostname"`
+		Name         string `json:"name"`
 		OS           string `json:"os"`
 		LanIP        string `json:"lan_ip"`
 		AgentVersion string `json:"agent_version"`
@@ -157,32 +139,29 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_json")
 		return
 	}
-
-	s.mu.Lock()
-	exp, ok := s.codes[in.Code]
-	if !ok || time.Now().After(exp) {
-		s.mu.Unlock()
-		writeErr(w, http.StatusUnauthorized, "bad_code")
+	if !s.allowRate(clientIP(r)) {
+		writeErr(w, http.StatusTooManyRequests, "rate_limited")
 		return
 	}
-	if st, done := s.enrolled[in.Code]; done {
+	if len(in.JoinKey) < 32 || len(in.AgentSecret) < 32 {
+		writeErr(w, http.StatusBadRequest, "bad_key")
+		return
+	}
+	s.mu.Lock()
+	if st, ok := s.byKey[in.JoinKey]; ok {
 		s.mu.Unlock()
-		writeJSON(w, http.StatusConflict, map[string]any{"error": "already_enrolled", "agent_id": st.agentID})
+		writeJSON(w, http.StatusOK, map[string]any{"status": "approved", "agent_id": st.agentID})
 		return
 	}
 	agentID := "ag_" + randHex(8)
-	secret := randToken()
-	s.enrolled[in.Code] = stored{agentID: agentID, secret: secret}
-	s.byID[agentID] = secret
+	s.byKey[in.JoinKey] = stored{agentID: agentID, secret: in.AgentSecret}
+	s.byID[agentID] = in.AgentSecret
 	s.saveStateLocked()
 	s.mu.Unlock()
 
-	log.Printf("devserver: enroll OK agent_id=%s hostname=%s lan_ip=%s", agentID, in.Hostname, in.LanIP)
+	log.Printf("devserver: join OK agent_id=%s hostname=%s lan_ip=%s", agentID, in.Hostname, in.LanIP)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"agent_id":         agentID,
-		"agent_secret":     secret,
-		"server_time":      time.Now().UTC().Format(time.RFC3339),
-		"protocol_version": s.o.MaxVersion,
+		"status": "approved", "agent_id": agentID, "request_id": 1,
 	})
 }
 
@@ -259,8 +238,8 @@ func writeErr(w http.ResponseWriter, code int, msg string) {
 // --- dev persistensiyasi (faqat mock uchun; haqiqiy serverda Postgres) ---
 
 type persisted struct {
-	Agents   map[string]string    `json:"agents"`   // agent_id → secret
-	Enrolled map[string]storedObj `json:"enrolled"` // code → agent
+	Agents map[string]string    `json:"agents"` // agent_id → secret
+	Joins  map[string]storedObj `json:"joins"`  // join_key → agent
 }
 type storedObj struct {
 	AgentID string `json:"agent_id"`
@@ -282,9 +261,8 @@ func (s *Server) loadState() {
 	for id, secret := range p.Agents {
 		s.byID[id] = secret
 	}
-	for code, st := range p.Enrolled {
-		s.enrolled[code] = stored{agentID: st.AgentID, secret: st.Secret}
-		s.codes[code] = time.Now().Add(24 * time.Hour)
+	for key, st := range p.Joins {
+		s.byKey[key] = stored{agentID: st.AgentID, secret: st.Secret}
 	}
 	log.Printf("devserver: %d agent yuklandi (%s)", len(p.Agents), s.o.StateFile)
 }
@@ -294,12 +272,12 @@ func (s *Server) saveStateLocked() {
 	if s.o.StateFile == "" {
 		return
 	}
-	p := persisted{Agents: map[string]string{}, Enrolled: map[string]storedObj{}}
+	p := persisted{Agents: map[string]string{}, Joins: map[string]storedObj{}}
 	for id, secret := range s.byID {
 		p.Agents[id] = secret
 	}
-	for code, st := range s.enrolled {
-		p.Enrolled[code] = storedObj{AgentID: st.agentID, Secret: st.secret}
+	for key, st := range s.byKey {
+		p.Joins[key] = storedObj{AgentID: st.agentID, Secret: st.secret}
 	}
 	b, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {

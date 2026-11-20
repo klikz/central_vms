@@ -87,12 +87,8 @@ func TestCamCRUD(t *testing.T) {
 		t.Fatalf("bo'sh kutilmadi: %s", body)
 	}
 
-	// Yaratish — PIN siz rad etiladi (§10.3)
-	res, _ = doJSON(t, ts, http.MethodPost, "/api/ui/cams", `{"name":"A","host":"10.0.0.5","secret":"p1"}`, "")
-	if res.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("PIN talab qilinishi kerak edi, kod=%d", res.StatusCode)
-	}
-	res, body = doJSON(t, ts, http.MethodPost, "/api/ui/cams", `{"name":"A","host":"10.0.0.5","secret":"p1"}`, "1234")
+	// Yaratish — PIN'siz (1.0-draft.10: PIN olib tashlandi)
+	res, body = doJSON(t, ts, http.MethodPost, "/api/ui/cams", `{"name":"A","host":"10.0.0.5","secret":"p1"}`, "")
 	if res.StatusCode != http.StatusCreated {
 		t.Fatalf("create: %d %s", res.StatusCode, body)
 	}
@@ -167,12 +163,8 @@ func TestCamCRUD(t *testing.T) {
 	if strings.Contains(body, "p1") || !strings.Contains(body, "***") {
 		t.Fatalf("eksport parolni ochib yubordi: %s", body)
 	}
-	// with_secrets=1 PIN talab qiladi
-	res, _ = doJSON(t, ts, http.MethodGet, "/api/ui/cams/export?with_secrets=1", "", "")
-	if res.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("with_secrets PIN bilan bo'lishi kerak, kod=%d", res.StatusCode)
-	}
-	res, body = doJSON(t, ts, http.MethodGet, "/api/ui/cams/export?with_secrets=1", "", "1234")
+	// with_secrets=1 — PIN'siz ham (operator talabi, 1.0-draft.10)
+	res, body = doJSON(t, ts, http.MethodGet, "/api/ui/cams/export?with_secrets=1", "", "")
 	if !strings.Contains(body, "p1") {
 		t.Fatalf("with_secrets eksport: %s", body)
 	}

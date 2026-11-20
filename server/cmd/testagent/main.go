@@ -7,6 +7,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -28,7 +30,8 @@ import (
 func main() {
 	var (
 		server   = flag.String("server", "ws://127.0.0.1:8081", "vmsd asosi (ws:// yoki wss://)")
-		code     = flag.String("code", "", "enrollment kodi (bo'sh bo'lsa -agent-id/-secret ishlatiladi)")
+		join     = flag.Bool("join", false, "ulanish so'rovi yuborish (§3.1) va admin tasdig'ini kutish")
+		name     = flag.String("name", "", "serverda ko'rinadigan nom (join so'rovida)")
 		agentID  = flag.String("agent-id", "", "mavjud agent_id (qayta ulanish)")
 		secret   = flag.String("secret", "", "mavjud agent_secret")
 		nCams    = flag.Int("cams", 100, "soxta kameralar soni")
@@ -41,7 +44,7 @@ func main() {
 	)
 	flag.Parse()
 
-	err := run(*server, *code, *agentID, *secret, *nCams, *hostname, *once, *publish, *ffmpeg, *size, *fps)
+	err := run(*server, *join, *name, *agentID, *secret, *nCams, *hostname, *once, *publish, *ffmpeg, *size, *fps)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "testagent: %v\n", err)
 		os.Exit(1)
@@ -113,21 +116,19 @@ func (p *publisher) stop(sessionID string) {
 	}
 }
 
-func run(server, code, agentID, secret string, nCams int, hostname string, once, publish bool, ffmpegPath, size string, fps int) error {
+func run(server string, join bool, name, agentID, secret string, nCams int, hostname string, once, publish bool, ffmpegPath, size string, fps int) error {
 	base := server
 
-	if code != "" {
-		id, sec, err := enroll(base, code, hostname)
+	if join {
+		id, sec, err := joinAndWait(base, hostname, name)
 		if err != nil {
 			return err
 		}
 		agentID, secret = id, sec
-		if len(secret) > 6 {
-			fmt.Printf("enroll OK: agent_id=%s secret=%s…\n", agentID, secret[:6])
-		}
+		fmt.Printf("join OK: agent_id=%s\n", agentID)
 	}
 	if agentID == "" || secret == "" {
-		return fmt.Errorf("agent_id/secret berilmadi yoki -code orqali enroll qilinmadi")
+		return fmt.Errorf("agent_id/secret berilmadi yoki -join bilan so'rov yuborilmadi")
 	}
 
 	wsURL := base + "/api/agent/ws?agent_id=" + agentID
@@ -321,30 +322,60 @@ func run(server, code, agentID, secret string, nCams int, hostname string, once,
 	}
 }
 
-func enroll(base, code, hostname string) (string, string, error) {
+// joinAndWait — §3.1/§3.2: so'rov yuboriladi va admin tasdig'i
+// polling orqali kutiladi. Sirni agent o'zi yaratadi (serverda hash saqlanadi).
+func joinAndWait(base, hostname, name string) (agentID, secret string, err error) {
+	key := randHex(32)
+	secret = randHex(32)
+	for {
+		id, status, err := joinOnce(base, hostname, name, key, secret)
+		if err != nil {
+			return "", "", err
+		}
+		switch status {
+		case "approved":
+			return id, secret, nil
+		case "rejected":
+			return "", "", fmt.Errorf("join: so'rov rad etildi (admin izohini so'rang)")
+		default:
+			fmt.Println("join: so'rov yuborildi — server UI'da tasdiqlang…")
+			time.Sleep(3 * time.Second)
+		}
+	}
+}
+
+func joinOnce(base, hostname, name, key, secret string) (agentID, status string, err error) {
 	httpBase := base
 	if len(httpBase) > 3 && httpBase[:3] == "ws:" {
 		httpBase = "http:" + httpBase[3:]
 	}
 	body, _ := json.Marshal(map[string]any{
-		"code": code, "hostname": hostname, "os": "linux",
-		"lan_ip": "127.0.0.1", "agent_version": "testagent-0",
+		"join_key": key, "agent_secret": secret, "hostname": hostname, "name": name,
+		"os": "linux", "lan_ip": "127.0.0.1", "agent_version": "testagent-0",
 	})
-	resp, err := http.Post(httpBase+"/api/agent/enroll", "application/json", bytes.NewReader(body))
+	resp, err := http.Post(httpBase+"/api/agent/join", "application/json", bytes.NewReader(body))
 	if err != nil {
-		return "", "", fmt.Errorf("enroll: %w", err)
+		return "", "", fmt.Errorf("join: %w", err)
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if resp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("enroll %d: %s", resp.StatusCode, b)
+		return "", "", fmt.Errorf("join %d: %s", resp.StatusCode, b)
 	}
 	var out struct {
-		AgentID     string `json:"agent_id"`
-		AgentSecret string `json:"agent_secret"`
+		Status  string `json:"status"`
+		AgentID string `json:"agent_id"`
 	}
 	if err := json.Unmarshal(b, &out); err != nil {
-		return "", "", fmt.Errorf("enroll javob: %w", err)
+		return "", "", fmt.Errorf("join javob: %w", err)
 	}
-	return out.AgentID, out.AgentSecret, nil
+	return out.AgentID, out.Status, nil
+}
+
+func randHex(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(b)
 }

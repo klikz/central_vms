@@ -13,9 +13,16 @@ sleep 2
 ./build/vmsd -config config/e2e.yaml -seed-admin "e2eadmin:E2e-Salom-2026" >/dev/null 2>&1
 TOK=$(curl -s -X POST http://127.0.0.1:8081/api/auth/login -d '{"username":"e2eadmin","password":"E2e-Salom-2026"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["access"])')
 A=(-H "Authorization: Bearer $TOK" -H 'Content-Type: application/json')
-CODE=$(curl -s -X POST http://127.0.0.1:8081/api/admin/enrollments "${A[@]}" -d '{}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["code"])')
-./build/testagent -server ws://127.0.0.1:8081 -code "$CODE" -cams 1 -publish -hostname m-joy > var/log/aa.log 2>&1 & PIDS+=($!)
-sleep 2
+# §3: so‘rov + admin tasdiqi (kod bekor qilindi)
+./build/testagent -server ws://127.0.0.1:8081 -join -name "Measure-joy" -cams 1 -publish -hostname m-joy > var/log/aa.log 2>&1 & PIDS+=($!)
+RID=""
+for i in $(seq 1 20); do
+  RID=$(curl -s "http://127.0.0.1:8081/api/admin/joins?status=pending" "${A[@]}" | python3 -c 'import sys,json;d=json.load(sys.stdin);r=d.get("requests") or [];print(r[0]["id"] if r else "")')
+  [ -n "$RID" ] && break
+  sleep 0.5
+done
+curl -s -X POST "http://127.0.0.1:8081/api/admin/joins/$RID/approve" "${A[@]}" -d '{"name":"Measure-joy"}' >/dev/null
+sleep 4
 CID=$(curl -s http://127.0.0.1:8081/api/clients "${A[@]}" | python3 -c 'import sys,json;print(json.load(sys.stdin)[0]["id"])')
 CAM=$(curl -s "http://127.0.0.1:8081/api/clients/$CID/cameras" "${A[@]}" | python3 -c 'import sys,json;print(json.load(sys.stdin)[0]["id"])')
 curl -s -X PATCH "http://127.0.0.1:8081/api/admin/cameras/$CAM" "${A[@]}" -d '{"transcode_mode":"off"}' >/dev/null

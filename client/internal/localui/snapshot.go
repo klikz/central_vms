@@ -47,10 +47,6 @@ func (s *Server) handleSnapshotRefresh(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "snapshots_not_ready"})
 		return
 	}
-	if !s.checkPin(r) {
-		pinErr(w)
-		return
-	}
 	id := r.PathValue("id")
 	if err := s.snap.Capture(r.Context(), id); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "snapshot_failed", "detail": err.Error()})

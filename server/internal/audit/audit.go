@@ -10,17 +10,23 @@ import (
 
 // Action kodlari (docs/api.md bilan kelishilgan; UI filtrida ishlatiladi).
 const (
-	Login        = "login"
-	LoginFailed  = "login_failed"
-	Logout       = "logout"
-	EnrollCreate = "enroll_create"
-	EnrollUse    = "enroll_use"
-	Play         = "play"
-	Preview      = "preview"
-	SessionStop  = "session_stop"
-	AdminAction  = "admin_action"
-	UserCreate   = "user_create"
-	UserUpdate   = "user_update"
+	Login       = "login"
+	LoginFailed = "login_failed"
+	Logout      = "logout"
+	// Ulanish so'rovlari (§3, 1.0-draft.10). Eski enroll_create/enroll_use
+	// kod asosidagi oqim uchun edi — endi so'rov + admin tasdiqi.
+	JoinRequest = "join_request"
+	JoinApprove = "join_approve"
+	JoinReject  = "join_reject"
+	JoinDelete  = "join_delete"
+	PreauthAdd  = "preauth_add"
+	PreauthDel  = "preauth_del"
+	Play        = "play"
+	Preview     = "preview"
+	SessionStop = "session_stop"
+	AdminAction = "admin_action"
+	UserCreate  = "user_create"
+	UserUpdate  = "user_update"
 )
 
 // Log — audit yozuvchisi (bitta DB, SQLite'da MaxOpenConns=1).

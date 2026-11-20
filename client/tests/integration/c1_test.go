@@ -82,12 +82,31 @@ func (r *recorder) count(typ string) int {
 	return r.m[typ]
 }
 
+// joinAgent — §3.1: ulanish so'rovi yuborib, tasdiqlangan agent_id ni
+// oladi (devserver mock'i tasdiqni avtomatik bajaradi). Sirni agent o'zi
+// yaratadi (§3: serverda faqat hash saqlanadi).
+func joinAgent(t *testing.T, url, key, hostname string) (agentID, secret string) {
+	t.Helper()
+	secret = "sir-" + key + strings.Repeat("7c", 24)
+	if len(key) > 32 {
+		key = key[:32]
+	}
+	res, err := agent.Join(context.Background(), url, agent.JoinInfo{
+		JoinKey: key + strings.Repeat("0", 32-len(key)), AgentSecret: secret,
+		Hostname: hostname, OS: "Ubuntu 24.04", LanIP: "192.168.10.20", AgentVersion: "0.4.0",
+	})
+	if err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	if !strings.HasPrefix(res.AgentID, "ag_") {
+		t.Fatalf("join natijasi: %+v", res)
+	}
+	return res.AgentID, secret
+}
+
 func newHarness(t *testing.T, o devserver.Options) *harness {
 	t.Helper()
 	dir := t.TempDir()
-	if o.EnrollCode == "" {
-		o.EnrollCode = "KOD-1"
-	}
 	if o.StateFile == "" {
 		o.StateFile = filepath.Join(dir, "devserver.state.json")
 	}
@@ -127,15 +146,7 @@ func TestC1_EnrollConnectRotateReconnect(t *testing.T) {
 	defer cancel()
 
 	// --- 1) enroll (§3.1) ---
-	res, err := agent.Enroll(ctx, h.srv.URL, agent.EnrollInfo{
-		Code: "KOD-1", Hostname: "joy-01", OS: "Ubuntu 24.04", LanIP: "192.168.10.20", AgentVersion: "0.4.0",
-	})
-	if err != nil {
-		t.Fatalf("enroll: %v", err)
-	}
-	if !strings.HasPrefix(res.AgentID, "ag_") || res.AgentSecret == "" {
-		t.Fatalf("enroll natija: %+v", res)
-	}
+	agentID, secret := joinAgent(t, h.srv.URL, "KEY-joy-01", "joy-01")
 
 	// --- 2) secret keystore'ga saqlanadi (§10.1) ---
 	keyPath := filepath.Join(h.tempDir, "agent.key")
@@ -146,7 +157,7 @@ func TestC1_EnrollConnectRotateReconnect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ks.Put(keystore.RefAgentSecret, res.AgentSecret)
+	ks.Put(keystore.RefAgentSecret, secret)
 	if err := ks.Save(); err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +169,7 @@ func TestC1_EnrollConnectRotateReconnect(t *testing.T) {
 	// alohida fake clock ishlatiladi (testda uyqu yo'q).
 	fc := clock.NewFake(time.Now())
 	cfg := agent.SessionConfig{
-		ServerURL: h.wsURL, AgentID: res.AgentID, Secret: res.AgentSecret,
+		ServerURL: h.wsURL, AgentID: agentID, Secret: secret,
 		AgentVersion: "0.4.0", Hostname: "joy-01", BootID: "boot-1", CamsEpoch: 3,
 		HbInterval: 60 * time.Millisecond, Clock: clock.Real{},
 		OnMessage: func(e proto.Envelope) {
@@ -175,7 +186,7 @@ func TestC1_EnrollConnectRotateReconnect(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- sess.Run(ctx) }()
 
-	if !h.dev.WaitConnected(res.AgentID, 5*time.Second) {
+	if !h.dev.WaitConnected(agentID, 5*time.Second) {
 		t.Fatal("agent ulanmadi (welcome o'qilmadi)")
 	}
 
@@ -185,7 +196,7 @@ func TestC1_EnrollConnectRotateReconnect(t *testing.T) {
 	}
 
 	// --- 5) server tomonidan secret_rotate (§5.6) → agent ok:true ---
-	if err := h.dev.Send(res.AgentID, proto.MsgSecretRotate, proto.SecretRotate{NewSecret: "YANGI-SECRET", GraceS: 5}); err != nil {
+	if err := h.dev.Send(agentID, proto.MsgSecretRotate, proto.SecretRotate{NewSecret: "YANGI-SECRET", GraceS: 5}); err != nil {
 		t.Fatalf("secret_rotate yuborib bo'lmadi: %v", err)
 	}
 	if n := h.waitSeen(proto.MsgSecretRotated, 1, 3*time.Second); n < 1 {
@@ -213,7 +224,7 @@ func TestC1_EnrollConnectRotateReconnect(t *testing.T) {
 	sess2 := agent.NewSession(cfg2)
 	done2 := make(chan error, 1)
 	go func() { done2 <- sess2.Run(ctx) }()
-	if !h.dev.WaitConnected(res.AgentID, 5*time.Second) {
+	if !h.dev.WaitConnected(agentID, 5*time.Second) {
 		t.Fatal("ikkinchi sessiya ulanmadi")
 	}
 	h.srv.Close() // server o'ldi
@@ -247,7 +258,7 @@ func TestC1_EnrollConnectRotateReconnect(t *testing.T) {
 	// --- 7) qayta ulanish QAYTA ENROLL'SIZ (secret keystore'da) ---
 	h2 := newHarnessWithState(t, h.tempDir) // yangi mock, eski state fayli bilan
 	sess3 := agent.NewSession(agent.SessionConfig{
-		ServerURL: h2.wsURL, AgentID: res.AgentID, Secret: "YANGI-SECRET",
+		ServerURL: h2.wsURL, AgentID: agentID, Secret: "YANGI-SECRET",
 		AgentVersion: "0.4.0", HbInterval: time.Second, Clock: clock.NewFake(time.Now()),
 	})
 	wel, err := sess3.RunOnce(ctx)
@@ -257,7 +268,7 @@ func TestC1_EnrollConnectRotateReconnect(t *testing.T) {
 	if !wel.Compat.OK {
 		t.Fatalf("compat: %+v", wel.Compat)
 	}
-	if !h2.dev.WaitConnected(res.AgentID, 3*time.Second) {
+	if !h2.dev.WaitConnected(agentID, 3*time.Second) {
 		t.Fatal("yangi mock agentni tanimadi")
 	}
 	_ = sess2

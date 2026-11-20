@@ -18,9 +18,8 @@ auth:
   access_ttl_min: 15
   refresh_ttl_days: 7
 
-enrollment:
-  ttl_h: 24
-  rate_per_5m: 20
+join:
+  rate_per_5m: 20   # /api/agent/join — IP bo‘yicha 5 daqiqada urinishlar
 
 limits:
   user_max_sessions: 16

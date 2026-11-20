@@ -57,18 +57,27 @@ func newTestEnv(t *testing.T) *testEnv {
 	return &testEnv{hub: hub, reg: reg, srv: srv, fc: fc, db: db}
 }
 
+// enroll — test yordamchisi: §3 bo'yicha so'rov yuboriladi va admin
+// tasdiqlaydi (kod oqimi 1.0-draft.10 bilan bekor qilindi).
 func (e *testEnv) enroll(t *testing.T) (agentID, secret string) {
 	t.Helper()
-	en := NewEnrollment(e.hub.registry.DB(), e.reg, 24*time.Hour, 100, time.Minute, e.fc)
-	code, _, err := en.CreateCode(0, 0)
+	j := NewJoiner(e.hub.registry.DB(), e.reg, slog.Default(), 100, e.fc)
+	secret = "test-secret-" + randHexLower(24)
+	out, err := j.Request(JoinInput{
+		JoinKey: randHexLower(32), AgentSecret: secret,
+		Hostname: "joy", OS: "ubuntu", LanIP: "10.0.0.9", AgentVersion: "0.1.0",
+	}, "127.0.0.1")
 	if err != nil {
-		t.Fatalf("kod: %v", err)
+		t.Fatalf("join: %v", err)
 	}
-	agentID, secret, _, err = en.Redeem(EnrollInput{Code: code, Hostname: "joy", OS: "ubuntu", LanIP: "10.0.0.9", AgentVersion: "0.1.0"}, "127.0.0.1")
+	if out.Status != "pending" {
+		t.Fatalf("so'rov holati: %+v", out)
+	}
+	ap, err := j.Approve(out.RequestID, "", 0)
 	if err != nil {
-		t.Fatalf("redeem: %v", err)
+		t.Fatalf("tasdiq: %v", err)
 	}
-	return agentID, secret
+	return ap.AgentID, secret
 }
 
 func wsURL(s string) string { return "ws://" + strings.TrimPrefix(s, "http://") }

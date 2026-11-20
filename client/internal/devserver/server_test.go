@@ -18,9 +18,6 @@ import (
 
 func newTestServer(t *testing.T, o Options) (*Server, *httptest.Server) {
 	t.Helper()
-	if o.EnrollCode == "" {
-		o.EnrollCode = "TEST-CODE"
-	}
 	s := New(o)
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
@@ -31,46 +28,57 @@ func wsURL(ts *httptest.Server, agentID string) string {
 	return "ws" + strings.TrimPrefix(ts.URL, "http") + "/api/agent/ws?agent_id=" + agentID
 }
 
-// enroll — bir martalik kod orqali agent olish
-func enroll(t *testing.T, ts *httptest.Server, code string) (string, string, int) {
+// join — §3.1 ulanish so‘rovi (devserver avtomatik tasdiqlaydi).
+// `key` qisqa bo‘lsa 32 belgigacha to‘ldiriladi; kalit so‘rov egasini
+// belgilaydi — shu kalit bilan qayta so‘rasa bir xil agent_id qaytadi.
+func join(t *testing.T, ts *httptest.Server, key string) (agentID, secret string, status int) {
 	t.Helper()
-	body, _ := json.Marshal(map[string]string{"code": code, "hostname": "test", "os": "Ubuntu", "lan_ip": "10.0.0.5"})
-	res, err := ts.Client().Post(ts.URL+"/api/agent/enroll", "application/json", bytes.NewReader(body))
+	k := key + strings.Repeat("0", 32-len(key))
+	if len(key) >= 32 {
+		k = key
+	}
+	secret = "sir-" + strings.Repeat("a", 32)
+	body, _ := json.Marshal(map[string]string{
+		"join_key": k, "agent_secret": secret,
+		"hostname": "test", "os": "Ubuntu", "lan_ip": "10.0.0.5",
+	})
+	res, err := ts.Client().Post(ts.URL+"/api/agent/join", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer res.Body.Close()
 	var out struct {
-		AgentID     string `json:"agent_id"`
-		AgentSecret string `json:"agent_secret"`
+		AgentID string `json:"agent_id"`
+		Status  string `json:"status"`
 	}
 	_ = json.NewDecoder(res.Body).Decode(&out)
-	return out.AgentID, out.AgentSecret, res.StatusCode
+	return out.AgentID, secret, res.StatusCode
 }
 
-func TestEnroll_Flow(t *testing.T) {
+func TestJoin_Flow(t *testing.T) {
 	_, ts := newTestServer(t, Options{})
 
-	id1, secret1, code := enroll(t, ts, "TEST-CODE")
+	id1, secret1, code := join(t, ts, "TEST-KEY")
 	if code != http.StatusOK || id1 == "" || secret1 == "" {
-		t.Fatalf("birinchi enroll: code=%d id=%q", code, id1)
+		t.Fatalf("birinchi join: code=%d id=%q", code, id1)
 	}
 	if !strings.HasPrefix(id1, "ag_") {
 		t.Fatalf("agent_id formati: %q", id1)
 	}
-	// Takroriy: 409 + bir xil agent_id qaytadi
-	id2, _, code := enroll(t, ts, "TEST-CODE")
-	if code != http.StatusConflict || id2 != id1 {
-		t.Fatalf("takroriy enroll: code=%d id=%q", code, id2)
+	// Shu kalit bilan qayta so'rov — bir xil agent_id (polling yo'li).
+	id2, _, code := join(t, ts, "TEST-KEY")
+	if code != http.StatusOK || id2 != id1 {
+		t.Fatalf("takroriy join: code=%d id=%q", code, id2)
 	}
-	// Yolg'on kod: 401
-	if _, _, code = enroll(t, ts, "YOLGON"); code != http.StatusUnauthorized {
-		t.Fatalf("yolg'on kod: code=%d", code)
+	// Boshqa kalit — boshqa agent.
+	id3, _, code := join(t, ts, "BOSHQA-KEY")
+	if code != http.StatusOK || id3 == "" || id3 == id1 {
+		t.Fatalf("boshqa kalit: code=%d id=%q", code, id3)
 	}
 	// Rate limit: 10 urinishdan keyin 429
 	last := 0
 	for i := 0; i < 12; i++ {
-		_, _, last = enroll(t, ts, "YOLGON")
+		_, _, last = join(t, ts, "SPEED-"+string(rune('A'+i)))
 	}
 	if last != http.StatusTooManyRequests {
 		t.Fatalf("rate limit kutilmadi, oxirgi code=%d", last)
@@ -79,7 +87,7 @@ func TestEnroll_Flow(t *testing.T) {
 
 func TestWS_AuthWelcome(t *testing.T) {
 	s, ts := newTestServer(t, Options{})
-	id, secret, _ := enroll(t, ts, "TEST-CODE")
+	id, secret, _ := join(t, ts, "TEST-CODE")
 
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL(ts, id), nil)
 	if err != nil {
@@ -122,7 +130,7 @@ func TestWS_AuthWelcome(t *testing.T) {
 
 func TestWS_BadSecret_Close4003(t *testing.T) {
 	_, ts := newTestServer(t, Options{})
-	id, _, _ := enroll(t, ts, "TEST-CODE")
+	id, _, _ := join(t, ts, "TEST-CODE")
 
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL(ts, id), nil)
 	if err != nil {
@@ -138,7 +146,7 @@ func TestWS_BadSecret_Close4003(t *testing.T) {
 
 func TestWS_AuthTimeout_Close4002(t *testing.T) {
 	_, ts := newTestServer(t, Options{AuthTimeout: 200 * time.Millisecond})
-	id, _, _ := enroll(t, ts, "TEST-CODE")
+	id, _, _ := join(t, ts, "TEST-CODE")
 
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL(ts, id), nil)
 	if err != nil {
@@ -154,7 +162,7 @@ func TestWS_AuthTimeout_Close4002(t *testing.T) {
 
 func TestWS_WrongFirstMessage_Close4002(t *testing.T) {
 	_, ts := newTestServer(t, Options{})
-	id, _, _ := enroll(t, ts, "TEST-CODE")
+	id, _, _ := join(t, ts, "TEST-CODE")
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL(ts, id), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -169,7 +177,7 @@ func TestWS_WrongFirstMessage_Close4002(t *testing.T) {
 
 func TestWS_VersionMismatch_WelcomeThen4001(t *testing.T) {
 	_, ts := newTestServer(t, Options{MinVersion: 1, MaxVersion: 1})
-	id, secret, _ := enroll(t, ts, "TEST-CODE")
+	id, secret, _ := join(t, ts, "TEST-CODE")
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL(ts, id), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -245,10 +253,10 @@ func TestState_Persistentsiya(t *testing.T) {
 	dir := t.TempDir()
 	stateFile := dir + "/devserver.state.json"
 
-	o := Options{EnrollCode: "KOD", StateFile: stateFile}
+	o := Options{StateFile: stateFile}
 	s1 := New(o)
 	ts1 := httptest.NewServer(s1.Handler())
-	id, secret, code := enroll(t, ts1, "KOD")
+	id, secret, code := join(t, ts1, "KEY-1")
 	ts1.Close()
 	if code != http.StatusOK {
 		t.Fatalf("enroll: %d", code)
@@ -277,8 +285,11 @@ func TestState_Persistentsiya(t *testing.T) {
 	if env.Type != proto.MsgWelcome {
 		t.Fatalf("turi=%q", env.Type)
 	}
-	// Eski kod ham tiklanadi: takroriy enroll 409 qaytishi kerak
-	if _, _, c := enroll(t, ts2, "KOD"); c != http.StatusConflict {
-		t.Fatalf("takroriy enroll: %d, kutilgan 409", c)
+	// Join_key ham tiklanadi: shu kalit bilan qayta so'rov bir xil
+	// agent_id qaytaradi (agent disk state'ini yo'qotsa shu yo'l bilan
+	// tiklanadi).
+	id2, _, c := join(t, ts2, "KEY-1")
+	if c != http.StatusOK || id2 != id {
+		t.Fatalf("qayta join: code=%d id=%q (kutilgan %q)", c, id2, id)
 	}
 }

@@ -88,8 +88,10 @@ journalctl -u vmsagent -f
 
 ## Tiklashdan keyin nima kutiladi (to'g'rilash belgilari)
 
-1. Agent **qayta enroll'siz** ulanadi — `state.json` da `agent_id` va
-   `agent_secret_enc` bor, serverga `auth` shu bilan o'tadi (§3).
+1. Agent **qayta ulanish so‘rovisiz** ulanadi — `state.json` da `agent_id`,
+   `join_key` va keystore'da `agent_secret_enc` bor, serverga `auth` shu bilan
+   o'tadi (§3). State yo'qolsa: yangi `join_key` bilan yangi so‘rov —
+   admin tasdig‘i yoki IP preauth kerak bo'ladi.
 2. `journalctl` da `welcome qabul qilindi`, `cams_epoch` oldingi qiymatda.
 3. Lokal UI'da kameralar ro'yxati to'liq, `id` lar o'zgarmagan.
 4. Parollar ishlaydi (RTSP probe `online`) — demak `agent.key` + `secrets.bin`

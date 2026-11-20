@@ -140,12 +140,7 @@ func TestC3_H264WhipOpenUnder1500ms(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	res, err := agent.Enroll(ctx, h.srv.URL, agent.EnrollInfo{
-		Code: "KOD-1", Hostname: "joy-whip", OS: "Ubuntu 24.04", LanIP: "10.0.0.9", AgentVersion: "0.4.0",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	agentID, secret := joinAgent(t, h.srv.URL, "KEY-joy-whip", "joy-whip")
 	keyPath := filepath.Join(h.tempDir, "agent.key")
 	if _, err := keystore.NewKeyFile(keyPath); err != nil {
 		t.Fatal(err)
@@ -154,7 +149,7 @@ func TestC3_H264WhipOpenUnder1500ms(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ks.Put(keystore.RefAgentSecret, res.AgentSecret)
+	ks.Put(keystore.RefAgentSecret, secret)
 	if err := ks.Save(); err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +157,7 @@ func TestC3_H264WhipOpenUnder1500ms(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st.AgentID, st.ServerURL = res.AgentID, h.wsURL
+	st.AgentID, st.ServerURL = agentID, h.wsURL
 
 	cu, err := parseRTSP(camURL)
 	if err != nil {
@@ -173,7 +168,7 @@ func TestC3_H264WhipOpenUnder1500ms(t *testing.T) {
 	st.Cameras = []cams.Camera{cam}
 
 	cfg := agent.SessionConfig{
-		ServerURL: h.wsURL, AgentID: res.AgentID, Secret: res.AgentSecret,
+		ServerURL: h.wsURL, AgentID: agentID, Secret: secret,
 		AgentVersion: "0.4.0", Hostname: "joy-whip", BootID: "b-whip",
 		HbInterval: 200 * time.Millisecond, Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
@@ -193,12 +188,12 @@ func TestC3_H264WhipOpenUnder1500ms(t *testing.T) {
 		Sess: sess, MediaStart: mgr.OnStart, MediaStop: mgr.OnStop}
 	sess.SetOnMessage(hnd.Handle)
 	go func() { _ = sess.Run(ctx) }()
-	if !h.dev.WaitConnected(res.AgentID, 5*time.Second) {
+	if !h.dev.WaitConnected(agentID, 5*time.Second) {
 		t.Fatal("agent ulanmadi")
 	}
 
 	start := time.Now()
-	if err := h.dev.SendMediaStart(res.AgentID, proto.MediaStart{
+	if err := h.dev.SendMediaStart(agentID, proto.MediaStart{
 		SessionID: "se_whip", CameraID: "cam-w", Profile: "main", Kind: "play",
 		TTLS: 60, Ingest: "whip",
 		Publish: proto.Publish{Token: "tk-whip", URLs: proto.PublishURLs{WHIP: whip.ts.URL + "/whip"}},

@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -149,8 +152,9 @@ func (r *runtime) setSettings(in localui.Settings) error {
 	return nil
 }
 
-// enrollFromUI — UI orqali §3.1 ro'yxatdan o'tish va darhol ulanish.
-func (r *runtime) enrollFromUI(ctx context.Context, code string) error {
+// joinFromUI — UI tugmasi: so'rovni darhol yuborish (yoki holatini
+// so'rash). §3.1: kod yo'q — so'rov admin tasdig'ini kutadi.
+func (r *runtime) joinFromUI(ctx context.Context) error {
 	r.mu.Lock()
 	enrolled, agentID := r.st != nil && r.st.AgentID != "", ""
 	if r.st != nil {
@@ -160,11 +164,106 @@ func (r *runtime) enrollFromUI(ctx context.Context, code string) error {
 	if enrolled {
 		return fmt.Errorf("%w: %s", localui.ErrAlreadyEnrolled, agentID)
 	}
-	if err := r.enroll(ctx, code); err != nil {
-		return mapEnrollError(err)
+	if err := r.joinOnce(ctx); err != nil {
+		return mapJoinError(err)
 	}
-	r.requestReload(true)
 	return nil
+}
+
+// joinOnce — §3.1/§3.2: bitta so'rov yuborish yoki tasdiq holatini
+// so'rash (polling). Tasdiqlansa agent_id saqlanadi va sessiya
+// boshlanadi; pending bo'lsa keyingi urinish avtomatik davom etadi.
+func (r *runtime) joinOnce(ctx context.Context) error {
+	r.mu.Lock()
+	cname, st := r.cfg.ClientName, r.st
+	r.mu.Unlock()
+	if st == nil || st.ServerURL == "" {
+		return errors.New("join: server_url sozlanmagan")
+	}
+	if err := r.ensureJoinKeys(st); err != nil {
+		return err
+	}
+	secret, _ := r.ks.Get(keystore.RefAgentSecret)
+	res, err := agent.Join(ctx, st.ServerURL, agent.JoinInfo{
+		JoinKey: st.JoinKey, AgentSecret: secret, Hostname: hostname(),
+		Name: cname, OS: osVersion(), LanIP: lanIP(), AgentVersion: version,
+	})
+	if err != nil {
+		var je *agent.JoinError
+		if errors.As(err, &je) && je.Code == "rejected" {
+			st.JoinStatus = "rejected"
+		}
+		_ = st.Save()
+		r.setError(err)
+		return err
+	}
+	st.JoinStatus = res.Status
+	switch res.Status {
+	case "approved":
+		if st.AgentID != res.AgentID {
+			st.AgentID = res.AgentID
+			st.SecretRef = keystore.RefAgentSecret
+			r.requestReload(true)
+		}
+		r.log.Info("ulanish tasdiqlandi — sessiya boshlanadi",
+			"agent_id", res.AgentID, "request_id", res.RequestID)
+	case "pending":
+		r.log.Info("ulanish so'rovi yuborildi — admin tasdig'i kutilmoqda",
+			"request_id", res.RequestID, "server", redact.String(st.ServerURL))
+	case "rejected":
+		r.log.Warn("ulanish so'rovi rad etilgan — admin bilan bog'laning",
+			"request_id", res.RequestID)
+	}
+	if err := st.Save(); err != nil {
+		return fmt.Errorf("join: state saqlanmadi: %w", err)
+	}
+	return nil
+}
+
+// ensureJoinKeys — doimiy kalit va sir BIR MARTA yaratiladi (§3.1:
+// sirni agent o'zi yaratadi, server uni faqat hash ko'rinishida saqlaydi).
+func (r *runtime) ensureJoinKeys(st *statestore.State) error {
+	if st.JoinKey == "" {
+		b := make([]byte, 32)
+		if _, err := rand.Read(b); err != nil {
+			return fmt.Errorf("join: kalit entropy: %w", err)
+		}
+		st.JoinKey = hex.EncodeToString(b)
+	}
+	if sec, ok := r.ks.Get(keystore.RefAgentSecret); !ok || sec == "" {
+		b := make([]byte, 32)
+		if _, err := rand.Read(b); err != nil {
+			return fmt.Errorf("join: sir entropy: %w", err)
+		}
+		r.ks.Put(keystore.RefAgentSecret, base64.RawURLEncoding.EncodeToString(b))
+		if err := r.ks.Save(); err != nil {
+			return fmt.Errorf("join: sir saqlanmadi: %w", err)
+		}
+	}
+	return nil
+}
+
+// joinLoop — tasdiq kutilayotgan payt so'rovni muntazam takrorlaydi
+// (polling). Tasdiqlangach yoki agent to'xtatilgach tugaydi.
+func (r *runtime) joinLoop(ctx context.Context, every time.Duration) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		r.mu.Lock()
+		enrolled := r.st != nil && r.st.AgentID != ""
+		r.mu.Unlock()
+		if enrolled {
+			return
+		}
+		if err := r.joinOnce(ctx); err != nil {
+			r.log.Debug("join urinishi", "err", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
 }
 
 // currentSettings — lokal UI'ga joriy qiymatlarni qaytaradi (Save'dan
@@ -177,22 +276,20 @@ func (r *runtime) currentSettings() localui.Settings {
 	}
 }
 
-// mapEnrollError — serverning §3.1 xato kodlarini lokal UI tushunadigan
+// mapJoinError — serverning §3.2 xato kodlarini lokal UI tushunadigan
 // sentinel xatolarga aylantiradi (UI har biri uchun aniq matn ko‘rsatadi).
-func mapEnrollError(err error) error {
-	var ee *agent.EnrollError
-	if !errors.As(err, &ee) {
+func mapJoinError(err error) error {
+	var je *agent.JoinError
+	if !errors.As(err, &je) {
 		return err
 	}
-	switch ee.Code {
-	case "bad_code":
-		return fmt.Errorf("%w: %v", localui.ErrCodeInvalid, err)
-	case "already_enrolled":
-		return fmt.Errorf("%w: %v", localui.ErrCodeUsed, err)
-	case "name_taken":
-		return fmt.Errorf("%w: %v", localui.ErrNameTaken, err)
+	switch je.Code {
+	case "rejected":
+		return fmt.Errorf("%w: %v", localui.ErrJoinRejected, err)
 	case "rate_limited":
 		return fmt.Errorf("%w: %v", localui.ErrRateLimited, err)
+	case "bad_key":
+		return fmt.Errorf("%w: %v", localui.ErrBadKey, err)
 	}
 	return err
 }
@@ -208,7 +305,7 @@ func (r *runtime) requestReload(reconnect bool) {
 	}
 }
 
-func (r *runtime) bootstrap(ctx context.Context, enrollCode string) error {
+func (r *runtime) bootstrap(ctx context.Context) error {
 	if err := os.MkdirAll(r.cfg.StateDir, 0o750); err != nil {
 		return hintPerm(fmt.Errorf("state_dir: %w", err), r.cfg.StateDir)
 	}
@@ -242,50 +339,17 @@ func (r *runtime) bootstrap(ctx context.Context, enrollCode string) error {
 		st.ServerURL = r.cfg.ServerURL
 	}
 
-	// Birinchi ishga tushish: -enroll KOD berilgan bo'lsa yoki state bo'sh bo'lsa (§3.1)
-	if st.AgentID != "" && enrollCode != "" {
-		r.log.Warn("agent allaqachon ro'yxatdan o'tgan — `-enroll` kodi e'tiborga olinmadi",
-			"agent_id", st.AgentID)
-	}
+	// §3 (1.0-draft.10): kod yo'q — agent ulanish so'rovi yuboradi va
+	// admin tasdig'ini kutadi. Tasdiqlangach agent_id saqlanadi.
 	if st.AgentID == "" {
-		if enrollCode == "" {
-			r.log.Info("agent ro'yxatdan o'tmagan — UI yoki `-enroll KOD` orqali ulaning",
-				"server", redact.String(st.ServerURL))
-		} else if err := r.enroll(ctx, enrollCode); err != nil {
-			return err
+		if err := r.joinOnce(ctx); err != nil {
+			r.log.Info("ulanish so'rovi yuborilmadi — qayta uriladi",
+				"server", redact.String(st.ServerURL), "err", err)
 		}
 	}
 
 	r.caps = r.probeCaps(ctx)
 	r.sess = r.newSession()
-	return nil
-}
-
-// enroll — §3.1: agent_id/agent_secret olib, keystore+state'ga saqlash.
-func (r *runtime) enroll(ctx context.Context, code string) error {
-	host, _ := os.Hostname()
-	r.mu.Lock()
-	cname := r.cfg.ClientName
-	r.mu.Unlock()
-	res, err := agent.Enroll(ctx, r.st.ServerURL, agent.EnrollInfo{
-		Code: code, Hostname: host, OS: osVersion(), LanIP: lanIP(), AgentVersion: version,
-		Name: cname,
-	})
-	if err != nil {
-		r.setError(err)
-		return fmt.Errorf("enroll: %w", err)
-	}
-	r.ks.Put(keystore.RefAgentSecret, res.AgentSecret)
-	if err := r.ks.Save(); err != nil {
-		return fmt.Errorf("enroll: secret saqlanmadi: %w", err)
-	}
-	st := r.st
-	st.AgentID = res.AgentID
-	st.SecretRef = keystore.RefAgentSecret
-	if err := st.Save(); err != nil {
-		return fmt.Errorf("enroll: state saqlanmadi: %w", err)
-	}
-	r.log.Info("agent ro'yxatdan o'tdi", "agent_id", res.AgentID)
 	return nil
 }
 
@@ -397,7 +461,8 @@ func (r *runtime) statusFn() localui.Status {
 	defer r.mu.Unlock()
 	st := localui.Status{
 		Version: version, ServerOnline: r.online, AgentID: r.st.AgentID,
-		CamsTotal: len(r.st.Cameras), Publishes: 0, CamsEpoch: r.st.CamsEpoch,
+		JoinStatus: r.st.JoinStatus,
+		CamsTotal:  len(r.st.Cameras), Publishes: 0, CamsEpoch: r.st.CamsEpoch,
 		FFmpegOK: r.caps.FFmpegVersion != "",
 	}
 	// §17 holat chizig'i: oxirgi heartbeat + oxirgi xato (redaktor orqali).

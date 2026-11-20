@@ -107,7 +107,8 @@ func TestValidate_Errors(t *testing.T) {
 		{"noma'lum kalit", "server_url: ws://h:1\nnima: 5\n", "noma'lum kalit"},
 		{"noma'lum ichki kalit", "probe:\n  nima: 5\n", "probe"},
 		{"log_level noto'g'ri", "log_level: chat\n", "log_level"},
-		{"LAN bind PIN siz", "ui_bind: 0.0.0.0:8082\n", "ui_pin majburiy"},
+		// 1.0-draft.10: PIN olib tashlandi — LAN bind PIN'siz ham ruxsat.
+		{"LAN bind PIN'siz", "ui_bind: 0.0.0.0:8082\n", ""},
 		{"LAN bind PIN bilan", "ui_bind: 0.0.0.0:8082\nui_pin: \"1234\"\n", ""},
 		{"ui_bind format", "ui_bind: 127.0.0.1\n", "host:port"},
 		{"status_parallel katta", "probe:\n  status_parallel: 99\n", "status_parallel"},

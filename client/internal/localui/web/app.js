@@ -13,16 +13,13 @@ const I18N = {
   serverOnline: "server: connected",
   serverOffline: "server: disconnected",
   savedReconnect: "Saved — reconnecting…",
-  enrolled: "Enrolled — connecting…",
-  enrollFailed: "Enroll failed",
-  enrollAlready: "Already enrolled",
-  enrollNoCode: "Enter the 8-digit enrollment code first",
-  err_already_enrolled: "Already enrolled — remove state or use the server UI",
-  err_code_required: "Code is required",
-  err_enroll_failed: "Server rejected the code (check server URL, code and time)",
-  err_code_invalid: "Code is wrong or expired — ask the server for a new one",
-  err_code_used: "This code was already used — ask the server for a new one",
-  err_name_taken: "That connection name is taken on the server — choose another",
+  joinSent: "Request sent — waiting for the server admin to approve",
+  joinFailed: "Could not send the request",
+  joinAlready: "Already connected to the server",
+  err_already_enrolled: "Already connected to the server",
+  err_rejected: "The server rejected this request — contact the administrator",
+  err_bad_key: "Local key problem — check the agent's state directory",
+  err_join_failed: "Server not reachable — check the server URL",
   err_rate_limited: "Too many attempts — wait a few minutes",
 };
 
@@ -45,13 +42,11 @@ function showScreen(name) {
   load(name);
 }
 
-let agentPin = ""; // required for write actions (§10.3)
 let agentId = "";  // bo'sh → agent ro'yxatdan o'tmagan (Enroll faol)
 
 async function api(path, opts) {
   const o = Object.assign({ credentials: "same-origin" }, opts || {});
   o.headers = Object.assign({}, o.headers || {});
-  if (agentPin) o.headers["X-Agent-Pin"] = agentPin;
   const res = await fetch(path, o);
   if (res.status === 401) { toast(I18N.needPin, "err"); return null; }
   if (!res.ok) {
@@ -72,6 +67,7 @@ async function loadStatus() {
     const sa = $("#side-agent");
     if (sa) sa.textContent = st.agent_id ? st.agent_id.slice(0, 11) : "—";
     agentId = st.agent_id || "";
+    joinStatus = st.join_status || "";
     $("#txt-publishes").textContent = String(st.publishes ?? 0);
     const dot = $("#dot-server");
     dot.className = "dot " + (st.server_online ? "dot-ok" : "dot-off");
@@ -133,7 +129,7 @@ async function load(screen) {
   }
 }
 
-// --- settings & enrollment (§3.1, §17) ---
+// --- settings & join (§3.1, §17) ---
 async function loadSettings() {
   try {
     const st = await api("/api/ui/settings");
@@ -143,34 +139,39 @@ async function loadSettings() {
       if (st.log_level) $("#set-loglevel").value = st.log_level;
     }
   } catch (e) { /* eski versiyalarda bo'lmasligi mumkin */ }
+  // §3 holati: operator nima kutishini shu yerda ko'radi.
   const hint = $("#set-hint");
-  const btn = document.querySelector('[data-act="enroll"]');
+  const btn = document.querySelector('[data-act="join"]');
   if (agentId) {
-    if (hint) hint.textContent = "enrolled as " + agentId;
+    if (hint) hint.textContent = "connected as " + agentId;
     if (btn) btn.disabled = true;
+  } else if (joinStatus === "pending") {
+    if (hint) hint.textContent = "request sent — waiting for approval on the server (retried automatically)";
+    if (btn) btn.disabled = false;
+  } else if (joinStatus === "rejected") {
+    if (hint) hint.textContent = "request rejected by the server — contact the administrator";
+    if (btn) btn.disabled = false;
   } else {
-    if (hint) hint.textContent = "not enrolled — enter the 8-digit code from the server, then Enroll";
+    if (hint) hint.textContent = "not connected — press Request access, then approve in the server UI";
     if (btn) btn.disabled = false;
   }
 }
 
-async function enrollNow(btn) {
-  const code = ($("#set-code") ? $("#set-code").value : "").trim();
-  if (!code) { toast(I18N.enrollNoCode, "err"); return; }
+async function joinNow(btn) {
   const old = btn.textContent;
   btn.disabled = true;
-  btn.textContent = "Enrolling…";
+  btn.textContent = "Requesting…";
   try {
-    await api("/api/ui/enroll", {
+    await api("/api/ui/join", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code }),
+      body: "{}",
     });
-    toast(I18N.enrolled, "ok");
+    toast(I18N.joinSent, "ok");
     setTimeout(() => { loadStatus(); loadSettings(); }, 1500);
   } catch (e) {
     const key = e && e.body && e.body.error ? "err_" + e.body.error : null;
     const detail = e && e.body && e.body.detail ? " — " + e.body.detail : "";
-    toast((key && I18N[key] ? I18N[key] : I18N.enrollFailed) + detail, "err");
+    toast((key && I18N[key] ? I18N[key] : I18N.joinFailed) + detail, "err");
   } finally {
     btn.disabled = false;
     btn.textContent = old;
@@ -206,8 +207,8 @@ document.addEventListener("click", (ev) => {
       }) })
       .then(() => { toast(I18N.savedReconnect, "ok"); setTimeout(loadStatus, 1200); })
       .catch(() => toast(I18N.saveFailed, "err"));
-  } else if (act === "enroll") {
-    enrollNow(btn);
+  } else if (act === "join") {
+    joinNow(btn);
   } else if (act === "selftest") {
     runSelftest(btn);
   } else if (act === "scan-start") {

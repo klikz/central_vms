@@ -321,7 +321,7 @@ GET    /api/admin/media/state     faol sessionlar, yuklama, limit statistikasi
 GET    /api/admin/audit
 
 # agent (ochiq endpoint, auth yo'q — bir martalik kod + rate-limit 5/5 min)  [protocol.md §3]
-POST   /api/agent/enroll          {code, hostname, os, lan_ip, agent_version, caps}
+POST   /api/agent/join            {join_key, agent_secret, hostname, name, os, lan_ip, agent_version}
                                   → {agent_id, agent_secret, protocol_version}
                                   401 bad_code | 409 already_enrolled | 429 rate_limited
 ```
@@ -684,7 +684,7 @@ Yuqoridagi 1-bo'limdagi barcha bandlar **tasdiqlangan**. Qolgan noaniq nuqtalar 
 - **H.265 ingest — RTSP/TCP publish** (WHIP emas); H.264 ingest — WHIP. Sabab: MediaMTX'da H.265 WHIP ingest'i nisbatan yangi, RTSP esa barqaror — P3 riski kamayadi. **Qo'shimcha sabab (tasdiqlangan):** `pion/webrtc` v4'da **H.265 packetizer yo'q** (faqat Opus, PCM, H264, VP8, VP9) — H.265'ni WHIP orqali yuborish texnik jihatdan ham imkonsiz.
 - **Agent ingest kutubxonalari (tasdiqlangan):** `bluenviron/gortsplib` v4 (RTSP pull + H.265 RTSP/TCP publish — MediaMTX bilan bir xil RTSP implementatsiyasi, sof Go, qo'shimcha process yo'q) + `pion/webrtc` v4 (H.264 WHIP). FFmpeg faqat remux / B-frame re-encode / transcode / interop zaxirasi (`-f rtsp`, `-f whip`, FFmpeg ≥ 7.1).
 - **Kontrakt manbasi (tasdiqlangan):** `client/docs/protocol.md` (**1.0-draft.5**, 2026-11-20 holati) — client tomonida yozilgan va muzlatilgan; server S0'da `docs/protocol.md` ga ko'chiradi. Ziddiyat bo'lsa kontrakt kuchli.
-- **Enrollment endpoint (tasdiqlangan):** `POST /api/agent/enroll` (ochiq, rate-limit 5/5 min) → `{agent_id, agent_secret}`; WS'da `auth {agent_id, secret}` → `welcome` handshake; `agent_id` ni server beradi.
+- **Ulanish so‘rovi (1.0-draft.10, 2026-11-20):** `POST /api/agent/join` (ochiq; yangi so‘rovlar 5/5 min) → `{status: pending|approved|rejected, request_id, agent_id?}`. Avval: `POST /api/agent/enroll` (kod orqali) → `{agent_id, agent_secret}` — kod oqimi operator talabi bilan bekor qilindi, endi mijoz faqat server UI tasdig‘i yoki IP preauth orqali qo‘shiladi. WS'da `auth {agent_id, secret}` → `welcome` handshake; `agent_id` ni server beradi.
 - **Token semantikasi (tuzatilgan):** RTSP'da `?token=`, WHIP/WHEP'da `Authorization: Bearer`; token bir martalik emas — TTL davomida bitta session/path/action uchun qayta ishlatiladi (WHIP POST+PATCH+DELETE). Auth-hook `action` ro'yxatida `update` yo'q.
 - **Kamera `id` (tasdiqlangan):** UUIDv4 ni agent yaratadi va o'zgarmaydi; sync `cams_epoch` + `op: upsert|delete` orqali (o'chirish `cams_sync` ichida).
 - **Publish refcount + TTL watchdog (tasdiqlangan):** camera+profile+ingest bo'yicha bitta publish; publish TTL 60 s (`media_refresh`), WS uzilsa ham watchdog yopadi.

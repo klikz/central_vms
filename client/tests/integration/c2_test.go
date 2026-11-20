@@ -29,12 +29,7 @@ func TestC2_CamsSyncChunksAndEpoch(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	res, err := agent.Enroll(ctx, h.srv.URL, agent.EnrollInfo{
-		Code: "KOD-1", Hostname: "joy-02", OS: "Ubuntu 24.04", LanIP: "10.0.0.5", AgentVersion: "0.4.0",
-	})
-	if err != nil {
-		t.Fatalf("enroll: %v", err)
-	}
+	agentID, secret := joinAgent(t, h.srv.URL, "KEY-joy-02", "joy-02")
 
 	// --- keystore + state + camsvc (haqiqiy CRUD yo'li bilan) ---
 	keyPath := filepath.Join(h.tempDir, "agent.key")
@@ -49,9 +44,9 @@ func TestC2_CamsSyncChunksAndEpoch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st.AgentID, st.SecretRef = res.AgentID, keystore.RefAgentSecret
+	st.AgentID, st.SecretRef = agentID, keystore.RefAgentSecret
 	st.ServerURL = h.wsURL
-	ks.Put(keystore.RefAgentSecret, res.AgentSecret)
+	ks.Put(keystore.RefAgentSecret, secret)
 	if err := ks.Save(); err != nil {
 		t.Fatal(err)
 	}
@@ -68,9 +63,9 @@ func TestC2_CamsSyncChunksAndEpoch(t *testing.T) {
 	}
 
 	// --- sessiya + syncer ---
-	secret, _ := ks.Get(keystore.RefAgentSecret)
+	secret, _ = ks.Get(keystore.RefAgentSecret)
 	sess := agent.NewSession(agent.SessionConfig{
-		ServerURL: h.wsURL, AgentID: res.AgentID, Secret: secret,
+		ServerURL: h.wsURL, AgentID: agentID, Secret: secret,
 		AgentVersion: "0.4.0", CamsEpoch: st.CamsEpoch, Caps: proto.Caps{GPU: "nvenc"},
 		Clock: clock.Real{}, Log: testLog(t),
 	})
@@ -99,7 +94,7 @@ func TestC2_CamsSyncChunksAndEpoch(t *testing.T) {
 	// §14: uzluksiz sessiya (Run) — sync yuborish uchun ulanish ochiq turishi kerak
 	done := make(chan struct{}, 1)
 	go func() { sess.Run(ctx); close(done) }()
-	if !h.dev.WaitConnected(res.AgentID, 5*time.Second) {
+	if !h.dev.WaitConnected(agentID, 5*time.Second) {
 		t.Fatalf("agent ulanmadi; faollar: %v", h.dev.Connected())
 	}
 
@@ -112,7 +107,7 @@ func TestC2_CamsSyncChunksAndEpoch(t *testing.T) {
 		t.Fatalf("SyncIfRequired: %v", err)
 	}
 
-	seen := h.dev.CamsSyncSeen(res.AgentID)
+	seen := h.dev.CamsSyncSeen(agentID)
 	if len(seen) != 3 {
 		t.Fatalf("chunk'lar=%d, kutilgan 3 (250 kamera / ≤100)", len(seen))
 	}
@@ -137,13 +132,13 @@ func TestC2_CamsSyncChunksAndEpoch(t *testing.T) {
 	}
 
 	// --- epoch bir xil bo'lsa: drift yo'q → sync bo'lmaydi (§6.5.5) ---
-	before := len(h.dev.CamsSyncSeen(res.AgentID))
+	before := len(h.dev.CamsSyncSeen(agentID))
 	if err := sy.SyncIfRequired(proto.Welcome{
 		Compat: proto.Compat{OK: true}, CamsEpoch: st.CamsEpoch, NeedsFullSync: false,
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if after := len(h.dev.CamsSyncSeen(res.AgentID)); after != before {
+	if after := len(h.dev.CamsSyncSeen(agentID)); after != before {
 		t.Fatalf("epoch bir xil bo'lsa sync yuborilmasligi kerak edi: %d → %d", before, after)
 	}
 
@@ -157,7 +152,7 @@ func TestC2_CamsSyncChunksAndEpoch(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("delete'dan keyin sync: %v", err)
 	}
-	seen = h.dev.CamsSyncSeen(res.AgentID)
+	seen = h.dev.CamsSyncSeen(agentID)
 	var delIDs []string
 	for _, c := range seen[before:] {
 		for _, e := range c.Cameras {
@@ -175,18 +170,18 @@ func TestC2_CamsSyncChunksAndEpoch(t *testing.T) {
 	}
 
 	// --- cams_request (§5.1): server so'roqi → agent sync yuboradi ---
-	reqBefore := len(h.dev.CamsSyncSeen(res.AgentID))
-	if err := h.dev.Send(res.AgentID, proto.MsgCamsRequest, proto.CamsRequest{Full: true}); err != nil {
+	reqBefore := len(h.dev.CamsSyncSeen(agentID))
+	if err := h.dev.Send(agentID, proto.MsgCamsRequest, proto.CamsRequest{Full: true}); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if len(h.dev.CamsSyncSeen(res.AgentID)) > reqBefore {
+		if len(h.dev.CamsSyncSeen(agentID)) > reqBefore {
 			break
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	if len(h.dev.CamsSyncSeen(res.AgentID)) == reqBefore {
+	if len(h.dev.CamsSyncSeen(agentID)) == reqBefore {
 		t.Fatal("cams_request javob berilmadi — agent sync yubormadi")
 	}
 
@@ -204,10 +199,7 @@ func TestC2_StaleEpochRejected(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	res, err := agent.Enroll(ctx, h.srv.URL, agent.EnrollInfo{Code: "KOD-1", Hostname: "joy-03"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	agentID, secret := joinAgent(t, h.srv.URL, "KEY-joy-03", "joy-03")
 	keyPath := filepath.Join(h.tempDir, "agent.key")
 	if _, err := keystore.NewKeyFile(keyPath); err != nil {
 		t.Fatal(err)
@@ -217,7 +209,7 @@ func TestC2_StaleEpochRejected(t *testing.T) {
 		t.Fatal(err)
 	}
 	// §10.1: agent secret'i keystore'da saqlanadi — auth shu orqali o'tadi
-	ks.Put(keystore.RefAgentSecret, res.AgentSecret)
+	ks.Put(keystore.RefAgentSecret, secret)
 	if err := ks.Save(); err != nil {
 		t.Fatal(err)
 	}
@@ -233,9 +225,9 @@ func TestC2_StaleEpochRejected(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	secret, _ := ks.Get(keystore.RefAgentSecret)
+	secret, _ = ks.Get(keystore.RefAgentSecret)
 	sess := agent.NewSession(agent.SessionConfig{
-		ServerURL: h.wsURL, AgentID: res.AgentID, Secret: secret,
+		ServerURL: h.wsURL, AgentID: agentID, Secret: secret,
 		CamsEpoch: 1, Clock: clock.Real{}, Log: testLog(t),
 	})
 	sy := agent.NewSyncer(sess, st, clock.Real{}, discardLog())
@@ -245,11 +237,11 @@ func TestC2_StaleEpochRejected(t *testing.T) {
 	// §14: sessiya uzluksiz ishlaydi (Run — backoff bilan qayta ulanish);
 	// RunOnce bir marta ulanib, welcome'dan keyin yopadi — sync uchun Run kerak.
 	go sess.Run(ctx)
-	if !h.dev.WaitConnected(res.AgentID, 5*time.Second) {
+	if !h.dev.WaitConnected(agentID, 5*time.Second) {
 		t.Fatalf("agent ulanmadi; devserverdagi faollar: %v", h.dev.Connected())
 	}
 	// Serverda biznikidan KATTA epoch saqlangan → kelganimiz stale (§4.2)
-	h.dev.SetCamsEpoch(res.AgentID, 99)
+	h.dev.SetCamsEpoch(agentID, 99)
 
 	if err := sy.Push(1); err == nil {
 		t.Fatal("stale_epoch rad etilishi kerak edi")

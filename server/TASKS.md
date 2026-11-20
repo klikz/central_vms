@@ -245,6 +245,18 @@ ro‘yxatdan o‘tganida CreateClient `ErrExists` qaytargan va enroll chalkash
 `409 already_enrolled` degan (operator kodni ayblagan). Endi `ErrNameTaken` →
 `409 name_taken`, kod isrof bo‘lmaydi. Kontrakt: 1.0-draft.9.
 
+**Ulanish tartibi: kod → so‘rov + admin tasdig‘i (2026-11-20, operator
+talabi):** „ulanish kodini olib tashla. ulanish ruhsati faqat server UI dan
+tasdiqlanadi“. Endi agent `POST /api/agent/join` bilan so‘rov yuboradi
+(`join_key` doimiy, `agent_secret`ni agent o'zi yaratadi — serverda faqat
+sha256 hash, sir hech qachon qaytarmaydi), mijoz esa Boshqaruv sahifasidagi
+**Ulanish so‘rovlari** panelida tasdiqlangandan keyin yaratiladi.
+**IP bo‘yicha oldindan ruxsat** qo'shildi: operator server UI'dan IP/CIDR
+yozadi — shu manzildan kelgan so'rov avtomatik tasdiqlanadi (migratsiya
+0002: `join_requests`, `preauth_ips`; `enrollment_codes` tushirildi).
+Testagent `-join -name` bilan ishlaydi; e2e skriptlari so'rovni admin API
+orqali tasdiqlaydi. Kontrakt: 1.0-draft.10.
+
 **S3 qoldiqlari:** drag&drop (ro'yxat→katak, katak↔katak) va double-click
 fullscreen brauzer testi, layout saqlash/yuklash/default UI, favorites
 reorder, pagination'da eski oqimlarni darhol stop (kodda bor, brauzer
@@ -260,9 +272,10 @@ testi yo'q), `browser_caps` yuborish, `getStats()` monitoring taklifi,
   `status='online'` deb qolgan mijozlar "jonli" bo'lib ko'rinadi — agent o'ldirilgan
   bo'lsa ham. Startda barcha mijozlar offline qilinadi (keyin `hello` online qiladi)
   yoki muddatidan ko'ra eski `last_seen` offline hisoblanadi.
-- [ ] **Mijozlarni tozalash:** `DELETE /api/clients/{id}` (faqat admin, offline bo'lsa) —
-  test/offlayn qoldiqlari `clients.name` UNIQUE bo'lgani uchun kerakli nomni band
-  qilib qo'yadi (`name_taken`, 1.0-draft.9); dev DB'da shunday 3 ta qoldiq bor.
+- [ ] **Mijozlarni tozalash:** endpoint mavjud (`DELETE /api/admin/clients/{id}`,
+  Boshqaruv sahifasida „O‘chirish“ tugmasi) — lekin eski/offlayn qoldiqlar
+  `clients.name` UNIQUE bo'lgani uchun kerakli nomni band qilib qo'yishi mumkin;
+  dev DB'da shunday qoldiqlar bor, ular UI orqali o'chiriladi.
 
 - [ ] Retention: `sessions`/`audit_log` 90 kundan eski o'chiriladi (cron-ish job vmsd ichida)
 - [ ] `deploy/backup.sh`: SQLite `VACUUM INTO` kundalik; journald disk chegarasi

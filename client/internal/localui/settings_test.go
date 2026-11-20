@@ -111,43 +111,46 @@ func TestSettings_SaveFailureReported(t *testing.T) {
 	}
 }
 
-// UI orqali ro'yxatdan o'tish: kod 8 xonali son, bo'sh joy/tire bilan
-// yozilsa ham qabul bo'ladi.
-func TestEnrollEndpoint(t *testing.T) {
-	var got string
-	ts := newDepsServer(t, "", Deps{Enroll: func(_ context.Context, code string) error {
-		got = code
+// UI tugmasi: §3.1 ulanish so'rovi (kod so'ralmaydi).
+func TestJoinEndpoint(t *testing.T) {
+	called := false
+	ts := newDepsServer(t, "", Deps{JoinNow: func(context.Context) error {
+		called = true
 		return nil
 	}})
-	res := postJSON(t, ts.URL+"/api/ui/enroll", map[string]string{"code": "4173 9265"}, "")
+	res := postJSON(t, ts.URL+"/api/ui/join", map[string]string{}, "")
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("holat: %d", res.StatusCode)
 	}
-	if got != "41739265" {
-		t.Fatalf("kod normallashtirilmadi: %q", got)
+	if !called {
+		t.Fatal("join chaqirilmadi")
 	}
 }
 
-func TestEnrollEndpointErrors(t *testing.T) {
+func TestJoinEndpointErrors(t *testing.T) {
 	cases := []struct {
 		name   string
-		enroll func(context.Context, string) error
-		body   map[string]string
+		join   func(context.Context) error
 		want   int
 		wantEr string
 	}{
-		{"bo'sh kod", func(context.Context, string) error { return nil }, map[string]string{"code": "  "}, http.StatusBadRequest, "code_required"},
-		{"allaqachon", func(context.Context, string) error {
+		{"allaqachon ulangan", func(context.Context) error {
 			return fmt.Errorf("%w: ag_1", ErrAlreadyEnrolled)
-		}, map[string]string{"code": "11112222"}, http.StatusConflict, "already_enrolled"},
-		{"server rad etdi", func(context.Context, string) error {
-			return fmt.Errorf("enroll: HTTP 401 (bad_code)")
-		}, map[string]string{"code": "11112222"}, http.StatusBadGateway, "enroll_failed"},
+		}, http.StatusConflict, "already_enrolled"},
+		{"server rad etdi", func(context.Context) error {
+			return fmt.Errorf("%w: HTTP 403 (rejected)", ErrJoinRejected)
+		}, http.StatusForbidden, "rejected"},
+		{"urinishlar chegarasi", func(context.Context) error {
+			return fmt.Errorf("%w: HTTP 429", ErrRateLimited)
+		}, http.StatusTooManyRequests, "rate_limited"},
+		{"boshqa xato", func(context.Context) error {
+			return fmt.Errorf("join: HTTP 0 (ulanib bo'lmadi)")
+		}, http.StatusBadGateway, "join_failed"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			ts := newDepsServer(t, "", Deps{Enroll: c.enroll})
-			res := postJSON(t, ts.URL+"/api/ui/enroll", c.body, "")
+			ts := newDepsServer(t, "", Deps{JoinNow: c.join})
+			res := postJSON(t, ts.URL+"/api/ui/join", map[string]string{}, "")
 			if res.StatusCode != c.want {
 				t.Fatalf("holat %d, kutilgan %d", res.StatusCode, c.want)
 			}
@@ -160,57 +163,13 @@ func TestEnrollEndpointErrors(t *testing.T) {
 	}
 }
 
-// PIN qo'yilgan bo'lsa yozuv amallari PIN'siz bajarilmasligi kerak (§10.3).
-func TestEnrollEndpoint_RequiresPin(t *testing.T) {
+// 1.0-draft.10: PIN olib tashlandi — yozuv amallari PIN'siz bajariladi
+// (operator talabi; eski §10.3 qoidasi bekor qilindi).
+func TestJoinEndpoint_NoPin(t *testing.T) {
 	called := false
-	ts := newDepsServer(t, "1234", Deps{Enroll: func(context.Context, string) error { called = true; return nil }})
-	res := postJSON(t, ts.URL+"/api/ui/enroll", map[string]string{"code": "11112222"}, "")
-	if res.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("PIN'siz qabul qilindi: %d", res.StatusCode)
-	}
-	if called {
-		t.Fatal("PIN'siz enroll bajarildi")
-	}
-	res = postJSON(t, ts.URL+"/api/ui/enroll", map[string]string{"code": "11112222"}, "1234")
+	ts := newDepsServer(t, "1234", Deps{JoinNow: func(context.Context) error { called = true; return nil }})
+	res := postJSON(t, ts.URL+"/api/ui/join", map[string]string{}, "")
 	if res.StatusCode != http.StatusOK || !called {
-		t.Fatalf("PIN bilan ishlamadi: %d called=%v", res.StatusCode, called)
-	}
-}
-
-// Nom — serverda ko'rinadigan nom: UI'da ortiqcha bo'sh joylar tozalanadi
-// va so'rov runtime'ga tozalangan holda yetadi.
-func TestSettings_NameSanitized(t *testing.T) {
-	var got Settings
-	ts := newDepsServer(t, "", Deps{SetSettings: func(v Settings) error { got = v; return nil }})
-	res := putJSON(t, ts.URL+"/api/ui/settings", map[string]string{"name": "  Oxangaron\tuy   "}, "")
-	if res.StatusCode != http.StatusOK {
-		t.Fatalf("holat: %d", res.StatusCode)
-	}
-	if got.Name != "Oxangaron uy" {
-		t.Fatalf("nom tozalanmadi: %q", got.Name)
-	}
-}
-
-// Save'dan keyin javob yangi qiymatlarni qaytarsin: Server o'zida
-// konfiguratsiya nusxasini saqlaydi, uni yangilash yetarli emas (2026-11-20:
-// PUT javobida eski nom qaytayotgandi).
-func TestSettings_ResponseReflectsSavedValues(t *testing.T) {
-	cur := Settings{ServerURL: "ws://old:8081", LogLevel: "info", Name: "Eski"}
-	ts := newDepsServer(t, "", Deps{
-		SetSettings: func(v Settings) error { cur = v; return nil },
-		GetSettings: func() Settings { return cur },
-	})
-	res := putJSON(t, ts.URL+"/api/ui/settings", map[string]string{
-		"server_url": "ws://new:8081", "name": "Oxangaron",
-	}, "")
-	if res.StatusCode != http.StatusOK {
-		t.Fatalf("holat: %d", res.StatusCode)
-	}
-	var got Settings
-	if err := json.NewDecoder(res.Body).Decode(&got); err != nil {
-		t.Fatalf("javob: %v", err)
-	}
-	if got.Name != "Oxangaron" || got.ServerURL != "ws://new:8081" {
-		t.Fatalf("javob eskicha: %+v", got)
+		t.Fatalf("PIN'siz ishlamadi: %d called=%v", res.StatusCode, called)
 	}
 }

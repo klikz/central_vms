@@ -6,8 +6,8 @@
 # Maxfiy fayllar (agent parollari, agent.key) git'ga kirmaydi (§4.3).
 
 server_url: ws://192.168.1.10:8081      # ws:// yoki wss:// (host:port majburiy)
-ui_bind: 127.0.0.1:8082                 # LAN manzili qo'yilsa ui_pin MAJBURIY (§10.3)
-ui_pin: ""                              # bo'sh = PIN yo'q (faqat localhost holatida ruxsat)
+ui_bind: 127.0.0.1:8082                 # LAN manziliga qo'yilsa agent ogohlantiradi
+ui_pin: ""                              # BEKOR qilindi (1.0-draft.10) — o'qiladi, ishlatilmaydi
 client_name: ""                       # serverda ko‘rinadigan nom (masalan: Oxangaron)
 state_dir: /var/lib/vmsagent
 key_file: /etc/vmsagent/agent.key

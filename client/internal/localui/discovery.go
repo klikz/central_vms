@@ -61,10 +61,6 @@ func (s *Server) handleDiscoveryScan(w http.ResponseWriter, r *http.Request) {
 	if !s.discoveryReady(w) {
 		return
 	}
-	if !s.checkPin(r) {
-		pinErr(w)
-		return
-	}
 	if err := s.discovery.StartScan(); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "scan_failed", "detail": err.Error()})
 		return
@@ -99,10 +95,6 @@ func (s *Server) handleDiscoveryResults(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleDiscoveryAdd(w http.ResponseWriter, r *http.Request) {
 	if !s.discoveryReady(w) {
-		return
-	}
-	if !s.checkPin(r) {
-		pinErr(w)
 		return
 	}
 	var req addRequest

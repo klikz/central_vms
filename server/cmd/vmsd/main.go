@@ -127,11 +127,9 @@ func run() error {
 		Reg:    reg,
 		Tokens: tokens,
 		Login:  auth.NewRate(5, 5*time.Minute, nil),
-		Enroll: auth.NewRate(cfg.Enrollment.RatePer5m, 5*time.Minute, nil),
 		Audit:  audit.New(db),
-		Enr: wsagent.NewEnrollment(db, reg,
-			time.Duration(cfg.Enrollment.TTLH)*time.Hour,
-			cfg.Enrollment.RatePer5m, 5*time.Minute, nil),
+		// §3: ulanish so'rovlari (kod bekor qilindi — 1.0-draft.10).
+		Join:  wsagent.NewJoiner(db, reg, lg, cfg.Join.RatePer5m, nil),
 		Agent: hub,
 		Lg:    lg,
 	}
