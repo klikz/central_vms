@@ -256,6 +256,14 @@ testi yo'q), `browser_caps` yuborish, `getStats()` monitoring taklifi,
 ## S4 — Qotirish, kuzatish, deploy (≈3–4 kun) — *Dependence: S2, S3*
 
 - [ ] Admin panel: `settings` limitlari, `/api/admin/media/state` (faol sessiyalar, FFmpeg jarayonlari, **tanlangan transcode backend + GPU sessiyalari (aniqlangan usulda)**, navbat), audit ko'rinishi
+- [ ] **Eski holatni tiklash (2026-11-20 kuzatildi):** server qayta boshlansa, DB'da
+  `status='online'` deb qolgan mijozlar "jonli" bo'lib ko'rinadi — agent o'ldirilgan
+  bo'lsa ham. Startda barcha mijozlar offline qilinadi (keyin `hello` online qiladi)
+  yoki muddatidan ko'ra eski `last_seen` offline hisoblanadi.
+- [ ] **Mijozlarni tozalash:** `DELETE /api/clients/{id}` (faqat admin, offline bo'lsa) —
+  test/offlayn qoldiqlari `clients.name` UNIQUE bo'lgani uchun kerakli nomni band
+  qilib qo'yadi (`name_taken`, 1.0-draft.9); dev DB'da shunday 3 ta qoldiq bor.
+
 - [ ] Retention: `sessions`/`audit_log` 90 kundan eski o'chiriladi (cron-ish job vmsd ichida)
 - [ ] `deploy/backup.sh`: SQLite `VACUUM INTO` kundalik; journald disk chegarasi
 - [ ] MediaMTX tuning tekshiruvi: `writeQueueSize: 1024`, protokollar cheklangan; **v1.11.3'da `udpReadBufferSize` yo'q — UDP bufferi `sysctl net.core.rmem_max=100000000` orqali (install-notes.md)**; `pprof` + `/metrics`
