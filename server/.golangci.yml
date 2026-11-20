@@ -1,0 +1,39 @@
+# golangci-lint konfiguratsiyasi — server TASKS §0.4 (medium effort: statik tekshiruv quvuri).
+# qoidalar: client/docs/protocol.md §18.2 va client/TASKS.md §0 (client/.golangci.yml bilan bir xil to'plam).
+# golangci-lint o'rnatilmasa `make lint` go vet + gofmt bilan cheklangan holda ogohlantiradi.
+run:
+  timeout: 3m
+  tests: true
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck        # tekshirilmagan xatolar
+    - govet           # go vet
+    - staticcheck     # saas-qoidalar (S1xxx, SAxxxx)
+    - ineffassign     # keraksiz tayinlashlar
+    - contextcheck    # ctx zanjiri buzilmasligi (TASKS §0.3)
+    - goleak          # goroutine sizib chiqishi (testlarda)
+    - copyloopvar     # ts=tt loop xatosi
+    - nilerr          # err != nil qaytarsa nil err
+    - errorlint       # %w zanjiri va == taqqoslash
+    - revive          # uslub
+    - unused          # ishlatilmagan kod
+    - unconvert       # keraksiz tur almashtirish
+    - misspell        # imlo
+    - gofmt           # format
+
+linters-settings:
+  revive:
+    rules:
+      - name: exported
+        disabled: true      # ichki paketlar uchun majburiy emas
+  errcheck:
+    check-type-assertions: true
+  govet:
+    enable-all: true
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0

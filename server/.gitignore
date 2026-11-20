@@ -1,0 +1,17 @@
+# Build chiqishi (root REJA §4.1) — git'da saqlanmaydi
+build/
+
+# MediaMTX binary'si `make media-get` orqali yuklanadi (versiya Makefile'da qulflangan)
+mediamtx/mediamtx
+
+# Maxfiy sozlamalar (root REJA §4.3)
+config/*.local.yaml
+
+# Frontend
+webui/node_modules/
+webui/dist/
+
+# Muhit/operatsion chiqindilar
+*.log
+*.local.json
+.DS_Store
