@@ -5,9 +5,11 @@ import { Sidebar } from "../components/Sidebar";
 import { CameraList } from "../components/CameraList";
 import { VideoGrid } from "../components/VideoGrid";
 import { Cell } from "../components/Cell";
+import { LayoutBar } from "../components/LayoutBar";
 import { useStore } from "../store";
 import { PreviewScheduler } from "../lib/preview";
 import { DEFAULT_GRID, GRIDS, gridCells, keyAction } from "../lib/limits";
+import { addCamera, assign as slotAssign, autoFill, clear as slotClear, pageCount, swap as slotSwap, type Slot } from "../lib/slots";
 import { t } from "../lib/i18n";
 import type { Camera } from "../lib/api";
 
@@ -34,12 +36,9 @@ export function MonitorPage() {
 
   const names = useMemo(() => Object.fromEntries(cams.map((c) => [c.id, c.name])), [cams]);
   const perPage = gridCells(n);
-  const pages = Math.max(1, Math.ceil(cams.length / perPage));
-  const auto = useMemo(() => {
-    const start = page * perPage;
-    return cams.slice(start, start + perPage).map((c) => c.id);
-  }, [cams, page, perPage]);
-  const slots: (string | null)[] = (manual ?? auto).slice(0, perPage);
+  const pages = pageCount(cams.length, perPage);
+  const auto = useMemo(() => autoFill(cams.map((c) => c.id), page, perPage), [cams, page, perPage]);
+  const slots: Slot[] = manual ?? auto;
 
   // Joy/client/sahifa o'zgarsa — qo'yilgan tartib bekor qilinadi va eski
   // oqimlar darhol to'xtaydi (kataklar unmount bo'ladi).
@@ -55,46 +54,15 @@ export function MonitorPage() {
     return () => document.removeEventListener("visibilitychange", on);
   }, []);
 
-  const assign = useCallback(
-    (i: number, camId: string) => {
-      setManual((prev) => {
-        const arr = [...(prev ?? auto)];
-        while (arr.length < perPage) arr.push(null);
-        arr[i] = camId;
-        return arr;
-      });
-    },
-    [auto, perPage],
-  );
-  const swap = useCallback(
-    (a: number, b: number) => {
-      setManual((prev) => {
-        const arr = [...(prev ?? auto)];
-        while (arr.length < perPage) arr.push(null);
-        [arr[a], arr[b]] = [arr[b], arr[a]];
-        return arr;
-      });
-    },
-    [auto, perPage],
-  );
-  const clear = useCallback(
-    (i: number) => {
-      setManual((prev) => {
-        const arr = [...(prev ?? auto)];
-        while (arr.length < perPage) arr.push(null);
-        arr[i] = null;
-        return arr;
-      });
-    },
-    [auto, perPage],
-  );
-  const addFirstEmpty = useCallback(
-    (cam: Camera) => {
-      const i = slots.findIndex((s) => !s);
-      if (i >= 0) assign(i, cam.id);
-    },
-    [slots, assign],
-  );
+  const assign = useCallback((i: number, camId: string) => setManual((p) => slotAssign(p ?? auto, i, camId, perPage)), [auto, perPage]);
+  const swap = useCallback((a: number, b: number) => setManual((p) => slotSwap(p ?? auto, a, b, perPage)), [auto, perPage]);
+  const clear = useCallback((i: number) => setManual((p) => slotClear(p ?? auto, i, perPage)), [auto, perPage]);
+  const addFirstEmpty = useCallback((cam: Camera) => setManual((p) => addCamera(p ?? auto, cam.id, perPage)), [auto, perPage]);
+  const applyLayout = useCallback((g: number, sl: Slot[]) => {
+    setN(g);
+    setManual(sl);
+    setPage(0);
+  }, []);
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -124,6 +92,7 @@ export function MonitorPage() {
           <button onClick={() => setPage((p) => Math.max(0, p - 1))}>←</button>
           <button onClick={() => setPage((p) => Math.min(pages - 1, p + 1))}>→</button>
           <span className="spacer" />
+          <LayoutBar grid={n} slots={slots} onApply={applyLayout} />
           <span className="muted">{t("kbd.help")}</span>
           <span className="badge">
             {t("admin.sessions")}: {store.active}

@@ -161,6 +161,46 @@ async function main() {
   await waitFor(`document.querySelectorAll(".grid .cell").length === 16`, 5000, "4x4 grid");
   check(true, "klaviatura: 4 → 4×4 grid");
 
+  // Layout: saqlash → standart qilish → sahifani qayta yuklab tiklash.
+  const camName = await js(`const el=document.querySelector(".cam-item .cam-name"); return el ? el.textContent : "";`);
+  await js(`
+    const set = (el, v) => {
+      const proto = el.tagName === "SELECT" ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(proto, "value").set.call(el, v);
+      el.dispatchEvent(new Event(el.tagName === "SELECT" ? "change" : "input", { bubbles: true }));
+    };
+    const inp = [...document.querySelectorAll("input")].find((i) => i.placeholder === "Nomi");
+    if (!inp) throw new Error("layout input topilmadi");
+    set(inp, "Test layout");
+    const save = [...document.querySelectorAll("button")].find((b) => b.textContent === "Layoutni saqlash");
+    save.click();
+    return true;
+  `);
+  await waitFor(`[...document.querySelectorAll("select option")].some((o) => o.textContent.includes("Test layout"))`, 6000, "layout ro'yxatda");
+  await js(`
+    const sel = document.querySelector("select");
+    const opt = [...sel.options].find((o) => o.textContent.includes("Test layout"));
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(sel, opt.value);
+    sel.dispatchEvent(new Event("change", { bubbles: true }));
+    const def = [...document.querySelectorAll("button")].find((b) => b.textContent === "Standart");
+    def.click();
+    return true;
+  `);
+  await new Promise((r) => setTimeout(r, 800));
+  await send("Page.navigate", { url: `${BASE}/monitor` });
+  let restored = false;
+  try {
+    await waitFor(
+      `[...document.querySelectorAll(".grid .cell .label")].some((e) => e.textContent === ${JSON.stringify(camName)})`,
+      12000,
+      "layout tiklandi",
+    );
+    restored = true;
+  } catch {
+    restored = false;
+  }
+  check(restored, "layout saqlandi va qayta yuklashda tiklandi", camName);
+
   // Page Visibility: tab yashirinsa oqim to'xtashi kerak. Chrome headless'da
   // haqiqiy yashirish yo'q — document.hidden/visibilityState override qilinadi
   // (ilova aynan shu signalni o'qiydi).

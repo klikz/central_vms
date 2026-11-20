@@ -143,10 +143,10 @@ o'qiladi (kamera boshida bitta FFmpeg).
 - [x] Grid 1x1–4x4 (default 3x3); joy tanlanganda **avtomatik to'ldirish** (`position` bo'yicha); pagination (sahifa o'zgarganda eski oqimlar darhol stop)
 - [ ] Drag&drop: ro'yxatdan katakka, ikki katakni almashtirish; double-click → fullscreen + `main`
 - [x] Klaviatura: `1/2/3/4`, `←/→`, `Esc` (testda tasdiqlangan)
-- [ ] Favorites (⭐, reorder); Layouts: saqlash/yuklash/default, aralash joy; o'chirilgan kamera sloti → bo'sh katak
+- [x] *(qisman)* Favorites (⭐); Layouts: saqlash/yuklash/default (brauzer testida tiklandi); **favorites reorder — S3.7 qoldig'i**, aralash joy; o'chirilgan kamera sloti → bo'sh katak
 - [x] **IntersectionObserver + Page Visibility** — ko'rinmayotgan katak / yashirin tab → oqim stop
 - [x] Holatlar: spinner, "transcode boshlandi…", "navbatda", limit toastlari, offline belgilar, xato + "qayta urinish"
-- [ ] `browser_caps` (HEVC aniqlash) birinchi ulanishda yuboriladi
+- [x] `browser_caps` (HEVC aniqlash) har play/preview'da yuboriladi va transcode qaroriga ta'sir qiladi (commit 23bc7c4)
 - [ ] `getStats()` monitoring: yomon inbound bitrate → avtomatik past profil haqidagi taklif (keyin to'liq avtomatik)
 
 **Qabul:** 2 user parallel 15 tadan kamera; layout saqlanadi/tiklanadi; preview og'irlik yaratmaydi; tab yashirinsa barcha oqim to'xtaydi; UI to'liq o'zbekcha.
