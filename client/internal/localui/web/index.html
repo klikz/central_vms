@@ -119,12 +119,13 @@
     <div class="screen-head"><h1>Settings</h1></div>
     <div class="form" id="settings-form">
       <label class="field"><span>Server URL</span><input id="set-server" class="mono" placeholder="ws://192.168.1.10:8081"></label>
-      <label class="field"><span>Enrollment code</span><input id="set-code" class="mono" placeholder="one-time code"></label>
+      <label class="field"><span>Enrollment code</span><input id="set-code" class="mono" inputmode="numeric" placeholder="8 xonali son / 8-digit code"></label>
       <label class="field"><span>UI PIN</span><input id="set-pin" type="password"></label>
       <label class="field"><span>Log level</span>
         <select id="set-loglevel"><option>debug</option><option selected>info</option><option>warn</option><option>error</option></select></label>
       <button class="btn btn-primary" data-act="save">Save</button>
       <button class="btn" data-act="enroll">Enroll (connect)</button>
+      <p class="muted mono" id="set-hint" style="margin:6px 0 0"></p>
     </div>
   </section>
 

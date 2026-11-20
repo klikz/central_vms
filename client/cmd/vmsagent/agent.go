@@ -32,10 +32,15 @@ import (
 
 // runtime — agentning ish vaqtidagi bog'lamalari (kontrakt §3.2, §10.1).
 type runtime struct {
-	cfg  config.Config
-	log  *slog.Logger
-	ring *logbuf.Ring
-	logw *logx.Writer // alohida CLIENT log fayli (nil → faqat terminal)
+	cfg     config.Config
+	cfgPath string // konfig fayl yo'li ("Save" shu yerga yozadi)
+	log     *slog.Logger
+	ring    *logbuf.Ring
+	logw    *logx.Writer // alohida CLIENT log fayli (nil → faqat terminal)
+
+	// reloadCh — UI "Save"/"Enroll" bosilganda main sikli sessiyani qayta
+	// boshlaydi (SIGHUP bilan bir xil yo'l). Qiymat: majburiy reconnect.
+	reloadCh chan bool
 
 	ks *keystore.Store
 	st *statestore.State
@@ -78,6 +83,90 @@ func hintPerm(err error, path string) error {
 }
 
 // bootstrap — keystore/statestore ochish, kerak bo'lsa enroll, sessiyani tayyorlash.
+// setSettings — lokal UI "Save": qiymatlarni FAYLGA yozadi, state.json'ni
+// yangilaydi va sessiyani qayta boshlashni so'raydi.
+//
+// Bu bo'lmaganda UI'dagi Server URL faqat UI'ning o'z nusxasida o'zgalar edi:
+// agent esa state.json'dagi eski manzilga ulanishda davom etardi
+// (2026-11-20 operator xatosi — "log hali 192.168.1.10 da").
+func (r *runtime) setSettings(serverURL, logLevel string) error {
+	upd := map[string]string{}
+	if serverURL != "" {
+		upd["server_url"] = serverURL
+	}
+	if logLevel != "" {
+		upd["log_level"] = logLevel
+	}
+	if len(upd) == 0 {
+		return nil
+	}
+	if r.cfgPath == "" {
+		return errors.New("konfig fayl yo'li noma'lum")
+	}
+	if err := config.SetValues(r.cfgPath, upd); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	urlChanged := false
+	if serverURL != "" && serverURL != r.cfg.ServerURL {
+		r.cfg.ServerURL = serverURL
+		urlChanged = true
+	}
+	if logLevel != "" {
+		r.cfg.LogLevel = logLevel
+	}
+	if r.st != nil {
+		if serverURL != "" && r.st.ServerURL != serverURL {
+			r.st.ServerURL = serverURL
+			urlChanged = true
+		}
+	}
+	r.mu.Unlock()
+	if logLevel != "" {
+		setLogLevel(logLevel)
+	}
+	if urlChanged && r.st != nil {
+		if err := r.st.Save(); err != nil {
+			return fmt.Errorf("state saqlanmadi: %w", err)
+		}
+	}
+	if urlChanged {
+		r.requestReload(true)
+		r.log.Info("server_url yangilandi — sessiya qayta boshlanadi",
+			"server", redact.String(serverURL))
+	}
+	return nil
+}
+
+// enrollFromUI — UI orqali §3.1 ro'yxatdan o'tish va darhol ulanish.
+func (r *runtime) enrollFromUI(ctx context.Context, code string) error {
+	r.mu.Lock()
+	enrolled, agentID := r.st != nil && r.st.AgentID != "", ""
+	if r.st != nil {
+		agentID = r.st.AgentID
+	}
+	r.mu.Unlock()
+	if enrolled {
+		return fmt.Errorf("%w: %s", localui.ErrAlreadyEnrolled, agentID)
+	}
+	if err := r.enroll(ctx, code); err != nil {
+		return err
+	}
+	r.requestReload(true)
+	return nil
+}
+
+// requestReload — main sikliga signal (to'lgan bo'lsa takrorlamaymiz).
+func (r *runtime) requestReload(reconnect bool) {
+	if r.reloadCh == nil {
+		return
+	}
+	select {
+	case r.reloadCh <- reconnect:
+	default:
+	}
+}
+
 func (r *runtime) bootstrap(ctx context.Context, enrollCode string) error {
 	if err := os.MkdirAll(r.cfg.StateDir, 0o750); err != nil {
 		return hintPerm(fmt.Errorf("state_dir: %w", err), r.cfg.StateDir)

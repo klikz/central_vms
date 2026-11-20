@@ -86,6 +86,14 @@ type Deps struct {
 	// oxirgi natijalarni qaytaradi (ikkalari nil bo'lsa endpoint 501).
 	SelftestRun  func(ctx context.Context) []selftest.Result
 	SelftestLast func() []selftest.Result
+	// SetSettings — UI "Save" bosilganda: qiymatlar FAYLGA yoziladi va
+	// sessiya yangi manzil bilan qayta boshlanadi (runtime bajaradi).
+	// Avval bu yo'q edi: UI o'z nusxasini o'zgartirardi, agent esa eski
+	// manzilga ulanishda davom etardi (2026-11-20 operator xatosi).
+	SetSettings func(serverURL, logLevel string) error
+	// Enroll — UI orqali ro'yxatdan o'tish (§3.1): kod bilan serverga
+	// so'rov, natijada agent_id/secret saqlanadi va sessiya boshlanadi.
+	Enroll func(ctx context.Context, code string) error
 }
 
 // Server — lokal UI (:8082). Faqat 127.0.0.1 bind qilinishi shart (§10.3).
@@ -97,6 +105,8 @@ type Server struct {
 	selftestRun  func(ctx context.Context) []selftest.Result
 	selftestLast func() []selftest.Result
 	logLines     func(limit int) []string
+	setSettings  func(serverURL, logLevel string) error
+	enroll       func(ctx context.Context, code string) error
 	cams         CamService
 	discovery    DiscoveryService
 	snap         SnapshotSource
@@ -116,7 +126,8 @@ func NewServer(cfg config.Config, log *slog.Logger, version string, d Deps) (*Se
 	}
 	s := &Server{cfg: cfg, log: log, version: version, status: d.Status,
 		selftestRun: d.SelftestRun, selftestLast: d.SelftestLast,
-		logLines: d.LogLines, cams: d.Cams, discovery: d.Discovery, snap: d.Snapshots, mux: http.NewServeMux()}
+		logLines: d.LogLines, setSettings: d.SetSettings, enroll: d.Enroll,
+		cams: d.Cams, discovery: d.Discovery, snap: d.Snapshots, mux: http.NewServeMux()}
 	s.routes()
 	return s, nil
 }
@@ -140,6 +151,7 @@ func (s *Server) routes() {
 		writeJSON(w, http.StatusOK, s.status())
 	})
 	s.mux.HandleFunc("/api/ui/settings", s.handleSettings)
+	s.mux.HandleFunc("POST /api/ui/enroll", s.handleEnroll)
 	s.mux.HandleFunc("/api/ui/selftest", s.handleSelftest)
 	s.camRoutes()
 	s.discoveryRoutes()
@@ -245,10 +257,70 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad_log_level"})
 			return
 		}
+		if s.setSettings != nil {
+			if err := s.setSettings(strings.TrimSpace(in.ServerURL), in.LogLevel); err != nil {
+				s.log.Warn("sozlama saqlanmadi", "err", err.Error())
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "save_failed", "detail": err.Error()})
+				return
+			}
+		}
 		writeJSON(w, http.StatusOK, Settings{ServerURL: s.cfg.ServerURL, LogLevel: s.cfg.LogLevel})
 	default:
 		methodErr(w)
 	}
+}
+
+// ErrAlreadyEnrolled — UI orqali qayta ro'yxatdan o'tishga urinish
+// (runtime bu xatoni o'rab qaytaradi; javobda aniq kod ko'rsatiladi).
+var ErrAlreadyEnrolled = errors.New("localui: agent allaqachon ro'yxatdan o'tgan")
+
+// handleEnroll — POST /api/ui/enroll {code}. Kod 8 xonali son (§3.1),
+// lekin foydalanuvchi qulayligi uchun bo'sh joy/tire yuboriladi.
+func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
+	if !s.checkPin(r) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "pin_required"})
+		return
+	}
+	if s.enroll == nil {
+		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "enroll_unavailable"})
+		return
+	}
+	var in struct {
+		Code string `json:"code"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad_json"})
+		return
+	}
+	code := normalizeCode(in.Code)
+	if code == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "code_required"})
+		return
+	}
+	if err := s.enroll(r.Context(), code); err != nil {
+		switch {
+		case errors.Is(err, ErrAlreadyEnrolled):
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "already_enrolled"})
+		default:
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "enroll_failed", "detail": err.Error()})
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// normalizeCode — bo'sh joy/tire/pastki chiziqni yuborish (server ham
+// shunday qiladi; UI'da "4173 9265" deb yozish mumkin).
+func normalizeCode(code string) string {
+	out := make([]rune, 0, len(code))
+	for _, r := range code {
+		switch r {
+		case ' ', '\t', '-', '_':
+			continue
+		}
+		out = append(out, r)
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // checkPin — yozuv amallari uchun PIN (§10.3). Bo'sh PIN = talab qilinmaydi

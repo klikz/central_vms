@@ -1,7 +1,7 @@
 # CLIENT vazifalar (C0 → C4) — **medium effort rejimiga moslashtirilgan**
 
 Belgilar: `[ ]` bajarilmagan, `[x]` bajarilgan. **Dependence** — qaysi vazifa oldin/tayyor bo'lishi kerak.
-Kontrakt: **`docs/protocol.md`** (shu papkada, 1.0-draft.7 — **yozilgan va muzlatilgan**). Server uni
+Kontrakt: **`docs/protocol.md`** (shu papkada, 1.0-draft.8 — **yozilgan va muzlatilgan**). Server uni
 S0'da o'z `docs/` ga ko'chiradi; shu sababli client serverni kutmaydi. `devserver` mock bilan
 C1→C3 to'liq parallel yuradi.
 
@@ -302,6 +302,26 @@ ishlaydi; SIGTERM'dan keyin serverda "yetim" sessiyalar qolmaydi.
 - **G4** (C3.10 oxiri): refcount + watchdog + stop testlari — o'tmasa transcode/fallback qadamlari boshlanmaydi.
 - **G5** (C3.20): `make itest SCENARIO=all` — o'tmasa C4 boshlanmaydi.
 
-Kalit nuqta: **kontrakt yozilgan va muzlatilgan** (`client/docs/protocol.md`, 1.0-draft.7) — client
+**Amaliyotda topilgan va tuzatilgan (2026-11-20, ikkinchi PC'dagi client):**
+- Lokal UI'dagi **Save** `server_url`ni faqat UI'ning o'z xotirasidagi
+  konfiguratsiya nusxasiga yozardi (`NewServer(cfg)` qiymat bilan beriladi).
+  Agent esa `state.json`dagi eski manzilga ulanaverardi — operator „manzilni
+  to'g'rladik, lekin log eski IP'ni ko'rsatyapti‘ degan holat shu edi.
+  Endi Save: (1) `config.SetValues` bilan konfig faylga yozadi (izohlar
+  saqlanadi, atomik almashtirish), (2) `state.json` manzilini yangilaydi,
+  (3) sessiyani qayta boshlaydi (SIGHUP bilan bitta yo'l), (4) `log_level`
+  `slog.LevelVar` orqali darhol kuchga kiradi.
+- Lokal UI'dagi **Enroll** tugmasi umulansan ishlamasdi (handler yo'q edi).
+  Endi `POST /api/ui/enroll {code}` (§17.1, 1.0-draft.8) orqali ro'yxatdan
+  o'tadi va darhol ulanadi; kod 8 xonali son, bo'sh joy/tire bardoshli;
+  xatolar aniq kod bilan (`already_enrolled`, `code_required`, `enroll_failed`).
+- UI Sozlamalar ekrani endi joriy `server_url`/`log_level` bilan ochiladi va
+  „ro'yxatdan o'tgan/o'tmagan‘ holatini ko'rsatadi.
+- Brauzer orqali tasdiqlangan sinov: agent `ws://192.168.1.10:8081` bilan
+  ishga tushdi (ulanalmayapti) → UI'da manzil almashtirildi + Save → sessiya
+  qayta boshlandi → Enroll (kod bo'sh joy bilan yuborildi) → `server_online:
+  true`, server ro'yxatida mijoz paydo bo'ldi, fayl va state yangilangan.
+
+Kalit nuqta: **kontrakt yozilgan va muzlatilgan** (`client/docs/protocol.md`, 1.0-draft.8) — client
 serverni kutmaydi; medium effort rejimida har qadamda `Kontrakt §` ko'rsatilgan, shu sababli
 "qanday bo'lishi kerak" degan savol kod yozish paytida tug'ilmaydi.

@@ -82,17 +82,31 @@ func newLogger(level string, ring *logbuf.Ring, file *logx.Writer) *slog.Logger 
 }
 
 // newLoggerAt — terminal yozuvchi inject qilinadi (test uchun).
+// agentLevel — barcha loggerlar shu o'zgaruvchini ishlatadi: UI orqali
+// log_level o'zgarsa qayta qurish talab qilinmaydi, darhol kuchga kiradi.
+var agentLevel = new(slog.LevelVar)
+
 func newLoggerAt(level string, ring *logbuf.Ring, file *logx.Writer, term io.Writer) *slog.Logger {
 	var lvl slog.Level
 	if err := lvl.UnmarshalText([]byte(level)); err != nil {
 		lvl = slog.LevelInfo
 	}
+	agentLevel.Set(lvl)
 	out := io.Writer(term)
 	if file != nil && file.Enabled() {
 		out = io.MultiWriter(term, file)
 	}
-	text := slog.NewTextHandler(out, &slog.HandlerOptions{Level: lvl})
+	text := slog.NewTextHandler(out, &slog.HandlerOptions{Level: agentLevel})
 	return slog.New(redact.NewHandlerWithNext(logbuf.NewHandler(text, ring)))
+}
+
+// setLogLevel — UI "Save" orqali: noto'g'ri nom bo'lsa info da qoladi.
+func setLogLevel(name string) {
+	var lvl slog.Level
+	if err := lvl.UnmarshalText([]byte(name)); err != nil {
+		lvl = slog.LevelInfo
+	}
+	agentLevel.Set(lvl)
 }
 
 // defaultLogFile — config o'qilmagan holatda ham xatolar tushadigan
@@ -152,7 +166,7 @@ func run(ctx context.Context, log *slog.Logger, cfgPath, enrollCode string,
 		log.Info("log fayli", "path", logw.Path(), "max_mb", cfg.LogMaxMB, "keep", cfg.LogKeep)
 	}
 
-	rt := &runtime{cfg: cfg, log: log, ring: ring}
+	rt := &runtime{cfg: cfg, cfgPath: cfgPath, log: log, ring: ring, reloadCh: make(chan bool, 1)}
 	rt.selftest = rt.newSelftest() // C4.6 paneli (deps'lar lazy o'qiydi)
 	// C3.20: registry + media boshqaruvchisi (hodisalar o'zaro bog'langan).
 	rt.media = media.New(media.Config{
@@ -187,6 +201,10 @@ func run(ctx context.Context, log *slog.Logger, cfgPath, enrollCode string,
 		Snapshots:    pv,
 		SelftestRun:  func(ctx context.Context) []selftest.Result { return rt.selftest.Run(ctx) },
 		SelftestLast: func() []selftest.Result { return rt.selftest.Last() },
+		// UI "Save" → faylga yozish + sessiyani qayta boshlash;
+		// UI "Enroll" → §3.1 ro'yxatdan o'tish va darhol ulanish.
+		SetSettings: rt.setSettings,
+		Enroll:      rt.enrollFromUI,
 	})
 	if err != nil {
 		return fmt.Errorf("lokal UI: %w", err)
@@ -201,6 +219,44 @@ func run(ctx context.Context, log *slog.Logger, cfgPath, enrollCode string,
 	// §4.6: media_stats — 10 s'da bir faol publish'larni yig'adi (C3.15).
 	stats := publish.NewStats(rt.publishes, clockReal(), rt.media.StatsSource, rt.media.StatsEmit)
 	go stats.Run(ctx)
+
+	// reload — §9.4: config qayta o'qiladi, publish'lar uzilmaydi.
+	// SIGHUP va UI "Save"/"Enroll" bitta yo'lni ishlatadi (xulq bir xil).
+	reload := func(force bool) {
+		nc, err := config.Load(cfgPath)
+		if err != nil {
+			log.Warn("config qayta o'qilmadi", "err", redact.Err(err))
+			return
+		}
+		rt.mu.Lock()
+		serverChanged := nc.ServerURL != rt.cfg.ServerURL
+		rt.cfg = nc
+		rt.mu.Unlock()
+		if nc.LogFile != cfg.LogFile || nc.LogMaxMB != cfg.LogMaxMB || nc.LogKeep != cfg.LogKeep {
+			if nw, werr := openLogFile(&nc); werr != nil {
+				log.Error("log fayli qayta ochilmadi", "path", nc.LogFile, "err", redact.Err(werr))
+			} else {
+				old := rt.logw
+				rt.logw = nw
+				if old != nil {
+					_ = old.Close()
+				}
+				logw = nw
+			}
+		}
+		rt.log = newLogger(nc.LogLevel, ring, logw)
+		log = rt.log
+		log.Info("config qayta o'qildi", "log_level", nc.LogLevel, "server_url", redact.String(nc.ServerURL))
+		if rt.st != nil && (serverChanged || force) {
+			rt.st.ServerURL = nc.ServerURL
+			if err := rt.st.Save(); err != nil {
+				log.Warn("state saqlanmadi", "err", redact.Err(err))
+			}
+			sessStop()
+			sessStop = rt.startSession(ctx)
+			log.Info("sessiya qayta boshlandi", "server", redact.String(nc.ServerURL))
+		}
+	}
 
 	for {
 		select {
@@ -227,39 +283,12 @@ func run(ctx context.Context, log *slog.Logger, cfgPath, enrollCode string,
 			}
 			return nil
 		case <-sighup:
-			// §9.4: config qayta o'qiladi, publish'lar uzilmaydi.
-			nc, err := config.Load(cfgPath)
-			if err != nil {
-				log.Warn("SIGHUP: config qayta o'qilmadi", "err", redact.Err(err))
-				continue
-			}
-			rt.mu.Lock()
-			serverChanged := nc.ServerURL != rt.cfg.ServerURL
-			rt.cfg = nc
-			rt.mu.Unlock()
-			if nc.LogFile != cfg.LogFile || nc.LogMaxMB != cfg.LogMaxMB || nc.LogKeep != cfg.LogKeep {
-				if nw, werr := openLogFile(&nc); werr != nil {
-					log.Error("SIGHUP: log fayli qayta ochilmadi", "path", nc.LogFile, "err", redact.Err(werr))
-				} else {
-					old := rt.logw
-					rt.logw = nw
-					if old != nil {
-						_ = old.Close()
-					}
-					logw = nw
-				}
-			}
-			rt.log = newLogger(nc.LogLevel, ring, logw)
-			log.Info("config qayta o'qildi", "log_level", nc.LogLevel, "server_url", redact.String(nc.ServerURL))
-			if serverChanged && rt.st != nil {
-				rt.st.ServerURL = nc.ServerURL
-				if err := rt.st.Save(); err != nil {
-					log.Warn("state saqlanmadi", "err", redact.Err(err))
-				}
-				sessStop()
-				sessStop = rt.startSession(ctx)
-				log.Info("server_url o'zgardi — sessiya qayta boshlandi")
-			}
+			reload(false)
+		case force := <-rt.reloadCh:
+			// UI "Save"/"Enroll": fayl allaqachon yangilangan; force=true
+			// bo'lsa manzil o'zgarmasa ham sessiya qayta boshlanadi
+			// (ro'yxatdan o'tgandan keyin darhol ulanish uchun).
+			reload(force)
 		}
 	}
 }

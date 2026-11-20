@@ -12,6 +12,14 @@ const I18N = {
   scanDone: (n) => `${n} camera(s) found`,
   serverOnline: "server: connected",
   serverOffline: "server: disconnected",
+  savedReconnect: "Saved — reconnecting…",
+  enrolled: "Enrolled — connecting…",
+  enrollFailed: "Enroll failed",
+  enrollAlready: "Already enrolled",
+  enrollNoCode: "Enter the 8-digit enrollment code first",
+  err_already_enrolled: "Already enrolled — remove state or use the server UI",
+  err_code_required: "Code is required",
+  err_enroll_failed: "Server rejected the code (check server URL, code and time)",
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -34,6 +42,7 @@ function showScreen(name) {
 }
 
 let agentPin = ""; // required for write actions (§10.3)
+let agentId = "";  // bo'sh → agent ro'yxatdan o'tmagan (Enroll faol)
 
 async function api(path, opts) {
   const o = Object.assign({ credentials: "same-origin" }, opts || {});
@@ -41,7 +50,11 @@ async function api(path, opts) {
   if (agentPin) o.headers["X-Agent-Pin"] = agentPin;
   const res = await fetch(path, o);
   if (res.status === 401) { toast(I18N.needPin, "err"); return null; }
-  if (!res.ok) throw new Error(path + ": HTTP " + res.status);
+  if (!res.ok) {
+    const e = new Error(path + ": HTTP " + res.status);
+    try { e.body = await res.json(); } catch (_) { /* JSON bo'lmasa bo'sh */ }
+    throw e;
+  }
   return res.status === 204 ? null : res.json();
 }
 
@@ -54,6 +67,7 @@ async function loadStatus() {
     $("#txt-cams").textContent = `${st.cams_online ?? 0}/${st.cams_total ?? 0}`;
     const sa = $("#side-agent");
     if (sa) sa.textContent = st.agent_id ? st.agent_id.slice(0, 11) : "—";
+    agentId = st.agent_id || "";
     $("#txt-publishes").textContent = String(st.publishes ?? 0);
     const dot = $("#dot-server");
     dot.className = "dot " + (st.server_online ? "dot-ok" : "dot-off");
@@ -106,11 +120,55 @@ async function load(screen) {
   await loadStatus();
   if (screen === "cams") await loadCams();
   if (screen === "discovery") await loadDiscovery();
+  if (screen === "settings") await loadSettings();
   if (screen === "log") {
     try {
       const r = await api("/api/ui/log?limit=200");
       $("#log-out").textContent = (r && r.lines && r.lines.length) ? r.lines.join("\n") : "log is empty";
     } catch (e) { /* older versions have no log endpoint */ }
+  }
+}
+
+// --- settings & enrollment (§3.1, §17) ---
+async function loadSettings() {
+  try {
+    const st = await api("/api/ui/settings");
+    if (st) {
+      if (!$("#set-server").value) $("#set-server").value = st.server_url || "";
+      if (st.log_level) $("#set-loglevel").value = st.log_level;
+    }
+  } catch (e) { /* eski versiyalarda bo'lmasligi mumkin */ }
+  const hint = $("#set-hint");
+  const btn = document.querySelector('[data-act="enroll"]');
+  if (agentId) {
+    if (hint) hint.textContent = "enrolled as " + agentId;
+    if (btn) btn.disabled = true;
+  } else {
+    if (hint) hint.textContent = "not enrolled — enter the 8-digit code from the server, then Enroll";
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function enrollNow(btn) {
+  const code = ($("#set-code") ? $("#set-code").value : "").trim();
+  if (!code) { toast(I18N.enrollNoCode, "err"); return; }
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Enrolling…";
+  try {
+    await api("/api/ui/enroll", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+    toast(I18N.enrolled, "ok");
+    setTimeout(() => { loadStatus(); loadSettings(); }, 1500);
+  } catch (e) {
+    const key = e && e.body && e.body.error ? "err_" + e.body.error : null;
+    const detail = e && e.body && e.body.detail ? " — " + e.body.detail : "";
+    toast((key && I18N[key] ? I18N[key] : I18N.enrollFailed) + detail, "err");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
   }
 }
 
@@ -137,7 +195,10 @@ document.addEventListener("click", (ev) => {
   if (act === "save") {
     api("/api/ui/settings", { method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ server_url: $("#set-server").value, log_level: $("#set-loglevel").value }) })
-      .then(() => toast(I18N.saved, "ok")).catch(() => toast(I18N.saveFailed, "err"));
+      .then(() => { toast(I18N.savedReconnect, "ok"); setTimeout(loadStatus, 1200); })
+      .catch(() => toast(I18N.saveFailed, "err"));
+  } else if (act === "enroll") {
+    enrollNow(btn);
   } else if (act === "selftest") {
     runSelftest(btn);
   } else if (act === "scan-start") {
