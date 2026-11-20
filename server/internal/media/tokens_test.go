@@ -10,15 +10,30 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 
 	"central-vms/server/internal/store"
 )
 
-type fakeClock struct{ t time.Time }
+type fakeClock struct {
+	mu sync.Mutex
+	t  time.Time
+}
 
-func (c *fakeClock) Now() time.Time { return c.t }
+func (c *fakeClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.t
+}
+
+// advance — testdan vaqtni oldinga surish (menejer tick'lari shuni ko'radi).
+func (c *fakeClock) advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.t = c.t.Add(d)
+}
 
 func newTokens(t *testing.T) (*Tokens, *fakeClock) {
 	t.Helper()

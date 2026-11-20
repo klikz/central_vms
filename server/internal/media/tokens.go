@@ -91,6 +91,25 @@ func (t *Tokens) Lookup(raw string) (*TokenRec, error) {
 	return &r, nil
 }
 
+// Extend — token muddatini uzaytirish (media_refresh; §7.1).
+func (t *Tokens) Extend(raw string, extend time.Duration) error {
+	rec, err := t.Lookup(raw)
+	if err != nil || rec == nil {
+		return fmt.Errorf("token uzatish: topilmadi yoki eskirgan")
+	}
+	cur, perr := time.Parse(time.RFC3339, rec.ExpiresAt)
+	if perr != nil {
+		return perr
+	}
+	newExp := cur.Add(extend)
+	if t.clock.Now().After(cur) {
+		newExp = t.clock.Now().Add(extend)
+	}
+	_, err = t.db.Exec(`UPDATE media_tokens SET expires_at=? WHERE token_hash=?`,
+		newExp.UTC().Format(time.RFC3339), hashToken(raw))
+	return err
+}
+
 // Sweep — muddati o'tgan tokenlarni tozalash (S4 backup/retention bilan birga).
 func (t *Tokens) Sweep() (int64, error) {
 	res, err := t.db.Exec("DELETE FROM media_tokens WHERE expires_at < ?", t.clock.Now().Format(time.RFC3339))

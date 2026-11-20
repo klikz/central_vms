@@ -13,29 +13,29 @@ import (
 
 // Config — config.yaml to'liq sxemasi.
 type Config struct {
-	Bind     string `yaml:"bind"`      // vmsd API/WS porti (default :8081)
-	WebDir   string `yaml:"web_dir"`   // UI statikasi (build/web), diskdan serve
-	DBPath   string `yaml:"db_path"`   // SQLite fayli (WAL)
+	Bind       string `yaml:"bind"`    // vmsd API/WS porti (default :8081)
+	WebDir     string `yaml:"web_dir"` // UI statikasi (build/web), diskdan serve
+	DBPath     string `yaml:"db_path"` // SQLite fayli (WAL)
 	Migrations string `yaml:"migrations_dir"`
 
 	MediaMTX struct {
-		ControlURL  string `yaml:"control_url"`   // MediaMTX HTTP API (default http://127.0.0.1:9997)
+		ControlURL   string `yaml:"control_url"`    // MediaMTX HTTP API (default http://127.0.0.1:9997)
 		AuthHookBind string `yaml:"auth_hook_bind"` // vmsd ichidagi /internal/auth bindi (127.0.0.1:8189)
-		WebRTCPort  int    `yaml:"webrtc_port"`   // WHEP/WHIP porti (8889) — URL qurish uchun
-		RTSPPort    int    `yaml:"rtsp_port"`     // 8554 — rtsp_tc URL uchun
-		HLSPort     int    `yaml:"hls_port"`      // 8888 — fallback
-		PublicHost  string `yaml:"public_host"`   // brauzer/agent ko'radigan manzil (bo'sh → bind host'i)
+		WebRTCPort   int    `yaml:"webrtc_port"`    // WHEP/WHIP porti (8889) — URL qurish uchun
+		RTSPPort     int    `yaml:"rtsp_port"`      // 8554 — rtsp_tc URL uchun
+		HLSPort      int    `yaml:"hls_port"`       // 8888 — fallback
+		PublicHost   string `yaml:"public_host"`    // brauzer/agent ko'radigan manzil (bo'sh → bind host'i)
 	} `yaml:"mediamtx"`
 
 	Auth struct {
-		JWTSecret    string `yaml:"jwt_secret"`      // kamida 32 belgi; bo'sh bo'lsa VMSD_JWT_SECRET
-		AccessTTLMin int    `yaml:"access_ttl_min"`  // default 15
+		JWTSecret    string `yaml:"jwt_secret"`       // kamida 32 belgi; bo'sh bo'lsa VMSD_JWT_SECRET
+		AccessTTLMin int    `yaml:"access_ttl_min"`   // default 15
 		RefreshTTLD  int    `yaml:"refresh_ttl_days"` // default 7
 	} `yaml:"auth"`
 
 	Enrollment struct {
-		TTLH       int `yaml:"ttl_h"`        // bir martalik kod amaldagi muddati (24)
-		RatePer5m  int `yaml:"rate_per_5m"`  // /api/agent/enroll rate-limit (5)
+		TTLH      int `yaml:"ttl_h"`       // bir martalik kod amaldagi muddati (24)
+		RatePer5m int `yaml:"rate_per_5m"` // /api/agent/enroll rate-limit (5)
 	} `yaml:"enrollment"`
 
 	Limits struct {
@@ -46,13 +46,13 @@ type Config struct {
 	} `yaml:"limits"`
 
 	Media struct {
-		IdleStopS       int `yaml:"idle_stop_s"`        // 10 (preview ~1)
-		SessionTTLMin   int `yaml:"session_ttl_min"`    // 5
-		SessionRenewMin int `yaml:"session_renew_min"`  // 2
-		PublishTTLS     int `yaml:"publish_ttl_s"`      // 60 (media_start.ttl_s)
-		ReadTokenTTLS   int `yaml:"read_token_ttl_s"`   // 30
-		MaxTranscodes   int `yaml:"server_max_transcodes"` // 5 boshlang'ich; probe yangilaydi
-		FFmpegPath      string `yaml:"ffmpeg_path"`     // default "ffmpeg"
+		IdleStopS       int    `yaml:"idle_stop_s"`           // 10 (preview ~1)
+		SessionTTLMin   int    `yaml:"session_ttl_min"`       // 5
+		SessionRenewMin int    `yaml:"session_renew_min"`     // 2
+		PublishTTLS     int    `yaml:"publish_ttl_s"`         // 60 (media_start.ttl_s)
+		ReadTokenTTLS   int    `yaml:"read_token_ttl_s"`      // 30
+		MaxTranscodes   int    `yaml:"server_max_transcodes"` // 5 boshlang'ich; probe yangilaydi
+		FFmpegPath      string `yaml:"ffmpeg_path"`           // default "ffmpeg"
 	} `yaml:"media"`
 
 	RetentionDays int    `yaml:"retention_days"` // sessions/audit_log 90 kun

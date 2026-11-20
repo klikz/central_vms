@@ -136,8 +136,26 @@ func (c *Conn) dispatch(env proto.Envelope) error {
 	case proto.MsgHB, proto.MsgPong, proto.MsgSecretRotated, proto.MsgCodecFixDone,
 		proto.MsgDiscoveryDone, proto.MsgSelftestDone:
 		return c.hub.registry.MarkClientSeen(c.clientID)
-	case proto.MsgMediaReady, proto.MsgMediaStopped, proto.MsgMediaStats:
-		// S2: session manager qabul qiladi (hozircha idle hisobi uchun seen).
+	case proto.MsgMediaReady:
+		var m proto.MediaReady
+		if err := json.Unmarshal(env.Data, &m); err != nil {
+			return err
+		}
+		c.hub.deliverMedia(func(sk MediaSink) { sk.OnMediaReady(c.agentID, m) })
+		return c.hub.registry.MarkClientSeen(c.clientID)
+	case proto.MsgMediaStopped:
+		var m proto.MediaStopped
+		if err := json.Unmarshal(env.Data, &m); err != nil {
+			return err
+		}
+		c.hub.deliverMedia(func(sk MediaSink) { sk.OnMediaStopped(c.agentID, m) })
+		return c.hub.registry.MarkClientSeen(c.clientID)
+	case proto.MsgMediaStats:
+		var m proto.MediaStats
+		if err := json.Unmarshal(env.Data, &m); err != nil {
+			return err
+		}
+		c.hub.deliverMedia(func(sk MediaSink) { sk.OnMediaStats(c.agentID, m) })
 		return c.hub.registry.MarkClientSeen(c.clientID)
 	default:
 		return nil

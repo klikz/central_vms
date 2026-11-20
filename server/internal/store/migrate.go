@@ -59,7 +59,7 @@ func MigrateUp(db *sql.DB, dir string) ([]int, error) {
 		if err := execTx(db, string(b)); err != nil {
 			return done, fmt.Errorf("migrate %04d (%s): %w", u.ver, filepath.Base(u.name), err)
 		}
-		if _, err := db.Exec("INSERT INTO schema_migrations (version) VALUES ($1)", u.ver); err != nil {
+		if _, err := db.Exec("INSERT INTO schema_migrations (version) VALUES (?)", u.ver); err != nil {
 			return done, fmt.Errorf("migrate %04d: journal: %w", u.ver, err)
 		}
 		done = append(done, u.ver)
@@ -94,7 +94,7 @@ func MigrateDown(db *sql.DB, dir string) (int, error) {
 	if err := execTx(db, string(b)); err != nil {
 		return last, fmt.Errorf("migrate down %04d: %w", last, err)
 	}
-	if _, err := db.Exec("DELETE FROM schema_migrations WHERE version = $1", last); err != nil {
+	if _, err := db.Exec("DELETE FROM schema_migrations WHERE version = ?", last); err != nil {
 		return last, fmt.Errorf("migrate down %04d: journal: %w", last, err)
 	}
 	return last, nil

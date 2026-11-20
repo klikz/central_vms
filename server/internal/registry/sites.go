@@ -96,6 +96,19 @@ func (r *Registry) CreateClient(name string, siteID int64, agentID, secretHash s
 }
 
 // GetClientByAgentID — WS handshake shu maydon orqali (index: UNIQUE).
+// GetClientByID — id bo'yicha client (sessiya menejeri camera.ClientID orqali
+// agent_id'ni topadi — protocol.md §7: kamera id'si agentniki).
+func (r *Registry) GetClientByID(id int64) (Client, error) {
+	var c Client
+	err := r.db.QueryRow(
+		`SELECT id, COALESCE(site_id,0), name, agent_id, agent_secret_hash, status, version, os, lan_ip, caps_json,
+		        max_uploads, max_transcodes, transcode_mode, enrolled_at, COALESCE(last_seen_at,'')
+		 FROM clients WHERE id = ?`, id).
+		Scan(&c.ID, &c.SiteID, &c.Name, &c.AgentID, &c.AgentSecretHash, &c.Status, &c.Version, &c.OS, &c.LanIP,
+			&c.CapsJSON, &c.MaxUploads, &c.MaxTranscodes, &c.TranscodeMode, &c.EnrolledAt, &c.LastSeenAt)
+	return c, wrap(err, "client o'qish")
+}
+
 func (r *Registry) GetClientByAgentID(agentID string) (Client, error) {
 	var c Client
 	err := r.db.QueryRow(

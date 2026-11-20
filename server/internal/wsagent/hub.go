@@ -33,6 +33,14 @@ type Config struct {
 	DeadTO        time.Duration // 90 s — javobsizlikda yopish (4004); IdleTO'dan katta
 }
 
+// MediaSink — media_ready/stopped/stats xabarlarini qabul qiluvchi
+// (S2 session manager; hub uni o'z navbatiga yo'naltiradi).
+type MediaSink interface {
+	OnMediaReady(agentID string, m proto.MediaReady)
+	OnMediaStopped(agentID string, m proto.MediaStopped)
+	OnMediaStats(agentID string, m proto.MediaStats)
+}
+
 // Hub — faol agent ulanishlari (bitta egasi: HTTP server goroutine'lari
 // Only Register/Unregister orqali kiradi; conn holati conn'ning o'zida).
 type Hub struct {
@@ -46,6 +54,20 @@ type Hub struct {
 	lastSeq     map[string]int64
 	syncApplied map[string]int // chunk'lar bo'yicha applied yig'indisi
 	clock       clock          // testlarda fake (idle/ping kuzatuvi)
+	sink        MediaSink      // S2: media xabarlari session manager'ga
+}
+
+// SetSink — media xabarlari qabul qiluvchini o'rnatish (S2.4).
+func (h *Hub) SetSink(s MediaSink) { h.mu.Lock(); h.sink = s; h.mu.Unlock() }
+
+// deliverMedia — sink'ga uzatish (sink nil bo'lsa jim o'tadi).
+func (h *Hub) deliverMedia(f func(MediaSink)) {
+	h.mu.Lock()
+	sk := h.sink
+	h.mu.Unlock()
+	if sk != nil {
+		f(sk)
+	}
 }
 
 func NewHub(cfg Config, reg *registry.Registry, lg *slog.Logger) *Hub {
