@@ -62,6 +62,11 @@ func (c *Conn) handleCamsSync(cs proto.CamsSync) error {
 	if !cs.Done {
 		return nil // orasidagi chunk — ack tugashida
 	}
+	// Ro'yxat o'zgardi — UI'ga signal (Monitor sahifasi qayta o'qiydi):
+	// avval qo'shilgan kamera refresh qilingandagina ko'rinardi (2026-11-20).
+	c.hub.uiEvent(EvCamsChanged, map[string]any{
+		"client_id": c.clientID, "agent_id": c.agentID, "epoch": cs.Epoch,
+	})
 	ack := proto.CamsAck{Epoch: cs.Epoch, OK: firstErr == nil, Applied: total}
 	if firstErr != nil {
 		r := "apply_failed"

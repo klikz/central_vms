@@ -377,3 +377,23 @@ Boshqaruv → „O'chirish“ bilan tozalanadi. Kontrakt: 1.0-draft.11 (§3.6, �
   agent jimgina qolardi).
 - Rad etilgan so'rovda `Request access` o'chiriladi (eski kalit bilan
   urinish foydasiz) va `Clear connection` faollashadi.
+
+### 2026-11-20 — kamera holati va oqim zanjiri (1.0-draft.12)
+
+- **`StatusReporter` umuman biriktirilmagan edi** (o'lik kod): probe natijalari
+  faqat lokal holatni yangilardi, serverda kameralar `offline`/`last_check_at NULL`
+  bo'lib qolardi. Endi har sessiyaga reporter bog'lanadi, `welcome`dan keyin
+  **barcha kameralarning snapshot'i** yuboriladi, keyin faqat o'zgarganda (§4.4).
+- **Kamera qo'shilsa/o'chirilsa serverga yetkazilmasdi**: `camsvc.OnChanged` →
+  `runSync()` + `ProbeNow()` darhol chaqiriladi (epoch o'sadi, §4.2).
+- **`media_ready.path`** profil edi → MediaMTX yo'li qilib tuzatildi (`pathFromURL`).
+- **SDP'dagi sprop parameter setlari** (SPS/PPS/VPS) oqimda bo'lmasa, agent
+  qayta-yuborishda ularni yo'qotardi va MediaMTX'dagi oqim dekodlanmadi
+  ("non-existing PPS"). `cams.Pull` endi ularni kalit kadr oldiga qo'shadi (§8.4).
+
+Qolgan bo'sh joylar:
+- [ ] `codec_probe` (§4.5) yuborilmaydi — SDP tahlili tayyor (`cams.CodecProbe`),
+      transportga ulanmagan.
+- [ ] `cams.Pull` H.265 uchun depaketizatorga ega emas (faqat H.264) — H.265
+      kamera direct yo'lda buziladi, FFmpeg fallback'ga tushadi.
+- [ ] `position` maydoni `cams_sync`da yuborilmaydi.

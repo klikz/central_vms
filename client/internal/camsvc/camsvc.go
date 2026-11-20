@@ -25,6 +25,18 @@ var ErrNotFound = errors.New("camera not found")
 type Service struct {
 	St *statestore.State
 	KS *keystore.Store
+	// OnChanged — ro‘yxat o‘zgarganda chaqiriladi: runtime darhol
+	// cams_sync yuboradi (2026-11-20: avval o‘zgarish faqat qayta
+	// ulanishda serverga yetib bordi, shuning uchun yangi kamera
+	// serverda "ko‘rinmadi").
+	OnChanged func()
+}
+
+// changed — o‘zgarish signalini beradi (nil xavfsiz).
+func (s *Service) changed() {
+	if s.OnChanged != nil {
+		s.OnChanged()
+	}
 }
 
 // New — xizmat quradi (ikkital ham majburiy).
@@ -73,6 +85,7 @@ func (s *Service) Create(c cams.Camera, secret string) (cams.Camera, error) {
 	if err := s.commit(); err != nil {
 		return cams.Camera{}, err
 	}
+	s.changed()
 	return c, nil
 }
 
@@ -111,6 +124,7 @@ func (s *Service) Update(id string, patch cams.Camera, secret *string) (cams.Cam
 		if err := s.commit(); err != nil {
 			return cams.Camera{}, err
 		}
+		s.changed()
 		return patch, nil
 	}
 	return cams.Camera{}, fmt.Errorf("%w: %s", ErrNotFound, id)
@@ -166,6 +180,7 @@ func (s *Service) Delete(ids []string) int {
 	s.St.Cameras = kept
 	s.St.BumpEpoch()
 	_ = s.commit()
+	s.changed()
 	return removed
 }
 

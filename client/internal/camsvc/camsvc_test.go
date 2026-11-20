@@ -248,3 +248,39 @@ func TestSetStatus(t *testing.T) {
 		t.Error("noma'lum idda xato kutilardi")
 	}
 }
+
+// OnChanged — ro'yxat o'zgarishi darhol signal berishi kerak (runtime
+// shundan keyin cams_sync yuboradi; 2026-11-20: avval o'zgarish
+// qayta ulanishgacha kutib qolardi).
+func TestOnChangedFires(t *testing.T) {
+	s := newSvc(t)
+	var fired int
+	s.OnChanged = func() { fired++ }
+
+	c, err := s.Create(cams.Camera{Name: "A", Host: "10.0.0.5"}, "parol")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fired != 1 {
+		t.Fatalf("Create dan keyin OnChanged %d marta", fired)
+	}
+	if _, err := s.Update(c.ID, cams.Camera{Name: "B", Host: "10.0.0.6"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if fired != 2 {
+		t.Fatalf("Update dan keyin OnChanged %d marta", fired)
+	}
+	if n := s.Delete([]string{c.ID}); n != 1 {
+		t.Fatalf("Delete: %d", n)
+	}
+	if fired != 3 {
+		t.Fatalf("Delete dan keyin OnChanged %d marta", fired)
+	}
+	// SetStatus (probe natijasi) ro'yxat o'zgarishi EMAS — signal yo'q.
+	if err := s.SetStatus("yo'q", cams.StatusOnline, time.Now()); err == nil {
+		t.Fatal("noma'lum kameraga SetStatus o'tdi")
+	}
+	if fired != 3 {
+		t.Fatalf("SetStatus signal bermasligi kerak edi: %d", fired)
+	}
+}

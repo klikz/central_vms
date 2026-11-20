@@ -202,7 +202,9 @@ func TestHappyPathDirect(t *testing.T) {
 		t.Fatalf("media_start soni: %d", mt.fs.count(proto.MsgMediaStart))
 	}
 	ms := mt.fs.lastStart()
-	if ms.Ingest != "rtsp" || ms.Publish.Token == "" || ms.Transcode.By != "none" {
+	// §5.2: ingest qiymatlari "whip" | "rtsp_tcp" ("rtsp" — eski xato
+	// qiymat; haqiqiy vmsagent uni rad etadi).
+	if ms.Ingest != "rtsp_tcp" || ms.Publish.Token == "" || ms.Transcode.By != "none" {
 		t.Fatalf("media_start: %+v", ms)
 	}
 	if st, _ := mt.reg.ListActiveSessions(); len(st) != 1 || st[0].State != "publishing" {
@@ -587,5 +589,71 @@ func TestGhostSessionClosedByReadersWatchdog(t *testing.T) {
 		if r.ID == res.SessionID {
 			t.Fatalf("DB'da ham faol qoldi: %+v", r)
 		}
+	}
+}
+
+// 1.0-draft.12: agent media_ready'da noto‘g‘ri path yuborsa (eski mijoz
+// profil yuborardi), o‘quvchi URL‘lari buzilmasligi kerak.
+func TestMediaReadyWrongPathKeepsURLs(t *testing.T) {
+	mt := newMTest(t, MgrConfig{IdleStop: time.Second}, gpu.Caps{Backend: gpu.BackendNone})
+	res, err := mt.m.Start(mt.cam, 1, "", "preview", BrowserCaps{})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	mt.m.OnMediaReady("ag_1", proto.MediaReady{SessionID: res.SessionID, PublishID: "p1",
+		Path: "main"}) // eski mijoz xatosi: profil → path deb yuborilgan
+	waitFor(t, func() bool {
+		st, _ := mt.reg.ListActiveSessions()
+		return len(st) == 1 && st[0].State == "playing"
+	}, "playing bo‘lmadi")
+	res2, err := mt.m.Start(mt.cam, 2, "", "preview", BrowserCaps{})
+	if err != nil {
+		t.Fatalf("ikkinchi start: %v", err)
+	}
+	want := "rtsp://192.168.1.50:8554/cam/ag_1/cam-uuid-1"
+	if res2.RTSPURL != want {
+		t.Fatalf("path buzildi: %s (kutilardi %s)", res2.RTSPURL, want)
+	}
+}
+
+// 1.0-draft.12: oqim muvaffaqiyatsizligi sababi kameraga yoziladi —
+// operator UI‘da "nima uchun ko‘rinmayapti" javobini ko‘radi.
+func TestMediaStoppedRecordsCameraError(t *testing.T) {
+	mt := newMTest(t, MgrConfig{IdleStop: time.Second}, gpu.Caps{Backend: gpu.BackendNone})
+	res, err := mt.m.Start(mt.cam, 1, "", "preview", BrowserCaps{})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	mt.m.OnMediaStopped("ag_1", proto.MediaStopped{SessionID: res.SessionID,
+		CameraID: mt.cam.ID, PublishID: "p1", Reason: "publish_failed"})
+	waitFor(t, func() bool {
+		c, err := mt.reg.GetCamera(mt.cam.ID)
+		return err == nil && c.LastError != ""
+	}, "last_error yozilmadi")
+	c, _ := mt.reg.GetCamera(mt.cam.ID)
+	if !strings.Contains(c.LastError, "publish_failed") {
+		t.Fatalf("sabab noto‘g‘ri: %q", c.LastError)
+	}
+	if c.LastErrorAt == "" {
+		t.Fatal("last_error_at yozilmadi")
+	}
+}
+
+// Normal to‘xtash (tomaqibilar ketdi) xato hisoblanmaydi.
+func TestMediaStoppedNormalReasonNoError(t *testing.T) {
+	mt := newMTest(t, MgrConfig{IdleStop: time.Second}, gpu.Caps{Backend: gpu.BackendNone})
+	res, err := mt.m.Start(mt.cam, 1, "", "preview", BrowserCaps{})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	mt.m.OnMediaStopped("ag_1", proto.MediaStopped{SessionID: res.SessionID,
+		CameraID: mt.cam.ID, PublishID: "p1", Reason: "no_viewers"})
+	time.Sleep(150 * time.Millisecond)
+	c, err := mt.reg.GetCamera(mt.cam.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.LastError != "" {
+		t.Fatalf("normal sabab xato deb yozildi: %q", c.LastError)
 	}
 }

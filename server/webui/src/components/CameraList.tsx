@@ -46,7 +46,7 @@ export function CameraList({
           onClick={() => onAdd(cam)}
           onMouseEnter={() => onHover?.(cam, true)}
           onMouseLeave={() => onHover?.(cam, false)}
-          title={cam.name}
+          title={cam.last_error ? `${cam.name} — ${cam.last_error}` : cam.name}
         >
           <span
             className={
@@ -54,6 +54,9 @@ export function CameraList({
             }
           />
           <span className="cam-name">{cam.name}</span>
+          {cam.status !== "online" && cam.last_error && (
+            <span className="cam-err" title={cam.last_error}>{cam.last_error}</span>
+          )}
           <span className={"badge " + (cam.codec_main === "H265" ? "h265" : "h264")}>{cam.codec_main}</span>
           {cam.transcode_mode === "server" && <span className="badge tc">TC</span>}
           {!cam.enabled && <span className="badge badge-err">{t("grid.disabled")}</span>}

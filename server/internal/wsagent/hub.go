@@ -43,6 +43,9 @@ type UIBroadcaster interface {
 const (
 	EvClientStatus = "client_status"
 	EvCamStatus    = "cam_status"
+	// EvCamsChanged — agent kamera ro'yxatini yubordi (qo'shish/o'chirish):
+	// brauzerlar ro'yxatni qayta o'qiydi (1.0-draft.12).
+	EvCamsChanged = "cams_changed"
 )
 
 // MediaSink — media_ready/stopped/stats xabarlarini qabul qiluvchi

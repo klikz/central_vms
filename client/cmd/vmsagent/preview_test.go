@@ -39,7 +39,7 @@ func newPS(t *testing.T) (*previewSvc, *camsvc.Service) {
 		t.Fatal(err)
 	}
 	capt := &preview.Capturer{Store: store, Bin: sh, Log: slog.New(slog.DiscardHandler)}
-	return newPreviewSvc(cs, ks, store, capt, slog.New(slog.DiscardHandler)), cs
+	return newPreviewSvc(cs, ks, store, capt, slog.New(slog.DiscardHandler), nil), cs
 }
 
 func TestPreviewSvc_CaptureAndAuth(t *testing.T) {

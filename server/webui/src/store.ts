@@ -98,10 +98,27 @@ export function useStore(): Store {
           return {
             ...m,
             [e.data.client_id]: list.map((cam) =>
-              cam.id === e.data.camera_id ? { ...cam, status: e.data.status, rtsp_masked: cam.rtsp_masked } : cam,
+              cam.id === e.data.camera_id
+                ? {
+                    ...cam,
+                    status: e.data.status,
+                    rtsp_masked: cam.rtsp_masked,
+                    // Sabab ham yetib keladi: "nima uchun offline" UI'da ko'rinadi.
+                    last_error: e.data.error || cam.last_error,
+                  }
+                : cam,
             ),
           };
         });
+      } else if (e.type === "cams_changed") {
+        // Agent kamera qo'shdi yoki o'chirdi — ro'yxatni qayta o'qiymiz
+        // (1.0-draft.12; avval yangi kamera faqat sahifani yangilaganda
+        // ko'rinardi).
+        const cid = e.data?.client_id;
+        if (typeof cid === "number") {
+          void loadCameras(cid);
+          void reload();
+        }
       } else if (e.type === "session_count") {
         setActive(e.data.active ?? 0);
       }
@@ -112,7 +129,7 @@ export function useStore(): Store {
       off();
       offStatus();
     };
-  }, [reload]);
+  }, [reload, loadCameras]);
 
   return useMemo(
     () => ({

@@ -178,7 +178,18 @@ h1::after { content: ""; display: block; width: 46px; height: 2px; background: v
   cursor: grab; font-size: 13px;
 }
 .cam-item:hover { border-color: var(--accent); }
-.cam-item .cam-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cam-item .cam-err {
+  /* 1.0-draft.12: "nima uchun offline" — sabab ro'yxatda ko'rinadi */
+  font: 500 10px/1.3 var(--mono, monospace);
+  color: #ff5d5d;
+  opacity: 0.85;
+  max-width: 34%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cam-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .star { background: none; border: none; color: var(--ink-faint); font-size: 14px; padding: 0 2px; cursor: pointer; }
 .star.on { color: var(--accent); }
 .badge {

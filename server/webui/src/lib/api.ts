@@ -68,6 +68,9 @@ export interface Camera {
   position: number;
   status: "online" | "offline" | "error";
   rtsp_masked?: string;
+  // Oxirgi muvaffaqiyatsizlik sababi (probe yoki oqim) — 1.0-draft.12.
+  last_error?: string;
+  last_error_at?: string;
 }
 
 export interface PlayResult {

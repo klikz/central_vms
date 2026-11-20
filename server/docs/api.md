@@ -20,8 +20,22 @@ Login rate-limit: 5 urinish / 5 min → `429 rate_limited`. Noto'g'ri parol: `40
 |---|---|---|
 | GET | `/api/sites` | joylar: name, clients_count, cameras online/total |
 | GET | `/api/clients` | bloklar: name, site, status, cameras_count, online_count |
-| GET | `/api/clients/{id}/cameras` | kamera ro'yxati + status + codec/preview imkoniyati |
+| GET | `/api/clients/{id}/cameras` | kamera ro'yxati + status + codec/preview imkoniyati; 1.0-draft.12: `last_error`, `last_error_at` (probe yoki oqim muvaffaqiyatsizligi sababi) |
 | GET | `/api/cameras/{id}` | bitta kamera detali |
+
+## Realtime: brauzer WS (`GET /api/ui/ws`, 1.0-draft.12)
+
+Server UI'ga (`/monitor`, `/admin`) quyidagi voqealar uzatiladi — brauzer
+so'rov yubormaydi, sahifa yangilanmaydi:
+
+| Voqea | Maydonlar | Qachon |
+|---|---|---|
+| `hello` | `{clients, cameras}` | ulashganda boshlang'ich holat |
+| `client_status` | `{client_id, online, ...}` | mijoz sessiyasi ochilganda/yopilganda |
+| `cam_status` | `{camera_id, client_id, status, error, rtt_ms}` | agent `cam_status` yuborganda (§4.4) |
+| `cams_changed` | `{client_id, agent_id, epoch}` | agent `cams_sync`ni **darhol** yuborganda (kamera qo'shildi/tahrirlandi/o'chirildi) — UI o'sha mijozning kamera ro'yxatini qayta oladi |
+| `session_state` / `session_count` | sessiya/son | oqim holati o'zgarganda |
+| `session_revoked` | `{session_id}` | sessiya bekor qilinganda |
 
 ## Oqim boshqaruvi (S2)
 

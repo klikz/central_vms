@@ -93,6 +93,14 @@ func pullOnce(ctx context.Context, o PullOptions, sink func(AU) error) error {
 		return errors.New("cams: SDP'da video oqim yo'q")
 	}
 	v := streams[0]
+	// Media bandi (xulosa emas) kerak: sprop parameter set'lari shu yerda.
+	vmedia := Media{}
+	for _, mm := range sdp.Medias {
+		if mm.Kind == "video" {
+			vmedia = mm
+			break
+		}
+	}
 
 	rtpCh, _, err := conn.SetupTrack(ctx, v.Control, 0, 1)
 	if err != nil {
@@ -101,6 +109,11 @@ func pullOnce(ctx context.Context, o PullOptions, sink func(AU) error) error {
 	if err := conn.Play(ctx, "npt=0.0-"); err != nil {
 		return err
 	}
+
+	// Parameter set'larni SDP'dan olamiz (sprop) — manba ularni oqimda
+	// takrorlamasa, quyidagi sikl qo'shadi (sprop.go, 2026-11-20 xatosi).
+	h265 := h265Stream(vmedia)
+	param := spropNALs(vmedia)
 
 	dep := &rtspclient.H264Depacketizer{}
 	for {
@@ -119,6 +132,9 @@ func pullOnce(ctx context.Context, o PullOptions, sink func(AU) error) error {
 			continue // buzilgan paket — tashlab ketamiz (+discardcorrupt ruhi)
 		}
 		if nals, ok := dep.Add(p); ok {
+			if len(param) > 0 && keyKadr(nals, h265) && !paramSetBor(nals, h265) {
+				nals = append(append([][]byte(nil), param...), nals...)
+			}
 			if err := sink(AU{Nals: nals, Timestamp: p.Timestamp}); err != nil {
 				return err
 			}

@@ -298,6 +298,37 @@ testi yo'q), `browser_caps` yuborish, `getStats()` monitoring taklifi,
 - [ ] `deploy/firewall.md` (WebRTC UDP port oralig'i, RTSP 8554, WHEP 8889, WS), `install-notes.md`
 - [ ] Load test: 48 copy sessiya 30 daq uzluksiz, memory o'smaydi; transcode chegarasi + zaxira zanjir (`server GPU → server CPU → transcode.by=client`) o'lchangan. **Eslatma (2026-11-20):** prod GPU'si dev'dan farq qilishi mumkin — `make install` dan keyin `make probe` majburiy qadam (`install-notes.md` ga yoziladi), natijalar prod'da qayta tekshiriladi
 
+### 2026-11-20 — kamera holati va oqim zanjiri (1.0-draft.12)
+
+Operator xabari: "mijozga kamera qo'shdim — serverda ko'rinmadi, preview chiqmadi".
+Tekshiruvda topilganlar va tuzatilganlar:
+
+- **`media_start.ingest` noto'g'ri qiymat** (`"rtsp"`): kontrakt `whip|rtsp_tcp`
+  deydi, haqiqiy `vmsagent` xabarni `publish: noma'lum ingest` deb rad etardi —
+  barcha preview/play `publish_failed` bilan tugardi. `rtsp_tcp` qilib tuzatildi
+  (H.264/H.265 birdek o'tadi). `e2e` testlarida testagent bu maydonni o'qimagani
+  uchun xato sezilmagan — **testagent kontrakt maydonlarini tekshirmaydi** (keyingi
+  bosqichda qo'shiladi).
+- **`media_ready.path`** — agent profil (`main`) yuborardi, server uni so'zsiz
+  qabul qilib o'quvchi URL'larini `rtsp://host/main` deb buzardi. Ikkala tomon
+  tuzatildi: agent MediaMTX yo'lini yuboradi, server mos kelmasa o'z path'ida
+  qoladi + ogohlantiradi.
+- **Kamera sababi ko'rsatilmaydi** edi: `cameras.last_error`/`last_error_at`
+  qo'shildi (migratsiya `0003_camera_error`), `cam_status.error` va
+  `media_stopped.reason` (normal: `no_viewers|ttl_expired|user`dan tashqari)
+  shu yerga yoziladi; online holatda tozalanadi. UI kamera kartasida ko'rinadi.
+- **Kamera ro'yxati faqat qayta ulanganda kelardi**: endi agent darhol
+  `cams_sync` yuboradi, server UI'ga `cams_changed` uzatadi (`api.md` §Realtime).
+
+Qolgan bo'sh joylar (hujjatlashtirilgan, keyingi yurish):
+- [ ] `codec_probe` (§4.5) agent tomonidan **hali yuborilmaydi** → serverda
+      `codec_main/sub = unknown`, kodek badge bo'sh, whip/rtsp_tcp tanlovi
+      doim `rtsp_tcp`.
+- [ ] `position` synclanmaydi (serverda hamisha 0).
+- [ ] Server H.264 uchun ham `rtsp_tcp` yuboradi — WHIP tanlashi agent
+      imkoniyati `caps`da e'lon qilingandan keyin qaytiladi.
+- [ ] Testagent `media_start` maydonlarini (ingest/token/urls) tekshirmaydi.
+
 **Qabul:** root §15 "MVP bajarildi" ro'yxatidagi server bandlari yashil; load test natijasi `docs/` da.
 
 ---

@@ -33,15 +33,18 @@ type previewSvc struct {
 	cap   *preview.Capturer
 	log   *slog.Logger
 	w     *cams.Watcher
+	// report — §4.4: probe natijasini serverga yuborish (runtime ulaydi).
+	report func(cams.ProbeResult)
 
 	mu       sync.Mutex
 	inflight map[string]bool
+	probing  bool
 }
 
 func newPreviewSvc(cs *camsvc.Service, ks *keystore.Store, store *preview.Store,
-	capt *preview.Capturer, log *slog.Logger) *previewSvc {
+	capt *preview.Capturer, log *slog.Logger, report func(cams.ProbeResult)) *previewSvc {
 	ps := &previewSvc{cs: cs, ks: ks, store: store, cap: capt, log: log,
-		inflight: map[string]bool{}}
+		inflight: map[string]bool{}, report: report}
 	ps.w = cams.NewWatcher(cams.WatcherConfig{
 		Interval: previewInterval, Parallel: 3, Timeout: 5 * time.Second,
 		Dial: ps.dial, List: ps.targets, Emit: ps.emit, Log: log,
@@ -96,11 +99,32 @@ func (ps *previewSvc) emit(r cams.ProbeResult) {
 		ps.log.Warn("cam_status saqlanmadi", "camera_id", r.ID, "err", err)
 	}
 	ps.log.Info("cam_status", "camera_id", r.ID, "status", string(r.Status), "method", r.Method)
+	if ps.report != nil {
+		ps.report(r) // §4.4: serverga ham yetkazamiz
+	}
 	if r.Status == cams.StatusOnline {
 		if err := ps.Capture(context.Background(), r.ID); err != nil {
 			ps.log.Warn("preview olinmadi", "camera_id", r.ID, "err", err)
 		}
 	}
+}
+
+// ProbeNow — tashqaridan buyurilgan probe sikli (kamera qo'shilganda
+// holatni 30 s kutmasdan bilib olish uchun). Bir vaqtda bitta sikl.
+func (ps *previewSvc) ProbeNow() {
+	ps.mu.Lock()
+	if ps.probing {
+		ps.mu.Unlock()
+		return
+	}
+	ps.probing = true
+	ps.mu.Unlock()
+	defer func() {
+		ps.mu.Lock()
+		ps.probing = false
+		ps.mu.Unlock()
+	}()
+	ps.w.ProbeCycle(context.Background())
 }
 
 // Run — dastur ishga tushganda darhol bir sikl (kamera ulangan bo'lsa

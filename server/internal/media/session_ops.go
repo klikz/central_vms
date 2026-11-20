@@ -141,7 +141,14 @@ func (m *Manager) start(st *loopState, c *cmd) (*StartResult, error) {
 	if pubMode == "server_tc" {
 		pubProfile = "main"
 	}
-	ingest := "rtsp"
+	// §5.2/13: ingest qiymatlari — "whip" | "rtsp_tcp". Avval bu yerda
+	// "rtsp" yubatilardi: kontrakt bunday qiymatni bilmaydi va haqiqiy
+	// vmsagent media_start'ni "publish: noma'lum ingest" deb rad etardi
+	// (2026-11-20: barcha preview'lar publish_failed bilan tugardi).
+	// rtsp_tcp tanlandi: u H.264 va H.265'ni birdek o'tkazadi, agentda
+	// WHIP muxer bo'lmasligi mumkin (whip — keyinchalik, agent BUni
+	// caps'da e'lon qilganda).
+	ingest := "rtsp_tcp"
 
 	now := m.deps.Clock.Now()
 	sess := &session{
@@ -276,8 +283,13 @@ func (m *Manager) mediaReady(st *loopState, c *cmd) {
 	if p.mode == "server_tc" && m.deps.Transcode != nil && !p.tcStarted {
 		m.startTranscode(st, p)
 	}
-	if c.ready.Path != "" {
-		p.path = c.ready.Path // agent xabar bergan path — bir xil kelishi shart
+	if c.ready.Path != "" && c.ready.Path != p.path {
+		// Agent boshqa path haqida xabar berdi: o'quvchi URL'lari
+		// buzilmasligi uchun o'zimiznikida qolamiz va ogohlantiramiz
+		// (1.0-draft.12: avval bu qiymat so'zsiz qabul qilingani uchun
+		// "rtsp://host/main" kabi yaroqsiz URL'lar chiqardi).
+		m.deps.Lg.Warn("media_ready path mos emas", "publish", p.id,
+			"kutilgan", p.path, "kelgan", c.ready.Path)
 	}
 	if !p.ready {
 		p.ready = true
@@ -391,6 +403,11 @@ func (m *Manager) mediaStopped(st *loopState, c *cmd) {
 		return
 	}
 	m.deps.Lg.Info("media_stopped", "publish", p.id, "reason", c.stopped.Reason)
+	// Sababni kameraga yozib qo'yamiz: operator UI'da "nima uchun oqim
+	// yo'q" degan savolga javob ko'rinishi uchun (1.0-draft.12).
+	if m.deps.Reg != nil && p.cameraID != "" && oqimXatosi(c.stopped.Reason) {
+		_ = m.deps.Reg.SetCameraError(p.cameraID, "oqim to'xtadi: "+c.stopped.Reason)
+	}
 	for _, sid := range append([]string(nil), p.sessions...) {
 		if s := st.sessions[sid]; s != nil {
 			m.endSessionLocked(st, s, "agent_stopped:"+c.stopped.Reason, true)
@@ -624,4 +641,16 @@ func randHex(n int) string {
 	b := make([]byte, n)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+// oqimXatosi — reason kodi muvaffaqiyatsizlikmi (UI'da ko'rsatiladi),
+// yoki normal to'xtash (tomaqibilar ketdi / TTL tugadi / foydalanuvchi
+// yopdi — §9.1).
+func oqimXatosi(reason string) bool {
+	switch reason {
+	case "no_viewers", "ttl_expired", "user", "user_stop", "session_stop", "":
+		return false
+	default:
+		return true
+	}
 }

@@ -246,6 +246,13 @@ To'liq spesifikasiya: **protocol.md §17**. Qisqacha:
 - **Holatlar:** server offline banner, skan bo'sh, parol xato, FFmpeg yo'q banner, GPU topilmadi badge,
   disk to'lgan (state yozilmadi) ogohlantirishi.
 - **Himoya:** bind `127.0.0.1:8082`. **PIN tizimi olib tashlandi**
+- **Kamera holati va oqim zanjiri (2026-11-20, 1.0-draft.12):** `StatusReporter`
+  biriktirilmagan edi (probe natijalari serverga chiqmasdi); kamera
+  qo'shish/o'chirish `cams_sync`ni darhol yubormasdi; `media_ready.path`
+  profil edi; SDP'dagi `sprop-parameter-sets` oqimda bo'lmasa qayta
+  yuborilgan oqim dekodlanmasdi. Tuzatildi: sessiya ochilganda holat
+  snapshot'i, `camsvc.OnChanged` → darhol sync + qayta probe, to'g'ri
+  MediaMTX yo'li, kalit kadr oldiga parameter set qo'shish (§4.2, §4.4, §4.6, §8.4).
   (1.0-draft.10, operator talabi): yozuv amallari PIN'siz; LAN bind
   taqiqlanmaydi, lekin agent ishga tushishda ogohlantiradi
   (yozuv endpoint'lari `X-Agent-Pin`, sessiya cookie 12 soat).

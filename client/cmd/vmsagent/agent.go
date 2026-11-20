@@ -53,12 +53,14 @@ type runtime struct {
 	media     *media.Manager    // C3.20 media sessiyalari
 	selftest  *selftest.Runner  // C4.6 paneli
 
+	pv       *previewSvc       // §12.2 probe sikli + preview snapshotlari
 	previews *preview.Store    // <state_dir>/previews/<camID>.jpg
 	snap     *preview.Capturer // ffmpeg orqali 1 kadr
 
 	mu              sync.Mutex
 	online          bool
-	authRejected    bool // §3.6: server secret'ni rad etdi (4003/4004)
+	rep             *agent.StatusReporter // §4.4/4.5 holat yuboruvchi (sessiya bilan almashtiriladi)
+	authRejected    bool                  // §3.6: server secret'ni rad etdi (4003/4004)
 	versionMismatch bool
 	serverVer       string
 	protoMin        int
@@ -417,6 +419,8 @@ func (r *runtime) bootstrap(ctx context.Context) error {
 
 func (r *runtime) newSession() *agent.Session {
 	secret, _ := r.ks.Get(keystore.RefAgentSecret)
+	// Har sessiya bilan yangi reporter: dedup xotirasi tozalanadi va
+	// welcome'dan keyin barcha kamera holatlari qayta yuboriladi (§4.4).
 	r.mu.Lock()
 	cname := r.cfg.ClientName
 	r.mu.Unlock()
@@ -470,6 +474,9 @@ func (r *runtime) newSession() *agent.Session {
 				"needs_full_sync", w.NeedsFullSync, "cams_epoch", w.CamsEpoch)
 			// §6.5: epoch farq yoki needs_full_sync → to'liq cams_sync
 			go r.runSync()
+			// §4.4: kamera holatlari to'liq snapshoti — server qayta
+			// boshlansa yoki agent qayta ulansa holatlar yo'qolmasin.
+			go r.reportAllCamStatus()
 		},
 		OnHeartbeat: func(now time.Time) {
 			r.mu.Lock()
@@ -515,6 +522,69 @@ func (r *runtime) newSession() *agent.Session {
 		}}
 	sess.SetOnMessage(h.Handle)
 	return sess
+}
+
+// onCamsChanged — kamera qo'shilgani/o'chirilgani: ro'yxatni darhol
+// serverga yuboramiz va yangi kamera holatini tez bilib olamiz
+// (2026-11-20: avval o'zgarish keyingi qayta ulanishgacha kutib qolardi).
+func (r *runtime) onCamsChanged() {
+	if r.pv != nil {
+		go r.pv.ProbeNow()
+	}
+	r.mu.Lock()
+	connected := r.sess != nil && r.online
+	r.mu.Unlock()
+	if !connected {
+		return // sessiya yo'q — welcome'da to'liq sync ketadi
+	}
+	go r.runSync()
+}
+
+// reportCamStatus — §4.4: bitta kamera holatini serverga yuborish.
+func (r *runtime) reportCamStatus(res cams.ProbeResult) {
+	r.mu.Lock()
+	rep := r.rep
+	r.mu.Unlock()
+	if rep == nil {
+		return
+	}
+	st := proto.CamStatus{CameraID: res.ID, Status: string(res.Status),
+		CheckedAt: time.Now().UTC()}
+	if res.Err != "" {
+		st.Error = redact.String(res.Err)
+	}
+	if err := rep.SendCamStatus(st); err != nil {
+		r.log.Debug("cam_status yuborilmadi", "camera_id", res.ID, "err", err)
+	}
+}
+
+// reportAllCamStatus — §4.4: sessiya ochilganda barcha kameralarning
+// hozirgi holati (server UI'da "offline" qolib qolmasligi uchun).
+func (r *runtime) reportAllCamStatus() {
+	r.mu.Lock()
+	rep, camsList := r.rep, []cams.Camera{}
+	if r.st != nil {
+		camsList = append(camsList, r.st.Cameras...)
+	}
+	r.mu.Unlock()
+	if rep == nil {
+		return
+	}
+	n := 0
+	for _, c := range camsList {
+		st := cams.Status(c.Status)
+		if st == "" {
+			st = cams.StatusUnknown
+		}
+		err := rep.SendCamStatus(proto.CamStatus{CameraID: c.ID, Status: string(st),
+			CheckedAt: time.Now().UTC()})
+		if err == nil {
+			n++
+		}
+	}
+	if n > 0 {
+		r.log.Info("kamera holatlari yuborildi", "cams", n)
+	}
 }
 
 // runSync — sync'ni goroutine'da bajaradi; xato UI statusida ko'rinadi (§4.3).
@@ -651,6 +721,7 @@ func (r *runtime) startSession(parent context.Context) func() {
 	sess := r.newSession()
 	r.mu.Lock()
 	r.sess = sess
+	r.rep = agent.NewStatusReporter(sess, clockReal(), r.log)
 	r.mu.Unlock()
 
 	go func() {

@@ -3,6 +3,8 @@ package registry
 import (
 	"database/sql"
 	"fmt"
+	"strings"
+	"time"
 )
 
 // Camera — cameras jadvali (id: agent bergan UUIDv4, o'zgarmas — protocol.md §6).
@@ -23,6 +25,10 @@ type Camera struct {
 	Status        string `json:"status"`
 	LastCheckAt   string `json:"last_check_at,omitempty"`
 	CodecProbeAt  string `json:"codec_probe_at,omitempty"`
+	// LastError — oxirgi muvaffaqiyatsizlik sababi (probe yoki oqim);
+	// UI'da ko'rsatiladi (1.0-draft.12).
+	LastError   string `json:"last_error,omitempty"`
+	LastErrorAt string `json:"last_error_at,omitempty"`
 }
 
 // SyncCamera — cams_sync(upsert) ma'lumotlari (proto paketiga bog'liq emas).
@@ -89,18 +95,41 @@ func (r *Registry) SetCameraStatus(cameraID, status, errMsg string, rttMs int64)
 	default:
 		return fmt.Errorf("camera status: %w", ErrBadInput)
 	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	// Online kamera uchun sabab saqlanmaydi: masalan MediaMTX'ning
+	// GET_PARAMETER'ni qo'llamasligi (keepalive_unsupported) — bu xato
+	// emas, zanjir fallback bilan ishlagan (2026-11-20).
+	e := strings.TrimSpace(errMsg)
+	if status == "online" {
+		e = ""
+	}
 	res, err := r.db.Exec(
-		`UPDATE cameras SET status=?, last_check_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')
-		 WHERE id=?`, status, cameraID)
+		`UPDATE cameras SET status=?, last_check_at=?,
+		 last_error=?, last_error_at=CASE WHEN ?='' THEN NULL ELSE ? END
+		 WHERE id=?`, status, now, e, e, now, cameraID)
 	if err != nil {
 		return wrap(err, "camera status")
 	}
-	_ = errMsg
+	_ = rttMs
 	_ = rttMs // S2'da kuzatuv uchun saqlanadi (hozir logda ko'rinadi)
 	if n, _ := res.RowsAffected(); n == 0 {
 		return fmt.Errorf("camera status: %w", ErrNotFound)
 	}
 	return nil
+}
+
+// SetCameraError — oqim/sessiya muvaffaqiyatsizligining sababini saqlaydi
+// (holatni o'zgartirmaydi): masalan agent publish_failed deb yuborsa,
+// operator kamerani "nima uchun ko'rinmayotgani"ni UI'da ko'radi
+// (1.0-draft.12).
+func (r *Registry) SetCameraError(cameraID, msg string) error {
+	msg = strings.TrimSpace(msg)
+	if msg == "" {
+		return nil
+	}
+	_, err := r.db.Exec(`UPDATE cameras SET last_error=?, last_error_at=? WHERE id=?`,
+		msg, time.Now().UTC().Format(time.RFC3339), cameraID)
+	return wrap(err, "camera xatosi")
 }
 
 // SaveCodecProbe — codec_probe xabari (SDP tahlili natijasi).
@@ -150,11 +179,13 @@ func (r *Registry) GetCamera(cameraID string) (Camera, error) {
 	err := r.db.QueryRow(
 		`SELECT id, client_id, name, onvif_xaddr, rtsp_masked, codec_main, codec_sub,
 		        bframe_main, bframe_sub, play_profile, transcode_mode, enabled, position,
-		        status, COALESCE(last_check_at,''), COALESCE(codec_probe_at,'')
+		        status, COALESCE(last_check_at,''), COALESCE(codec_probe_at,''),
+		        COALESCE(last_error,''), COALESCE(last_error_at,'')
 		 FROM cameras WHERE id=?`, cameraID).
 		Scan(&c.ID, &c.ClientID, &c.Name, &c.OnvifXaddr, &c.RTSPMasked, &c.CodecMain, &c.CodecSub,
 			&c.BFrameMain, &c.BFrameSub, &c.PlayProfile, &c.TranscodeMode, &c.Enabled, &c.Position,
-			&c.Status, &c.LastCheckAt, &c.CodecProbeAt)
+			&c.Status, &c.LastCheckAt, &c.CodecProbeAt,
+			&c.LastError, &c.LastErrorAt)
 	return c, wrap(err, "camera o'qish")
 }
 
@@ -163,7 +194,8 @@ func (r *Registry) ListCamerasByClient(clientID int64) ([]Camera, error) {
 	rows, err := r.db.Query(
 		`SELECT id, client_id, name, onvif_xaddr, rtsp_masked, codec_main, codec_sub,
 		        bframe_main, bframe_sub, play_profile, transcode_mode, enabled, position,
-		        status, COALESCE(last_check_at,''), COALESCE(codec_probe_at,'')
+		        status, COALESCE(last_check_at,''), COALESCE(codec_probe_at,''),
+		        COALESCE(last_error,''), COALESCE(last_error_at,'')
 		 FROM cameras WHERE client_id=? ORDER BY position, name`, clientID)
 	if err != nil {
 		return nil, wrap(err, "cameras list")
@@ -174,7 +206,8 @@ func (r *Registry) ListCamerasByClient(clientID int64) ([]Camera, error) {
 		var c Camera
 		if err := rows.Scan(&c.ID, &c.ClientID, &c.Name, &c.OnvifXaddr, &c.RTSPMasked, &c.CodecMain,
 			&c.CodecSub, &c.BFrameMain, &c.BFrameSub, &c.PlayProfile, &c.TranscodeMode, &c.Enabled,
-			&c.Position, &c.Status, &c.LastCheckAt, &c.CodecProbeAt); err != nil {
+			&c.Position, &c.Status, &c.LastCheckAt, &c.CodecProbeAt,
+			&c.LastError, &c.LastErrorAt); err != nil {
 			return nil, wrap(err, "cameras scan")
 		}
 		out = append(out, c)
@@ -202,6 +235,7 @@ func (r *Registry) ListCamerasByAgent(agentID string) ([]Camera, error) {
 		`SELECT k.id, k.client_id, k.name, k.rtsp_masked, k.codec_main, k.codec_sub,
 		        k.bframe_main, k.bframe_sub, k.play_profile, k.transcode_mode, k.enabled,
 		        k.position, k.status, COALESCE(k.last_check_at,''), COALESCE(k.codec_probe_at,''),
+		        COALESCE(k.last_error,''), COALESCE(k.last_error_at,''),
 		        COALESCE(k.onvif_xaddr,'')
 		 FROM cameras k JOIN clients c ON c.id = k.client_id WHERE c.agent_id=? ORDER BY k.position`, agentID)
 	if err != nil {
@@ -214,7 +248,8 @@ func (r *Registry) ListCamerasByAgent(agentID string) ([]Camera, error) {
 		var en, bm, bs int
 		if err := rows.Scan(&c.ID, &c.ClientID, &c.Name, &c.RTSPMasked, &c.CodecMain, &c.CodecSub,
 			&bm, &bs, &c.PlayProfile, &c.TranscodeMode, &en,
-			&c.Position, &c.Status, &c.LastCheckAt, &c.CodecProbeAt, &c.OnvifXaddr); err != nil {
+			&c.Position, &c.Status, &c.LastCheckAt, &c.CodecProbeAt,
+			&c.LastError, &c.LastErrorAt, &c.OnvifXaddr); err != nil {
 			return nil, wrap(err, "kameralar scan")
 		}
 		c.Enabled, c.BFrameMain, c.BFrameSub = en != 0, bm != 0, bs != 0

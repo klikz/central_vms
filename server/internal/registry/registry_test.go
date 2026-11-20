@@ -3,6 +3,7 @@ package registry
 import (
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"go.uber.org/goleak"
@@ -298,5 +299,52 @@ func TestResetOnlineStates(t *testing.T) {
 	}
 	if len(cams) != 1 || cams[0].Status != "offline" {
 		t.Fatalf("kameralar holati: %+v", cams)
+	}
+}
+
+// 1.0-draft.12: kamera xatosi sababi saqlanadi va online bo'lganda
+// tozalanadi (MediaMTX'ning keepalive_unsupported kabi eslatmalari
+// "xato" bo'lib qolmasligi uchun).
+func TestCameraLastError(t *testing.T) {
+	r := testReg(t)
+	c1 := mustClient(t, r, "err-client")
+	mustCamera(t, r, c1, "err-cam")
+
+	if err := r.SetCameraStatus("err-cam", "offline", "dial: connection refused", 0); err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	c, err := r.GetCamera("err-cam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.LastError != "dial: connection refused" || c.LastErrorAt == "" {
+		t.Fatalf("sabab saqlanmadi: %+v", c)
+	}
+
+	// Online → sabab tozalanadi (keepalive_unsupported kabi eslatmalar
+	// operatorga xato bo'lib ko'rinmasin).
+	if err := r.SetCameraStatus("err-cam", "online", "keepalive_unsupported", 8); err != nil {
+		t.Fatalf("status online: %v", err)
+	}
+	c, _ = r.GetCamera("err-cam")
+	if c.LastError != "" || c.LastErrorAt != "" {
+		t.Fatalf("online holda sabab qoldi: %+v", c)
+	}
+
+	// Oqim xatosi holatni o'zgartirmaydi, faqat sababni yozadi.
+	if err := r.SetCameraError("err-cam", "oqim to'xtadi: publish_failed"); err != nil {
+		t.Fatalf("SetCameraError: %v", err)
+	}
+	c, _ = r.GetCamera("err-cam")
+	if c.Status != "online" || !strings.Contains(c.LastError, "publish_failed") {
+		t.Fatalf("oqim xatosi noto'g'ri saqlandi: %+v", c)
+	}
+	// Bo'sh sabab — yozilmaydi (eski sabab saqlanadi).
+	if err := r.SetCameraError("err-cam", "   "); err != nil {
+		t.Fatal(err)
+	}
+	c, _ = r.GetCamera("err-cam")
+	if !strings.Contains(c.LastError, "publish_failed") {
+		t.Fatalf("bo'sh sabab eskisini o'chirdi: %+v", c)
 	}
 }

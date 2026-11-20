@@ -1,6 +1,6 @@
 # Central VMS — kontrakt: agent (`vmsagent`) ↔ server (`vmsd`)
 
-**Versiya: 1.0-draft.11** · Sana: 2026-11-20 · Holat: **client tomonida yozildi, muzlatildi (frozen)**
+**Versiya: 1.0-draft.12** · Sana: 2026-11-20 · Holat: **client tomonida yozildi, muzlatildi (frozen)**
 
 Bu fayl **yagona manba** (single source of truth). Server S0 bosqichida bu fayl `docs/protocol.md`
 ga ko'chiriladi (yoki symlink bilan bog'ladi) va undan keyin o'zgarish faqat versiya ko'tarib,
@@ -216,6 +216,12 @@ Server javobi — `welcome`:
   `done: true` kelgach ro'yxatda bo'lmagan barcha kameralar serverda o'chiriladi
   (cascade: `favorites`, `layouts.slots` bo'shatiladi).
 - `epoch` o'sgan bo'lsa server eski `epoch`li xabarlarni rad etadi (`cams_ack {ok:false, reason:"stale_epoch"}`).
+- **Darhol yuborish (1.0-draft.12):** lokal UI orqali kamera qo'shilgani,
+  tahrirlanganigi yoki o'chirilgani agentda `epoch`ni o'stiradi va agent
+  **shu zahoti** `cams_sync` yuboradi (keyingi qayta ulanganda kutilmaydi).
+  Server bu sync `done: true` bilan tugagach UI'ga `cams_changed`
+  (`{client_id, agent_id, epoch}`) voqeasini uzatadi — brauzer sahifani
+  yangilamasdan ro'yxatni ko'radi (`api.md` §wsui).
 
 ### 4.3 Server javobi: `cams_ack` (server → agent)
 ```json
@@ -229,6 +235,14 @@ Agent `cams_ack` olmasa 10 sdan keyin chunk'ni qayta yuboradi (3 marta), bo'lmas
   "error": "connection_refused", "checked_at": "...", "rtt_ms": 42 }
 ```
 Event-driven (holat o'zgarganda); davomiy `error` holatida 5 min'da bir marta takrorlanadi.
+- **Snapshot (1.0-draft.12):** har sessiya ochilganda (`welcome`dan keyin)
+  agent barcha kameralarning **hozirgi** holatini `cam_status` bilan
+  yuboradi — server qayta boshlanganda yoki agent qayta ulanganda holat
+  bo'sh qolmasin (holati bo'sh kamera `unknown` deb yuboriladi).
+- `error` matnini server `cameras.last_error` + `last_error_at` deb saqlaydi
+  va `GET /api/clients/{id}/cameras` javobida qaytaradi; **online** holatda
+  sabab tozalanadi (masalan MediaMTX'ning `keepalive_unsupported`
+  eslatmasi operatorga xato bo'lib ko'rinmasin).
 
 ### 4.5 `codec_probe`
 ```json
@@ -243,13 +257,18 @@ Event-driven (holat o'zgarganda); davomiy `error` holatida 5 min'da bir marta ta
 // media_ready
 { "session_id": "se_…", "camera_id": "UUID", "profile": "sub", "kind": "play",
   "publish_id": "UUID",                 // §9 refcount: bitta publish uchun bir marta
-  "path": "cam/ag_9f2c1a7e/UUID",
+  "path": "cam/ag_9f2c1a7e/UUID",   // MediaMTX yo'li; profil EMAS (1.0-draft.12)
   "ingest": "whip|rtsp_tcp", "transport": "udp|tcp",
   "transcoded": false, "backend": "none|gpu|cpu",
   "fps": 10.0, "bitrate_kbps": 700, "bytes_sent": 0, "ready_ms": 640 }
 
 // media_stopped
 { "session_id": "se_…", "camera_id": "UUID", "publish_id": "UUID",
+  // 1.0-draft.12: `path` profil bo'lib yuborilgani (eski agent xatosi)
+  // o'quvchi URL'larini buzardi; server endi mos kelmaydigan `path`ni
+  // qabul qilmaydi va ogohlantiradi.
+  // media_stopped sababi (normal: no_viewers/ttl_expired/user'dan tashqari)
+  // kameraning `last_error` maydoniga yoziladi.
   "reason": "no_viewers|ttl_expired|camera_offline|publish_failed|token_rejected|
              camera_rejected|network|codec_mismatch|agent_restart|shutdown|server_stop|
              bframe_unsupported|transcode_failed|limit_exceeded" }
@@ -293,7 +312,14 @@ Event-driven (holat o'zgarganda); davomiy `error` holatida 5 min'da bir marta ta
   "profile": "sub",                       // sub | main
   "kind": "play|preview",
   "ttl_s": 60,                            // publish TTL (watchdog, §9.2)
-  "ingest": "whip|rtsp_tcp",              // H.264→whip, H.265→rtsp_tcp (majburiy)
+  "ingest": "whip|rtsp_tcp",              // qiymatlar shu ikkisi; "rtsp" YO'Q
+                                          // (1.0-draft.12: server avval "rtsp"
+                                          // yuborardi — agent media_start'ni
+                                          // rad etardi, preview publish_failed)
+                                          // H.264→whip, H.265→rtsp_tcp;
+                                          // hozircha server H.264 uchun ham
+                                          // rtsp_tcp yuboradi (agent WHIP'ni
+                                          // caps'da e'lon qilmaydi)
   "publish": {
     "token": "<base64url(32 bait)>",      // §7.1
     "urls": {
@@ -434,6 +460,17 @@ nisbatan yangi, RTSP esa barqaror (root §17).
   taqiqlangan**; agent o'lsa `SIGKILL` zanjiri (`cmd.Process.Kill` + process group).
 - FFmpeg versiyasi tekshiriladi: `-f whip` muxer **FFmpeg ≥ 7.1** da bor (bizning dev muhitda 9.0.2 — mavjud).
 
+### 8.4 Parameter setlar (SPS/PPS/VPS) — 1.0-draft.12
+Manba (kamera yoki boshqa RTSP server) `sprop-parameter-sets`ni faqat
+DESCRIBE SDP'ida berib, oqimda takrorlamasa, agent NAL darajasidagi
+qayta-yuborishda parameter set'larni yo'qotadi va MediaMTX'dagi oqim
+dekodlanmaydi (kalit kadrga qadar kutish ham yordam bermaydi). Shuning
+uchun agent pull qatlami SDP'dagi `sprop-parameter-sets` (H.264) /
+`sprop-vps|sps|pps` (H.265) qiymatlarini saqlaydi va ular **oqimda
+bo'lmagan har bir kalit kadr oldiga qo'shib** yuboradi. Bu qoida
+`cams.Pull`da bajariladi — publish transportlari to'liq AU oladi deb
+hisoblaydi.
+
 ## 9. Publish refcount, TTL watchdog, graceful shutdown
 
 ### 9.1 Refcount (agent tomonida)
@@ -539,6 +576,11 @@ publish:
 ```
 
 ## 12. Probe siyosati (agent)
+
+> 1.0-draft.12: probe sikli (30 s) natijasi faqat lokal holatda
+> qolmasligi kerak — agent har bir natijani `cam_status` bilan serverga
+> yuboradi (§4.4). Kamera qo'shilgani/o'chirilgani darhol `cams_sync`
+> (§4.2) va qayta probe (`ProbeNow`) chaqiriladi.
 
 1. **Status:** arzon probe — `GET_PARAMETER` (RTSP keepalive). Ba'zi firmware (eski Dahua)
    `GET_PARAMETER`ni qo'llab-quvvatlamaydi → avtomatik **`OPTIONS`**, u ham bo'lmasa qisqa
@@ -776,6 +818,7 @@ tasodifan qutulgan).
 
 | Versiya | Sana | O'zgarish |
 |---|---|---|
+| 1.0-draft.12 | 2026-11-20 | **Kamera holati va oqim zanjiri tuzatildi** (operator kuzatuvi: "mijozda kamera qo'shsam serverda ko'rinmadi, preview chiqmadi"): (a) `cam_status` endi haqiqatan yuboriladi — sessiya ochilganda to'liq snapshot + holat o'zgarganda (§4.4); (b) kamera qo'shish/tahrirlash/o'chirish `cams_sync`ni **darhol** yuboradi, server UI'ga `cams_changed` uzatiladi (§4.2); (c) `media_start.ingest` qiymati tuzatildi — server "rtsp" yuborardi, kontrakt esa `whip|rtsp_tcp` (§5.2); (d) `media_ready.path` — MediaMTX yo'li, profil emas; server mos kelmasa o'z path'ida qoladi (§4.6); (e) `cameras.last_error`/`last_error_at` — probe va `media_stopped` sababi UI'da ko'rinadi (§4.4); (f) §8.4: SDP'dagi sprop parameter setlari kalit kadr oldiga qo'shiladi. |
 | 1.0-draft.11 | 2026-11-20 | **Eskirgan identity holati** (operator kuzatuvi:
   client „connected as ag_…“ deb turardi, Request access o'chirilgan edi,
   server esa uni tanimasdi). §3.6: agent 4003/4004'ni `status.auth_rejected`

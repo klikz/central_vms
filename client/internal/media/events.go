@@ -4,6 +4,8 @@ import (
 	"central-vms/client/internal/proto"
 	"central-vms/client/internal/publish"
 	"central-vms/client/internal/redact"
+	"net/url"
+	"strings"
 	"time"
 )
 
@@ -22,7 +24,10 @@ func (m *Manager) OnReady(ev publish.ReadyEvent) {
 	if s == nil {
 		return
 	}
-	ready := publish.BuildReady(s.sessionID, s.kind, s.publishID, s.plan.Key.Profile,
+	// §4.6: path — MediaMTX'dagi publish yo'li (plan.URL'dan), profil
+	// EMAS (2026-11-20 xato: profil yuborilgani uchun server o'quvchi
+	// URL'larini "rtsp://host/main" qilib buzardi).
+	ready := publish.BuildReady(s.sessionID, s.kind, s.publishID, pathFromURL(s.plan.URL),
 		s.plan, st, s.transcoded, s.backend(), time.Since(s.openedAt).Milliseconds())
 	m.sendWS(proto.MsgMediaReady, ready)
 }
@@ -88,4 +93,14 @@ func (m *Manager) StatsSource(k publish.Key) publish.Stat {
 // statsEmit — media_stats'ni WS'ga yuborish.
 func (m *Manager) StatsEmit(st proto.MediaStats) {
 	m.sendWS(proto.MsgMediaStats, st)
+}
+
+// pathFromURL — publish URL'idan MediaMTX path'ini oladi
+// (rtsp://host:8554/cam/ag_x/cam-1?token=... → cam/ag_x/cam-1).
+func pathFromURL(u string) string {
+	p, err := url.Parse(u)
+	if err != nil || p.Scheme == "" || p.Path == "" {
+		return ""
+	}
+	return strings.TrimPrefix(p.Path, "/")
 }
