@@ -395,3 +395,34 @@ func TestPurgeOlderThan(t *testing.T) {
 		t.Fatalf("days=0 himoyasi ishlamadi: %d %d %v", s, a, err)
 	}
 }
+
+// Sync'da status bo'sh kelsa mavjud holat saqlanadi (to'liq cams_sync
+// `cam_status` orqali kelgan "online"ni bosmasin — 2026-11-21).
+func TestUpsertCameraKeepsStatusWhenEmpty(t *testing.T) {
+	r := testReg(t)
+	c1 := mustClient(t, r, "st-client")
+	mustCamera(t, r, c1, "st-cam")
+	if err := r.SetCameraStatus("st-cam", "online", "", 12); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.UpsertCamera(c1, SyncCamera{ID: "st-cam", Name: "Yangi nom"}); err != nil {
+		t.Fatal(err)
+	}
+	cam, err := r.GetCamera("st-cam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cam.Status != "online" {
+		t.Fatalf("status bosildi: %q", cam.Status)
+	}
+	if cam.Name != "Yangi nom" {
+		t.Fatalf("nom yangilanmadi: %q", cam.Name)
+	}
+	// Sync aniq holat kelsa — u qo'llaniladi.
+	if err := r.UpsertCamera(c1, SyncCamera{ID: "st-cam", Name: "Yangi nom", Status: "offline"}); err != nil {
+		t.Fatal(err)
+	}
+	if cam, err = r.GetCamera("st-cam"); err != nil || cam.Status != "offline" {
+		t.Fatalf("aniq status qo'llanilmadi: %+v %v", cam, err)
+	}
+}

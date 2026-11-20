@@ -52,6 +52,18 @@ func NewStatusReporter(sess SyncSender, clk clock.Clock, log *slog.Logger) *Stat
 		last: map[string]statusKey{}, lastErr: map[string]time.Time{}}
 }
 
+// Reset — dedup xotirasini tozalash. Har qayta qo'l berishda (welcome)
+// chaqiriladi: server qayta boshlansa o'z bazasidagi holatlarni
+// tozalaydi (§17), agentda esa "o'zgarmadi" deb yubormaslik xotirasi
+// qolardi — natijada kameralar kamera holati haqiqatan online bo'lsa-yu
+// serverda "offline" bo'lib turardi (2026-11-21 kuzatuvi).
+func (r *StatusReporter) Reset() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.last = map[string]statusKey{}
+	r.lastErr = map[string]time.Time{}
+}
+
 // SendCamStatus — §4.4. Qayta yuborish siyosati yuqorida. Yuborilmagan
 // (siqilgan) holatda nil qaytadi va sender chaqirilmaydi.
 func (r *StatusReporter) SendCamStatus(s proto.CamStatus) error {

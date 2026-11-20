@@ -277,7 +277,7 @@ testi yo'q), `browser_caps` yuborish, `getStats()` monitoring taklifi,
 ## S4 — Qotirish, kuzatish, deploy (≈3–4 kun) — *Dependence: S2, S3*
 
 - [ ] Admin panel: `settings` limitlari, `/api/admin/media/state` (faol sessiyalar, FFmpeg jarayonlari, **tanlangan transcode backend + GPU sessiyalari (aniqlangan usulda)**, navbat), audit ko'rinishi
-- [ ] **Eski holatni tiklash (2026-11-20 kuzatildi):** server qayta boshlansa, DB'da
+- [x] **Eski holatni tiklash (2026-11-20 kuzatildi; 2026-11-21 yakunlandi):** server qayta boshlansa, DB'da
   `status='online'` deb qolgan mijozlar "jonli" bo'lib ko'rinadi — agent o'ldirilgan
   bo'lsa ham. Startda barcha mijozlar offline qilinadi (keyin `hello` online qiladi)
   yoki muddatidan ko'ra eski `last_seen` offline hisoblanadi.
@@ -285,6 +285,15 @@ testi yo'q), `browser_caps` yuborish, `getStats()` monitoring taklifi,
   ishga tushishda eski `online` belgilarini tozalaydi (mijoz + kameralar);
   aks holda Boshqaruv/Kuzatuv ulanmagan mijozni "online" deb ko'rsatardi.
   Test: `TestResetOnlineStates`.
+- [x] **Server restartdan keyin kamera holati (2026-11-21):** ikki sabab tuzatildi —
+      (1) to'liq `cams_sync` `status`ni bo'sh yuborib, `cam_status`dagi `online`ni
+      `offline` bilan bosardi (`UpsertCamera` endi bo'sh holatda mavjud qiymatni
+      saqlaydi; sync'dagi aniq holat qo'llaniladi); (2) agent dedup xotirasi
+      qayta qo'l berishdan keyin ham "o'zgarmadi" deb yubormas edi (welcome'da
+      `StatusReporter.Reset()`). Testlar: `TestUpsertCameraKeepsStatusWhenEmpty`,
+      `TestCamsSyncCarriesStatus`, `TestStatusReporterResetResends`.
+      **Jonli tasdiq:** server qayta boshlandi, agent tegilmadi — kamera ~15 s'da
+      `online`, `online_count 1/1`.
 - [x] **Mijozlarni tozalash:** `DELETE /api/admin/clients/{id}` mijozni o'chiradi
   va agentni `Hub.Kick` bilan uzadi (1.0-draft.11); tasdiq so'rovida nom band
   bo'lsa preauth avtomatik tasdiqi „ (2)“ qo'shadi. Qoldiqlar UI orqali

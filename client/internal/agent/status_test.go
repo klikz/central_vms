@@ -181,3 +181,27 @@ func TestStatus_CodecProbeReasonRedaktasiya(t *testing.T) {
 		t.Errorf("reason redaktasiya qilinmadi: %q", *got.Reason)
 	}
 }
+
+// Reset dan keyin bir xil holat qayta yuboriladi: server qayta
+// boshlanganda o'z holatlarini tozalaydi, agent esa "o'zgarmadi" deb
+// yubormas edi (2026-11-21 kuzatuvi — kameralar serverda offline qolardi).
+func TestStatusReporterResetResends(t *testing.T) {
+	s := capSender{}
+	r := NewStatusReporter(&s, clock.Real{}, nil)
+	st := proto.CamStatus{CameraID: "k1", Status: "online"}
+	for i := 0; i < 3; i++ {
+		if err := r.SendCamStatus(st); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if s.count() != 1 {
+		t.Fatalf("dedup ishlamadi: %d yuborildi, 1 kutilardi", s.count())
+	}
+	r.Reset()
+	if err := r.SendCamStatus(st); err != nil {
+		t.Fatal(err)
+	}
+	if s.count() != 2 {
+		t.Fatalf("Reset dan keyin yuborilmadi: %d, 2 kutilardi", s.count())
+	}
+}

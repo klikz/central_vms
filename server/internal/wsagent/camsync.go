@@ -42,6 +42,11 @@ func (c *Conn) handleCamsSync(cs proto.CamsSync) error {
 				// kelardi, lekin bu yerga yetkazilmasdi — serverda
 				// kameralar doim 0-tartibda qolardi.
 				Position: cam.Position,
+				// §4.2: holat sync'da ham keladi. Bo'sh kelsa
+				// UpsertCamera mavjud holatni saqlab qoladi — avval
+				// to'liq sync `cam_status`dagi "online"ni bosib
+				// "offline" qo'yardi (2026-11-21 kuzatuvi).
+				Status: cam.Status,
 			})
 		}
 		if err != nil && firstErr == nil && !isNotFound(err) {

@@ -478,6 +478,15 @@ func (r *runtime) newSession() *agent.Session {
 			go r.runSync()
 			// §4.4: kamera holatlari to'liq snapshoti — server qayta
 			// boshlansa yoki agent qayta ulansa holatlar yo'qolmasin.
+			// Dedup xotirasi tozalanadi: aks holda server o'z holatlarini
+			// tozalagan bo'lsa, agent "o'zgarmadi" deb hech narsa
+			// yubormaydi (2026-11-21 kuzatuvi).
+			r.mu.Lock()
+			rep := r.rep
+			r.mu.Unlock()
+			if rep != nil {
+				rep.Reset()
+			}
 			go r.reportAllCamStatus()
 		},
 		OnHeartbeat: func(now time.Time) {

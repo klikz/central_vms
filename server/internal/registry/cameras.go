@@ -52,10 +52,16 @@ func (r *Registry) UpsertCamera(clientID int64, c SyncCamera) error {
 	if c.ID == "" || c.Name == "" {
 		return fmt.Errorf("camera upsert: %w", ErrBadInput)
 	}
+	// 1.0-draft.12: sync'da `status` bo'sh kelsa MAVJUD holat saqlanadi —
+	// aks holda to'liq cams_sync `cam_status` orqali kelgan "online"ni
+	// bosib "offline" qilib qo'yardi (server qayta boshlanganda
+	// kameralar doim offline ko'rinar edi; 2026-11-21 kuzatuvi).
 	var owner int64
-	err := r.db.QueryRow("SELECT client_id FROM cameras WHERE id=?", c.ID).Scan(&owner)
+	var curStatus string
+	err := r.db.QueryRow("SELECT client_id, status FROM cameras WHERE id=?", c.ID).Scan(&owner, &curStatus)
 	switch {
 	case err == sql.ErrNoRows: // yangi — muammo yo'q
+		curStatus = ""
 	case err != nil:
 		return wrap(err, "camera tekshirish")
 	case owner != clientID:
@@ -71,7 +77,7 @@ func (r *Registry) UpsertCamera(clientID int64, c SyncCamera) error {
 		    bframe_main=excluded.bframe_main, bframe_sub=excluded.bframe_sub,
 		    onvif_xaddr=excluded.onvif_xaddr, status=excluded.status, position=excluded.position`,
 		c.ID, clientID, c.Name, c.RTSPMasked, def(c.CodecMain, "unknown"), def(c.CodecSub, "unknown"),
-		b2i(c.BFrameMain), b2i(c.BFrameSub), c.OnvifXaddr, def(c.Status, "offline"), c.Position)
+		b2i(c.BFrameMain), b2i(c.BFrameSub), c.OnvifXaddr, def(def(c.Status, curStatus), "offline"), c.Position)
 	return wrap(err, "camera upsert")
 }
 

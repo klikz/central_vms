@@ -578,3 +578,36 @@ func TestCamsSyncStoresPosition(t *testing.T) {
 		t.Fatalf("position saqlanmadi: %+v", kam)
 	}
 }
+
+// §4.2: sync'dagi status bazaga yoziladi; keyingi statussiz sync uni
+// bosmaydi (server qayta boshlanganda kameralar offline qolmasligi uchun).
+func TestCamsSyncCarriesStatus(t *testing.T) {
+	e := newTestEnv(t)
+	agentID, secret := e.enroll(t)
+	ws, _ := dialHandshake(t, e, agentID, secret, 1)
+	startHB(t, ws)
+	sendSync := func(epoch int64, st string) {
+		raw, _ := json.Marshal(proto.CamsSync{Epoch: epoch, Full: true, SeqNo: 1, ChunkCount: 1, Done: true,
+			Cameras: []proto.CameraEntry{{Op: "upsert", ID: "st-1", Name: "Holat",
+				Codecs: proto.CameraProfilePair{Main: "h265"}, Status: st}}})
+		_ = ws.WriteJSON(proto.Envelope{Type: proto.MsgCamsSync, Seq: 2, TS: time.Now().UTC(), Data: raw})
+		for {
+			if env := readEnv(t, ws); env.Type == proto.MsgCamsAck {
+				break
+			}
+		}
+	}
+	sendSync(1, "online")
+	sendSync(2, "")
+	cl, err := e.reg.GetClientByAgentID(agentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kam, err := e.reg.ListCamerasByClient(cl.ID)
+	if err != nil || len(kam) != 1 {
+		t.Fatalf("kameralar: %v %v", kam, err)
+	}
+	if kam[0].Status != "online" {
+		t.Fatalf("status yo'qoldi: %+v", kam[0])
+	}
+}

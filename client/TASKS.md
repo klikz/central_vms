@@ -391,6 +391,13 @@ Boshqaruv → „O'chirish“ bilan tozalanadi. Kontrakt: 1.0-draft.11 (§3.6, �
   qayta-yuborishda ularni yo'qotardi va MediaMTX'dagi oqim dekodlanmadi
   ("non-existing PPS"). `cams.Pull` endi ularni kalit kadr oldiga qo'shadi (§8.4).
 
+2026-11-21 davomi: **kamera holati server restartdan keyin yo'qolardi** —
+agent `StatusReporter` dedup xotirasi qayta qo'l berishdan keyin ham
+"o'zgarmadi" deb `cam_status` yubormas edi. Endi `OnWelcome`da
+`Reset()` chaqiriladi va snapshot aniq holatni yuboradi
+(test: `TestStatusReporterResetResends`). Server tomoni: `cams_sync`
+bo'sh `status` bilan `online`ni bosardi (server TASKS'da).
+
 2026-11-21 davomi: **WS heartbeat uzilishi** tuzatildi — server WS
 control ping yuborardi, u esa agentning o'qish muddatini uzamaydi
 (§15 izohi), natijada agent har 60 s'da `i/o timeout` bilan uzilib
