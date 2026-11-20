@@ -41,7 +41,7 @@ STOP_PATTERNS := 'build/[v]msagent -config' 'exe/[v]msagent' 'go-build[^ ]*/[v]m
 
 BACKUP_DIR ?= /var/backups/vmsagent
 
-.PHONY: all start dev build run install uninstall logs logs-err backup restore status test race cover gate \
+.PHONY: all start dev build run install uninstall logs logs-err backup restore status test race cover gate \ push update
         lint fmt vet fixtures deps deps-fetch devserver itest stress secretscan ui-lint ui-shot logs-err \
         package remote-update stop stop-service clean help
 
@@ -242,6 +242,16 @@ stop-service:
 
 clean:
 	rm -rf $(BUILD_DIR) coverage.out
+
+## GitHub'ga yuklash: BARCHA o'zgarishlarni default izoh bilan commit qilib push qiladi.
+## Izohni almashtirish: make push MSG="fix(client): …"  (bo‘sh → avtomatik izoh)
+## Eslatma: repositoriya ildoshi client/ ustida — server/ o‘zgarishlari ham yuboriladi.
+push:
+	@./scripts/git-push.sh "$(MSG)"
+
+## GitHub'dan yangilash: origin'dan tortib papkani yangilaydi (autostash, faqat fast-forward).
+update:
+	@./scripts/git-update.sh
 
 help:
 	@grep -hE '^## ' Makefile | sed 's/^## /  /'
