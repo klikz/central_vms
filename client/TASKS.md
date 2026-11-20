@@ -325,3 +325,13 @@ ishlaydi; SIGTERM'dan keyin serverda "yetim" sessiyalar qolmaydi.
 Kalit nuqta: **kontrakt yozilgan va muzlatilgan** (`client/docs/protocol.md`, 1.0-draft.8) — client
 serverni kutmaydi; medium effort rejimida har qadamda `Kontrakt §` ko'rsatilgan, shu sababli
 "qanday bo'lishi kerak" degan savol kod yozish paytida tug'ilmaydi.
+
+**Ulanish nomi (2026-11-20, operator talabi):** Sozlamalar sahifasiga
+**Connection name** maydoni qo‘shildi. Kiritilgan nom (masalan `Oxangaron`)
+`client.yaml`ga `client_name` deb yoziladi, enroll so‘roviga (`name`) va har
+`hello`ga qo‘shiladi — server mijozni shu nom bilan ko‘rsatadi. Nom
+o‘zgarsa sessiya qayta boshlanadi (eski nom `hello` orqali darhol almashtiriladi).
+Lokal UI’dagi `PUT /api/ui/settings` javobi endi **yangi** qiymatlarni
+qaytaradi (`GetSettings`): avval Server o‘zidagi eski konfiguratsiya
+nusxasini qaytaryotgandi. Server xato kodlari UI’da aniq matnga aylanadi:
+`code_invalid`, `code_used`, `name_taken`, `rate_limited`. Kontrakt: 1.0-draft.9.

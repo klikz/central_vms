@@ -20,6 +20,10 @@ const I18N = {
   err_already_enrolled: "Already enrolled — remove state or use the server UI",
   err_code_required: "Code is required",
   err_enroll_failed: "Server rejected the code (check server URL, code and time)",
+  err_code_invalid: "Code is wrong or expired — ask the server for a new one",
+  err_code_used: "This code was already used — ask the server for a new one",
+  err_name_taken: "That connection name is taken on the server — choose another",
+  err_rate_limited: "Too many attempts — wait a few minutes",
 };
 
 const $ = (sel) => document.querySelector(sel);

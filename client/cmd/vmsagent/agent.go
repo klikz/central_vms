@@ -161,10 +161,40 @@ func (r *runtime) enrollFromUI(ctx context.Context, code string) error {
 		return fmt.Errorf("%w: %s", localui.ErrAlreadyEnrolled, agentID)
 	}
 	if err := r.enroll(ctx, code); err != nil {
-		return err
+		return mapEnrollError(err)
 	}
 	r.requestReload(true)
 	return nil
+}
+
+// currentSettings — lokal UI'ga joriy qiymatlarni qaytaradi (Save'dan
+// keyin UI o'zgartirilgan nomni darhol ko'radi).
+func (r *runtime) currentSettings() localui.Settings {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return localui.Settings{
+		ServerURL: r.cfg.ServerURL, LogLevel: r.cfg.LogLevel, Name: r.cfg.ClientName,
+	}
+}
+
+// mapEnrollError — serverning §3.1 xato kodlarini lokal UI tushunadigan
+// sentinel xatolarga aylantiradi (UI har biri uchun aniq matn ko‘rsatadi).
+func mapEnrollError(err error) error {
+	var ee *agent.EnrollError
+	if !errors.As(err, &ee) {
+		return err
+	}
+	switch ee.Code {
+	case "bad_code":
+		return fmt.Errorf("%w: %v", localui.ErrCodeInvalid, err)
+	case "already_enrolled":
+		return fmt.Errorf("%w: %v", localui.ErrCodeUsed, err)
+	case "name_taken":
+		return fmt.Errorf("%w: %v", localui.ErrNameTaken, err)
+	case "rate_limited":
+		return fmt.Errorf("%w: %v", localui.ErrRateLimited, err)
+	}
+	return err
 }
 
 // requestReload — main sikliga signal (to'lgan bo'lsa takrorlamaymiz).

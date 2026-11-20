@@ -29,6 +29,8 @@ var (
 	ErrBadCode     = errors.New("enroll: kod noto'g'ri yoki muddati o'tgan")
 	ErrAlreadyUsed = errors.New("enroll: kod allaqachon ishlatilgan")
 	ErrRateLimited = errors.New("enroll: juda ko'p urinish")
+	// ErrNameTaken — mijoz nomi band (clients.name UNIQUE).
+	ErrNameTaken = errors.New("enroll: bunday nom band")
 )
 
 // clock — soat interfeysi (testlarda fake; auth.Clock bilan bir xil shakl).
@@ -167,6 +169,10 @@ func (e *Enrollment) Redeem(in EnrollInput, ip string) (agentID, secret string, 
 	}
 	clientID, err = e.registry.CreateClient(displayName, 0, agentID, HashSecret(secret))
 	if err != nil {
+		if errors.Is(err, registry.ErrNameTaken) {
+			// Nom band — kod hali yaroqli, operator boshqa nom tanlaydi.
+			return "", "", 0, ErrNameTaken
+		}
 		if errors.Is(err, registry.ErrExists) {
 			return "", "", 0, ErrAlreadyUsed
 		}

@@ -171,6 +171,8 @@ func (d *Deps) handleEnroll(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusTooManyRequests, "rate_limited", "")
 	case errors.Is(err, wsagent.ErrAlreadyUsed):
 		writeErr(w, http.StatusConflict, "already_enrolled", "")
+	case errors.Is(err, wsagent.ErrNameTaken):
+		writeErr(w, http.StatusConflict, "name_taken", "bunday nom band — boshqa nom tanlang")
 	case err != nil && errors.Is(err, wsagent.ErrBadCode):
 		writeErr(w, http.StatusUnauthorized, "bad_code", "")
 	case err != nil:

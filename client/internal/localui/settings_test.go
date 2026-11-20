@@ -190,3 +190,27 @@ func TestSettings_NameSanitized(t *testing.T) {
 		t.Fatalf("nom tozalanmadi: %q", got.Name)
 	}
 }
+
+// Save'dan keyin javob yangi qiymatlarni qaytarsin: Server o'zida
+// konfiguratsiya nusxasini saqlaydi, uni yangilash yetarli emas (2026-11-20:
+// PUT javobida eski nom qaytayotgandi).
+func TestSettings_ResponseReflectsSavedValues(t *testing.T) {
+	cur := Settings{ServerURL: "ws://old:8081", LogLevel: "info", Name: "Eski"}
+	ts := newDepsServer(t, "", Deps{
+		SetSettings: func(v Settings) error { cur = v; return nil },
+		GetSettings: func() Settings { return cur },
+	})
+	res := putJSON(t, ts.URL+"/api/ui/settings", map[string]string{
+		"server_url": "ws://new:8081", "name": "Oxangaron",
+	}, "")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("holat: %d", res.StatusCode)
+	}
+	var got Settings
+	if err := json.NewDecoder(res.Body).Decode(&got); err != nil {
+		t.Fatalf("javob: %v", err)
+	}
+	if got.Name != "Oxangaron" || got.ServerURL != "ws://new:8081" {
+		t.Fatalf("javob eskicha: %+v", got)
+	}
+}

@@ -15,7 +15,10 @@ import (
 var (
 	ErrNotFound = errors.New("registry: topilmadi")
 	ErrExists   = errors.New("registry: nom/identifikator band")
-	ErrBadInput = errors.New("registry: ma'lumot noto'g'ri")
+	// ErrNameTaken — mijoz nomi band (clients.name UNIQUE). Kod hali
+	// yaroqli: operator boshqa nom tanlashi kerak.
+	ErrNameTaken = errors.New("registry: bunday nom band")
+	ErrBadInput  = errors.New("registry: ma'lumot noto'g'ri")
 )
 
 // isConstraint — SQLite CONSTRAINT xatolarini aniqlash (UNIQUE/FK).

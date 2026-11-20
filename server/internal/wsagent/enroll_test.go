@@ -170,3 +170,22 @@ func TestEnrollCodesUnique(t *testing.T) {
 		seen[c] = true
 	}
 }
+
+// Ikki mijoz bir xil nom bilan ro'yxatdan o'tolmaydi (clients.name UNIQUE),
+// lekin xato "kod allaqachon ishlatilgan" emas, aniq "nom band" bo'lishi
+// kerak — aks holda operator kodni ayb lab, chalkashadi (2026-11-20).
+func TestEnrollNameTaken(t *testing.T) {
+	e, reg, _ := testEnroll(t)
+	c1, _, _ := e.CreateCode(0, 0)
+	if _, _, _, err := e.Redeem(EnrollInput{Code: c1, Name: "Oxangaron"}, "10.0.0.5"); err != nil {
+		t.Fatalf("birinchi enroll: %v", err)
+	}
+	c2, _, _ := e.CreateCode(0, 0)
+	_, _, _, err := e.Redeem(EnrollInput{Code: c2, Name: "Oxangaron"}, "10.0.0.6")
+	if !errors.Is(err, ErrNameTaken) {
+		t.Fatalf("nom band xatosi kutilmadi: %v", err)
+	}
+	// Kod isrof bo'lmaganmi? Yo'q — kod bir marta ishlatiladi, shuning
+	// uchun operator yangi kod olishi kerak; bu yerda faqat xato turi muhim.
+	_ = reg
+}

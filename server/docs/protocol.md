@@ -1,6 +1,6 @@
 # Central VMS — kontrakt: agent (`vmsagent`) ↔ server (`vmsd`)
 
-**Versiya: 1.0-draft.8** · Sana: 2026-11-20 · Holat: **client tomonida yozildi, muzlatildi (frozen)**
+**Versiya: 1.0-draft.9** · Sana: 2026-11-20 · Holat: **client tomonida yozildi, muzlatildi (frozen)**
 
 Bu fayl **yagona manba** (single source of truth). Server S0 bosqichida bu fayl `docs/protocol.md`
 ga ko'chiriladi (yoki symlink bilan bog'ladi) va undan keyin o'zgarish faqat versiya ko'tarib,
@@ -59,6 +59,7 @@ Content-Type: application/json
 
 { "code": "41739265",             // admin yaratgan bir martalik kod (8 xonali son, 24 soat)
   "hostname": "joy-oxangaron-01",
+  "name": "Oxangaron",              // operator bergan ko‘rinadigan nom (ixtiyoriy, 1.0-draft.9)
   "os": "Ubuntu 24.04",
   "lan_ip": "192.168.10.20",
   "agent_version": "0.3.1",
@@ -73,6 +74,7 @@ Content-Type: application/json
 
 401 { "error": "bad_code" }        // kod noto'g'ri/muddati o'tgan/ishlatilgan
 409 { "error": "already_enrolled" } // bu kod allaqachon bitta agentga biriktirilgan
+409 { "error": "name_taken" }       // `name` band (clients.name UNIQUE) — kod hali yaroqli
 429 { "error": "rate_limited", "retry_after_s": 300 }
 ```
 
@@ -88,7 +90,13 @@ Qoidalar:
 - `agent_secret` DB'da **sha256 hash** saqlanadi, faqat enroll javobida bir marta chiqadi.
 - `agent_id` ni **server** beradi (`ag_` + 8 hex); `client_id` (registry) server ichida
   `agent_id` orqali topiladi.
-- Enroll'dan keyin admin `name`/`site` ni belgilaydi; agent ismni **hech qachon o'zi yubormaydi**.
+- Mijozning ko‘rinadigan nomi (**1.0-draft.9**): operator lokal UI’da `client_name`
+  kiritadi va agent uni enroll’da (`name`) va har `hello`da yuboradi. Server:
+  enroll’da bo‘sh bo‘lsa avtomatik `agent-<agent_id qoldig‘i>` nomini qo‘yadi;
+  `hello.name` bo‘sh bo‘lmasa mijoz nomini yangilaydi. Admin istalgan payt
+  `PATCH /api/admin/clients/{id}` bilan o‘zgartirishi mumkin.
+- Nom **unikal** (`clients.name UNIQUE`): band bo‘lsa enroll `name_taken` qaytaradi —
+  bu xatoda kod isrof bo‘lmaydi, operator boshqa nom tanlab yangi kod so‘raydi.
 
 
 **Kod qayerdan:** `vmsagent -enroll <KOD>` (bir marta, keyin o'chiriladi) yoki lokal
@@ -130,6 +138,7 @@ server → agent : { "type": "welcome", "data": { ... } }    // §4.1, yoki 4001
 ```json
 { "protocol_version": 1, "agent_version": "0.3.1", "os": "Ubuntu 24.04",
   "hostname": "joy-oxangaron-01", "lan_ip": "192.168.10.20",
+  "name": "Oxangaron",              // mijoz nomi (bo‘sh → server nomni o‘zgartirmaydi)
   "boot_id": "b7d3…",                  // har ishga tushishda yangi (journal bog'lash uchun)
   "started_at": "2026-11-19T09:58:11Z",
   "cams_epoch": 7,                     // §6.4
@@ -454,6 +463,7 @@ nisbatan yangi, RTSP esa barqaror (root §17).
 server_url: ws://192.168.1.10:8081      # ws:// yoki wss://
 ui_bind: 127.0.0.1:8082
 ui_pin: ""                              # bo'sh = PIN yo'q (faqat localhost holatida ruxsat)
+client_name: ""                         # serverda ko‘rinadigan nom (masalan "Oxangaron")
 state_dir: /var/lib/vmsagent
 key_file: /etc/vmsagent/agent.key
 log_level: info                         # debug|info|warn|error
@@ -621,10 +631,12 @@ UI — SPA; ma'lumotlar shu endpoint'lar orqali olinadi. Barcha javoblar JSON
 |---|---|---|
 | `/healthz` | GET | `{status, version}` — systemd/probe uchun |
 | `/api/ui/status` | GET | `{version, server_online, cams_total, cams_online, publishes, cams_epoch, ffmpeg_ok}` |
-| `/api/ui/settings` | GET / PUT | `server_url`, `log_level`. PUT — PIN talab qiladi (§10.3).
+| `/api/ui/settings` | GET / PUT | `server_url`, `log_level`, `name` (1.0-draft.9). PUT — PIN talab qiladi (§10.3).
   PUT qiymatlarni **konfiguratsiya fayliga yozadi**, `state.json`dagi manzilni yangilaydi va
   sessiyani qayta boshlaydi (eski xulq: faqat xotirada qolardi, agent esa eski manzilga
-  ulanaverardi — 1.0-draft.8) |
+  ulanaverardi — 1.0-draft.8). `name` maydoni qo‘shildi: UI’da „Connection name‘
+  kiritiladi, faylga `client_name` deb yoziladi va sessiya qayta boshlanadi
+  (1.0-draft.9) |
 | `/api/ui/log?limit=N` | GET | `{lines:[…], count}` — oxirgi N qator, **eski → yangi**. `limit` default 200, maksimal 1000. Qatorlar §10.2 bo'yicha **yashirilgan** holida beriladi |
 | `/api/ui/cams` | GET | `{cams:[…], count}` — §3.2 sxemasi. **Parol qiymati hech qachon chiqmaydi**, faqat `secret_ref` (§10.2) |
 | `/api/ui/cams` | POST | Yangi kamera (`id` agentda UUIDv4, §5). Jism: `name,host,port,main_path,sub_path,enabled,position,secret`. PIN talab |
@@ -708,6 +720,14 @@ tasodifan qutulgan).
 
 | Versiya | Sana | O'zgarish |
 |---|---|---|
+| 1.0-draft.9 | 2026-11-20 | Mijozning **ko‘rinadigan nomi** endi agentdan keladi:
+  §3.1 enroll jismiga `name`, §4.1 `hello`ga `name`, §11 ga `client_name` kaliti,
+  §17.1 `/api/ui/settings`ga `name` qo‘shildi. Server: `hello.name` bo‘sh bo‘lmasa
+  mijoz nomini yangilaydi va UI’ga `client_status{name}` yuboradi; nom band bo‘lsa
+  enroll `409 name_taken` qaytaradi (avval bunda chalkash `already_enrolled`
+  chiqardi). Avvalgi „agent ismni hech qachon o‘zi yubormaydi“ qoidasi bekor
+  qilindi (operator nomi afzal; admin `PATCH /api/admin/clients/{id}` bilan baribir
+  o‘zgartira oladi). |
 | 1.0-draft.8 | 2026-11-20 | §17.1: `/api/ui/settings` PUT endi qiymatlarni faylga yozadi va
   sessiyani qayta boshlaydi (avval faqat xotirada edi — operator „Save‘ qilsa ham agent eski
   manzilga ulanaverardi). `/api/ui/enroll` POST qo‘shildi: UI orqali §3.1 ro‘yxatdan o‘tish.

@@ -94,6 +94,10 @@ type Deps struct {
 	// Avval bu yo'q edi: UI o'z nusxasini o'zgartirardi, agent esa eski
 	// manzilga ulanishda davom etardi (2026-11-20 operator xatosi).
 	SetSettings func(s Settings) error
+	// GetSettings — joriy qiymatlar (runtime'dagi konfiguratsiya).
+	// SetSettings'ndan keyin UI javobida yangi qiymat ko'rinishi uchun
+	// ishlatiladi: Server o'zida konfiguratsiyaning ko'chmasini saqlaydi.
+	GetSettings func() Settings
 	// Enroll — UI orqali ro'yxatdan o'tish (§3.1): kod bilan serverga
 	// so'rov, natijada agent_id/secret saqlanadi va sessiya boshlanadi.
 	Enroll func(ctx context.Context, code string) error
@@ -109,6 +113,7 @@ type Server struct {
 	selftestLast func() []selftest.Result
 	logLines     func(limit int) []string
 	setSettings  func(s Settings) error
+	getSettings  func() Settings
 	enroll       func(ctx context.Context, code string) error
 	cams         CamService
 	discovery    DiscoveryService
@@ -129,8 +134,9 @@ func NewServer(cfg config.Config, log *slog.Logger, version string, d Deps) (*Se
 	}
 	s := &Server{cfg: cfg, log: log, version: version, status: d.Status,
 		selftestRun: d.SelftestRun, selftestLast: d.SelftestLast,
-		logLines: d.LogLines, setSettings: d.SetSettings, enroll: d.Enroll,
-		cams: d.Cams, discovery: d.Discovery, snap: d.Snapshots, mux: http.NewServeMux()}
+		logLines: d.LogLines, setSettings: d.SetSettings, getSettings: d.GetSettings,
+		enroll: d.Enroll,
+		cams:   d.Cams, discovery: d.Discovery, snap: d.Snapshots, mux: http.NewServeMux()}
 	s.routes()
 	return s, nil
 }
@@ -234,7 +240,7 @@ func (s *Server) handleSelftest(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, Settings{ServerURL: s.cfg.ServerURL, LogLevel: s.cfg.LogLevel, Name: s.cfg.ClientName})
+		writeJSON(w, http.StatusOK, s.currentSettings())
 	case http.MethodPut, http.MethodPost:
 		if !s.checkPin(r) {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "pin_required"})
@@ -272,10 +278,19 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		writeJSON(w, http.StatusOK, Settings{ServerURL: s.cfg.ServerURL, LogLevel: s.cfg.LogLevel, Name: s.cfg.ClientName})
+		writeJSON(w, http.StatusOK, s.currentSettings())
 	default:
 		methodErr(w)
 	}
+}
+
+// currentSettings — joriy sozlamalar: runtime'dagi konfiguratsiya
+// (GetSettings berilgan bo'lsa), aks holda Server'ning boshlang'ich nusxasi.
+func (s *Server) currentSettings() Settings {
+	if s.getSettings != nil {
+		return s.getSettings()
+	}
+	return Settings{ServerURL: s.cfg.ServerURL, LogLevel: s.cfg.LogLevel, Name: s.cfg.ClientName}
 }
 
 // sanitizeName — operator nomini tozalash (uzunlik 64, boshqariladigan
@@ -304,6 +319,17 @@ func sanitizeName(raw string) string {
 
 // ErrAlreadyEnrolled — UI orqali qayta ro'yxatdan o'tishga urinish
 // (runtime bu xatoni o'rab qaytaradi; javobda aniq kod ko'rsatiladi).
+var (
+	// ErrCodeInvalid — kod noto‘g‘ri yoki muddati tugagan (§3.1 bad_code).
+	ErrCodeInvalid = errors.New("localui: kod noto‘g‘ri")
+	// ErrCodeUsed — kod allaqachon biriktirilgan (already_enrolled).
+	ErrCodeUsed = errors.New("localui: kod ishlatilgan")
+	// ErrNameTaken — serverda bunday mijoz nomi band (name_taken).
+	ErrNameTaken = errors.New("localui: nom band")
+	// ErrRateLimited — server urinishlarni chekladi (rate_limited).
+	ErrRateLimited = errors.New("localui: juda ko‘p urinish")
+)
+
 var ErrAlreadyEnrolled = errors.New("localui: agent allaqachon ro'yxatdan o'tgan")
 
 // handleEnroll — POST /api/ui/enroll {code}. Kod 8 xonali son (§3.1),
@@ -333,6 +359,14 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, ErrAlreadyEnrolled):
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "already_enrolled"})
+		case errors.Is(err, ErrCodeInvalid):
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "code_invalid"})
+		case errors.Is(err, ErrCodeUsed):
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "code_used"})
+		case errors.Is(err, ErrNameTaken):
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "name_taken"})
+		case errors.Is(err, ErrRateLimited):
+			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "rate_limited"})
 		default:
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "enroll_failed", "detail": err.Error()})
 		}

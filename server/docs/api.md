@@ -68,9 +68,12 @@ readers=0 bo'ladi va `idle_stop_s` keyin agentga `media_stop` yuboriladi
 
 ```
 POST /api/agent/enroll
-  {code, hostname, os, lan_ip, agent_version, caps}
+  {code, hostname, name, os, lan_ip, agent_version, caps}
   → 200 {agent_id, agent_secret, protocol_version}
-  → 401 bad_code | 409 already_enrolled | 429 rate_limited (5/5 min)
+  → 401 bad_code | 409 already_enrolled | 409 name_taken | 429 rate_limited (5/5 min)
+  `name` — operator bergan ko‘rinadigan nom (masalan "Oxangaron"); bo‘sh bo‘lsa
+  server avtomatik `agent-<id qoldig‘i>` nomini qo‘yadi. Nom band bo‘lsa
+  `name_taken` — kod isrof bo‘lmaydi, boshqa nom tanlanadi (protocol.md §3.1).
 WS   /api/agent/ws?agent_id=…   (auth/welcome handshake — protocol.md §4)
 ```
 

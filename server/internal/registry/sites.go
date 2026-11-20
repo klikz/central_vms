@@ -87,6 +87,14 @@ func (r *Registry) CreateClient(name string, siteID int64, agentID, secretHash s
 	if siteID != 0 {
 		siteArg = siteID
 	}
+	// Nom UNIQUE (0001_init). Band bo'lsa aniq xato qaytamiz: aks holda
+	// enroll "kod allaqachon ishlatilgan" degan chalkash xabarga aylanardi
+	// (2026-11-20: ikkinchi mijoz bir xil nom bilan ro'yxatdan o'tganda
+	// kuzatildi — kod yaroqli, lekin nom band edi).
+	var exists int
+	if err := r.db.QueryRow(`SELECT 1 FROM clients WHERE name=? LIMIT 1`, name).Scan(&exists); err == nil {
+		return 0, fmt.Errorf("client yaratish: %w (%s)", ErrNameTaken, name)
+	}
 	res, err := r.db.Exec(
 		`INSERT INTO clients (name, site_id, agent_id, agent_secret_hash) VALUES (?,?,?,?)`,
 		name, siteArg, agentID, secretHash)

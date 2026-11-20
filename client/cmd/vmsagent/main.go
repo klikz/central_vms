@@ -204,6 +204,7 @@ func run(ctx context.Context, log *slog.Logger, cfgPath, enrollCode string,
 		// UI "Save" → faylga yozish + sessiyani qayta boshlash;
 		// UI "Enroll" → §3.1 ro'yxatdan o'tish va darhol ulanish.
 		SetSettings: rt.setSettings,
+		GetSettings: rt.currentSettings,
 		Enroll:      rt.enrollFromUI,
 	})
 	if err != nil {

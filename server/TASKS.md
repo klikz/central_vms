@@ -233,6 +233,18 @@ qiyin edi. Server qabul qilishda bo'sh joy/tire yuboradi (`4173 9265` ham
 ishlaydi). Entropiya 10^8, urinishlar IP bo'yicha 5/5 daqiqa — to'liq qidiruv
 yillar talab qiladi, kod bir marta va 24 soatlik. Kontrakt: 1.0-draft.7.
 
+**Mijoz nomi (2026-11-20, operator talabi):** clientda kiritilgan „connection
+name‘ (masalan **Oxangaron**) serverda shu nom bilan ko‘rinadi. Nom ikki
+yo‘l bilan keladi: §3.1 enroll jismidagi `name` va har §4.1 `hello`dagi `name`
+(bo‘sh → server nomni o‘zgartirmaydi). Server `hello.name` o‘zgarsa
+`clients.name`ni yangilaydi va UI’ga `client_status{name}` yuboradi — sahifani
+yangilamasdan ko‘rinadi. Admin `PATCH /api/admin/clients/{id}` bilan baribir
+o‘zi qayta nomlay oladi.
+**Topilgan xato:** `clients.name` UNIQUE ekan; ikkinchi mijoz bir xil nom bilan
+ro‘yxatdan o‘tganida CreateClient `ErrExists` qaytargan va enroll chalkash
+`409 already_enrolled` degan (operator kodni ayblagan). Endi `ErrNameTaken` →
+`409 name_taken`, kod isrof bo‘lmaydi. Kontrakt: 1.0-draft.9.
+
 **S3 qoldiqlari:** drag&drop (ro'yxat→katak, katak↔katak) va double-click
 fullscreen brauzer testi, layout saqlash/yuklash/default UI, favorites
 reorder, pagination'da eski oqimlarni darhol stop (kodda bor, brauzer
