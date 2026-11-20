@@ -35,7 +35,7 @@ if ! git rev-parse --verify -q "origin/$BR" >/dev/null; then
 fi
 
 before=$(git rev-parse HEAD)
-if ! git -c rebase.autoStash=true pull --ff-only -q origin "$BR"; then
+if ! git -c rebase.autoStash=true -c advice.diverging=false pull --ff-only -q origin "$BR"; then
   echo "XATO: tezkor yangilab bo'lmadi — joyida yuborilmagan commitlar bor yoki tarix ajralgan." >&2
   echo "  Yechim: avval 'make push' (commitlaringiz rebase bilan yuboriladi)," >&2
   echo "  yoki o'zingiz: git pull --rebase origin $BR" >&2

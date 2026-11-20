@@ -223,5 +223,12 @@ stop-service:
 clean:
 	rm -rf $(BUILD_DIR) coverage.out
 
+## GitHub'ga yuklash / yangilash (skriptlar client/scripts/ da — bitta repoda).
+push:
+	@../client/scripts/git-push.sh "$(MSG)"
+
+update:
+	@../client/scripts/git-update.sh
+
 help:
 	@grep -B1 '^## ' Makefile | grep -v '^--$$' | sed 's/^## //'
