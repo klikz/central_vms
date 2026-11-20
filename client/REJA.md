@@ -6,7 +6,7 @@ Ubuntu, Docker yo'q, **systemd autostart**, lokal brauzer UI `:8082`.
 Bu fayl root `../REJA.md` ga taylanadi (§ raqamlari o'sha yerdan).
 
 Vazifalar ro'yxati: `TASKS.md` (shu papkada). Implementatsiya bosqichlari: **C0 → C4**.
-**Kontrakt manbasi: `docs/protocol.md`** (shu papkada, versiya 1.0-draft.4 — muzlatilgan).
+**Kontrakt manbasi: `docs/protocol.md`** (shu papkada, versiya 1.0-draft.6 — muzlatilgan).
 Server S0'da bu fayl `docs/protocol.md` ga ko'chiriladi; ziddiyat bo'lsa `client/docs/protocol.md` kuchli.
 
 ---
@@ -17,7 +17,7 @@ Server S0'da bu fayl `docs/protocol.md` ga ko'chiriladi; ziddiyat bo'lsa `client
 |---|---|
 | Kamera CRUD + **RTSP login/parollar (shifrlangan fayl)** — faqat shu yerda | registry, auth, limitlar, audit |
 | RTSP probe (kodek/B-frame aniqlash), status watcher | session manager, WHEP, brauzer pleyeri |
-| ONVIF (ixtiyoriy): discovery + profil sozlash | transcode default (RTX 3070 NVENC) |
+| ONVIF (ixtiyoriy): discovery + profil sozlash | transcode default (server GPU — modeli o'zgaruvchan, backend avtomatik: nvenc/vaapi/software) |
 | **Tarmoqdagi kameralarni topish va ommaviy qo'shish** (§7) | kamera ro'yxatini saqlash (`id` ni agent beradi, protocol.md §6) |
 | **Ingest/publish:** H.264 → WHIP, H.265 → RTSP/TCP | MediaMTX, token mint, auth-hook |
 | Zaxira transcode: joy GPU → joy CPU (server GPU band bo'lsa) | zaxira zanjir boshqaruvi (`transcode.by`) |
@@ -26,7 +26,7 @@ Server S0'da bu fayl `docs/protocol.md` ga ko'chiriladi; ziddiyat bo'lsa `client
 
 **Tasdiqlangan (root §1/§17):** kameralar asosan **Dahua, RTSP orqali**; ONVIF ixtiyoriy. Server offline bo'lsa joyda **lokal ko'rish kerak emas** — lokal UI faqat CRUD/sozlamalar/status uchun. Kamera paroli serverga hech qachon uzatilmaydi (faqat mask'langan URL).
 
-## 2. Chegara kontraktlari (yagona manba: **`docs/protocol.md`** — bu papkada, 1.0-draft.4, muzlatilgan)
+## 2. Chegara kontraktlari (yagona manba: **`docs/protocol.md`** — bu papkada, 1.0-draft.6, muzlatilgan)
 
 To'liq xabar sxemalari, maydon nomlari, reason kodlari va misollar `docs/protocol.md` da. Bu yerda faqat qisqacha:
 

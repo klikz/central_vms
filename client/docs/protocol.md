@@ -1,6 +1,6 @@
 # Central VMS — kontrakt: agent (`vmsagent`) ↔ server (`vmsd`)
 
-**Versiya: 1.0-draft.5** · Sana: 2026-11-19 · Holat: **client tomonida yozildi, muzlatildi (frozen)**
+**Versiya: 1.0-draft.6** · Sana: 2026-11-20 · Holat: **client tomonida yozildi, muzlatildi (frozen)**
 
 Bu fayl **yagona manba** (single source of truth). Server S0 bosqichida bu fayl `docs/protocol.md`
 ga ko'chiriladi (yoki symlink bilan bog'ladi) va undan keyin o'zgarish faqat versiya ko'tarib,
@@ -528,6 +528,22 @@ MediaMTX yuboradi (rasmiy maydonlar):
 - Javob: `200 {"allow": true}` yoki `403`. Qo'shimcha imkoniyat (tavsiya etiladi):
   `200 {"expireAt": "2026-11-19T10:01:00Z"}` — MediaMTX sessiyani o'zi yopadi, TTL watchdog ikki tomonlama ishlaydi.
 - Tekshiruv zanjiri: `token` → sha256 → DB → session → `path` mosligi → user/client huquqi.
+- **v1.11.3'da tekshirildi (2026-11-20):** RTSP so'rovlarida token `token`
+  maydonida BO'SH, `query` satrida (`token=...`) keladi; WHIP/WHEP'da esa
+  `Authorization: Bearer` `token` maydoniga tushadi. Klient uchala manbani
+  ham o'qiydi (`ExtractToken`).
+- **WHEP'da token URL query'da bo'lishi shart (v1.11.3'da tekshirildi):**
+  `Authorization: Bearer` MediaMTX auth-hook'ga uzatilmaydi (u o'z `jwt`ini
+  qo'shadi). Shuning uchun UI `?token=` qo'shadi va header'ni ham saqlaydi.
+- **Publish GOP talabi (o'qish kechikishi uchun hal qiluvchi):** MediaMTX
+  yangi o'quvchiga birinchi keyframe'dan yuboradi. x264 default `gop=250`
+  (15 fps'da ~17 s) — o'lchangan holda o'qish ochilishi 14.4 s edi; GOP 30
+  (2 s) bilan **2.4 s**. Agent publish'da `-g = 2×fps` (va `keyint_min` bir xil,
+  `sc_threshold 0`) ishlatishi shart; kamera sozlamasida GOP 1-2 s bo'lishi
+  tavsiya etiladi.
+- Control API (`/v3/paths/get/{name}`) — YAKKA obyekt, `readers` maydoni —
+  **obyektlar ro'yxati**; path bo'lmasa 404 (idle stop uchun readers=0
+  deb olinadi).
 - `tc/...` publish'i uchun alohida **ichki token** (server o'zi FFmpeg'ga beradi).
 
 ## 16. Discovery va ommaviy qo'shish (agent, lokal UI)
@@ -670,10 +686,20 @@ UI — SPA; ma'lumotlar shu endpoint'lar orqali olinadi. Barcha javoblar JSON
 
 ## 20. Changelog
 
+**Agent tomoni (2026-11-20 o‘lchandi):** server har 30 sda WS `ping`
+(kontrol frame) yuboradi. Gorilla‘da read deadline faqat DATA frame bilan
+uzaradi — kontrol frame uzarmaydi. Shuning uchun agent **kelgan ping‘da**
+(`SetPingHandler`) o‘z read deadline‘ini uzatishi yoki muntazam `hb`
+(data) yuborishi shart; aks holda agent ~90 sda jim uziladi (testagent‘da
+aynan shu xato topildi va tuzatildi; haqiqiy vmsagent `hb` yuborgani uchun
+tasodifan qutulgan).
+
 | Versiya | Sana | O'zgarish |
 |---|---|---|
+| 1.0-draft.6 | 2026-11-20 | §15 izohlar: agent WS `ping` kelganda read deadline'ini uzatishi shart (kontrol frame deadline uzarmaydi); WHEP read so'rovida token URL query'da bo'lishi shart (`Authorization` hook'ga yetmaydi); publish GOP 2 s dan katta bo'lmasligi talabi (o'quvchi birinchi keyframe'ni kutadi - 15 fps'da default gop=250 bilan 14.4 s kechikish olchandi); `paths/get` bir object qaytaradi, `readers` massivi. |
 | 1.0-draft.5 | 2026-11-19 | §17.1 ga kamera CRUD endpoint'lari to'liq yozildi (`/api/ui/cams` GET/POST/DELETE, `/api/ui/cams/{id}` PUT, import/eksport) va 501 qoidasi. §8.1 B-frame aniqlash: `profile-level-id` yetarli emas — H.264 SPS VUI `max_num_reorder_frames` o'qiladi (o'z parserimiz, golden + ffprobe orakoli bilan tasdiqlandi). |
 | 1.0-draft.4 | 2026-11-19 | §3.2/§10.1 aniqlashtirildi: state.json'da `secret_ref` yoziladi, shifrlangan secret emas. §3.1 ga kod berish usuli qo'shildi (`-enroll` yoki UI). §18: devserver handshake tartibi (auth→hello→welcome; 4001/4002/4003) va dev persistensiyasi. C1.1–C1.10 amalda ishlagani tasdiqlandi |
 | 1.0-draft.3 | 2026-11-19 | Lokal UI porti **8080 → 8082** (§10.3, §11) — 8080 bu muhitda band xizmatlar bilan to'qnashdi. Kamera HTTP porti (joy ichida 80/8080, §10.5) o'zgarmagan; server API 8081 va MediaMTX 8889/8189/8554 ham o'zgarmagan. **§17.1** qo'shildi: lokal UI HTTP API ro'yxati (`/api/ui/log`, favicon, noma'lum `/api/*` → JSON 404) — brauzer konsolidagi 404 xatolari sababi shu edi |
 | 1.0-draft.2 | 2026-11-19 | §18.2 qo'shildi: medium effort test intizomi (golden/fixture, fake clock, single-writer, goleak/-race, coverage bo'sagasi, reason matritsasi); WS-Discovery multicast manzili tuzatildi (`239.255.255.250:3702`); vmsd API porti (default 8081) aniqlashtirildi |
 | 1.0-draft.1 | 2026-11-19 | Client tomonida tuzilgan: enrollment endpoint, WS `auth`/`welcome`, `media_start.publish.urls`, token semantikasi tuzatildi, `cams_sync.op/epoch`, kamera `id` agentda, refcount/TTL watchdog/graceful shutdown, ingest kutubxonalari (gortsplib + pion, FFmpeg fallback), discovery/bulk add, lokal UI dizayn talabi, `client.yaml` sxemasi, reason kodlari, auth-hook `action` ro'yxati tuzatildi |
+

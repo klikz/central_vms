@@ -1,7 +1,7 @@
 # CLIENT vazifalar (C0 → C4) — **medium effort rejimiga moslashtirilgan**
 
 Belgilar: `[ ]` bajarilmagan, `[x]` bajarilgan. **Dependence** — qaysi vazifa oldin/tayyor bo'lishi kerak.
-Kontrakt: **`docs/protocol.md`** (shu papkada, 1.0-draft.4 — **yozilgan va muzlatilgan**). Server uni
+Kontrakt: **`docs/protocol.md`** (shu papkada, 1.0-draft.6 — **yozilgan va muzlatilgan**). Server uni
 S0'da o'z `docs/` ga ko'chiradi; shu sababli client serverni kutmaydi. `devserver` mock bilan
 C1→C3 to'liq parallel yuradi.
 
@@ -302,6 +302,6 @@ ishlaydi; SIGTERM'dan keyin serverda "yetim" sessiyalar qolmaydi.
 - **G4** (C3.10 oxiri): refcount + watchdog + stop testlari — o'tmasa transcode/fallback qadamlari boshlanmaydi.
 - **G5** (C3.20): `make itest SCENARIO=all` — o'tmasa C4 boshlanmaydi.
 
-Kalit nuqta: **kontrakt yozilgan va muzlatilgan** (`client/docs/protocol.md`, 1.0-draft.4) — client
+Kalit nuqta: **kontrakt yozilgan va muzlatilgan** (`client/docs/protocol.md`, 1.0-draft.6) — client
 serverni kutmaydi; medium effort rejimida har qadamda `Kontrakt §` ko'rsatilgan, shu sababli
 "qanday bo'lishi kerak" degan savol kod yozish paytida tug'ilmaydi.
