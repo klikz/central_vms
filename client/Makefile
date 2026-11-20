@@ -41,9 +41,9 @@ STOP_PATTERNS := 'build/[v]msagent -config' 'exe/[v]msagent' 'go-build[^ ]*/[v]m
 
 BACKUP_DIR ?= /var/backups/vmsagent
 
-.PHONY: all start dev build run install uninstall logs logs-err backup restore status test race cover gate \ push update
+.PHONY: all start dev build run install uninstall logs logs-err backup restore status test race cover gate \
         lint fmt vet fixtures deps deps-fetch devserver itest stress secretscan ui-lint ui-shot logs-err \
-        package remote-update stop stop-service clean help
+        package remote-update stop stop-service clean help push update
 
 all: build
 
