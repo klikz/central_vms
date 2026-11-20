@@ -293,10 +293,10 @@ type CodecFixDone struct {
 
 // Compat — versiya mosligi (§1).
 type Compat struct {
-	OK            bool    `json:"ok"`
-	ServerVersion *string `json:"server_version,omitempty"`
-	MinSupported  *int    `json:"min_supported,omitempty"`
-	MaxSupported  *int    `json:"max_supported,omitempty"`
+	OK            bool   `json:"ok"`
+	ServerVersion string `json:"server_version,omitempty"`
+	MinSupported  int    `json:"min_supported"`
+	MaxSupported  int    `json:"max_supported"`
 }
 
 // Limits — agent uchun chegaralar (§4.1, §10.4).

@@ -14,22 +14,23 @@ type Site struct {
 
 // Client — agent bloki (agent_id server tomonidan `ag_…` formatda beriladi).
 type Client struct {
-	ID            int64  `json:"id"`
-	SiteID        int64  `json:"site_id,omitempty"`
-	Name          string `json:"name"`
-	AgentID       string `json:"agent_id"`
-	Status        string `json:"status"`
-	Version       string `json:"version"`
-	OS            string `json:"os"`
-	LanIP         string `json:"lan_ip"`
-	CapsJSON      string `json:"caps_json"`
-	MaxUploads    int    `json:"max_uploads"`
-	MaxTranscodes int    `json:"max_transcodes"`
-	TranscodeMode string `json:"transcode_mode"`
-	LastSeenAt    string `json:"last_seen_at,omitempty"`
-	EnrolledAt    string `json:"enrolled_at"`
-	CamerasCount  int    `json:"cameras_count"`
-	CamerasOnline int    `json:"online_count"`
+	ID              int64  `json:"id"`
+	SiteID          int64  `json:"site_id,omitempty"`
+	Name            string `json:"name"`
+	AgentID         string `json:"agent_id"`
+	AgentSecretHash string `json:"-"` // hech qachon tashqariga chiqmaydi
+	Status          string `json:"status"`
+	Version         string `json:"version"`
+	OS              string `json:"os"`
+	LanIP           string `json:"lan_ip"`
+	CapsJSON        string `json:"caps_json"`
+	MaxUploads      int    `json:"max_uploads"`
+	MaxTranscodes   int    `json:"max_transcodes"`
+	TranscodeMode   string `json:"transcode_mode"`
+	LastSeenAt      string `json:"last_seen_at,omitempty"`
+	EnrolledAt      string `json:"enrolled_at"`
+	CamerasCount    int    `json:"cameras_count"`
+	CamerasOnline   int    `json:"online_count"`
 }
 
 func validTranscodeMode(m string) bool {
@@ -98,17 +99,17 @@ func (r *Registry) CreateClient(name string, siteID int64, agentID, secretHash s
 func (r *Registry) GetClientByAgentID(agentID string) (Client, error) {
 	var c Client
 	err := r.db.QueryRow(
-		`SELECT id, COALESCE(site_id,0), name, agent_id, status, version, os, lan_ip, caps_json,
+		`SELECT id, COALESCE(site_id,0), name, agent_id, agent_secret_hash, status, version, os, lan_ip, caps_json,
 		        max_uploads, max_transcodes, transcode_mode, enrolled_at, COALESCE(last_seen_at,'')
 		 FROM clients WHERE agent_id = ?`, agentID).
-		Scan(&c.ID, &c.SiteID, &c.Name, &c.AgentID, &c.Status, &c.Version, &c.OS, &c.LanIP,
+		Scan(&c.ID, &c.SiteID, &c.Name, &c.AgentID, &c.AgentSecretHash, &c.Status, &c.Version, &c.OS, &c.LanIP,
 			&c.CapsJSON, &c.MaxUploads, &c.MaxTranscodes, &c.TranscodeMode, &c.EnrolledAt, &c.LastSeenAt)
 	return c, wrap(err, "client o'qish")
 }
 
 func (r *Registry) ListClients() ([]Client, error) {
 	rows, err := r.db.Query(
-		`SELECT c.id, COALESCE(c.site_id,0), c.name, c.agent_id, c.status, c.version, c.os, c.lan_ip,
+		`SELECT c.id, COALESCE(c.site_id,0), c.name, c.agent_id, c.agent_secret_hash, c.status, c.version, c.os, c.lan_ip,
 		        c.caps_json, c.max_uploads, c.max_transcodes, c.transcode_mode, c.enrolled_at,
 		        COALESCE(c.last_seen_at,''),
 		        (SELECT count(*) FROM cameras k WHERE k.client_id=c.id),
@@ -121,7 +122,7 @@ func (r *Registry) ListClients() ([]Client, error) {
 	var out []Client
 	for rows.Next() {
 		var c Client
-		if err := rows.Scan(&c.ID, &c.SiteID, &c.Name, &c.AgentID, &c.Status, &c.Version, &c.OS,
+		if err := rows.Scan(&c.ID, &c.SiteID, &c.Name, &c.AgentID, &c.AgentSecretHash, &c.Status, &c.Version, &c.OS,
 			&c.LanIP, &c.CapsJSON, &c.MaxUploads, &c.MaxTranscodes, &c.TranscodeMode,
 			&c.EnrolledAt, &c.LastSeenAt, &c.CamerasCount, &c.CamerasOnline); err != nil {
 			return nil, wrap(err, "clients scan")
