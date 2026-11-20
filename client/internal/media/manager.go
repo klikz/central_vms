@@ -141,7 +141,11 @@ func (m *Manager) run(ctx context.Context, s *sess, cam cams.Camera) {
 	m.mu.Unlock()
 
 	first := true
-	o := cams.PullOptions{URL: CamRTSPURL(cam), User: "admin", Pass: pass, Log: m.cfg.Log}
+	user := cam.User
+	if user == "" {
+		user = "admin" // eski konfiglar/agentlar uchun standart (§10.2)
+	}
+	o := cams.PullOptions{URL: CamRTSPURL(cam), User: user, Pass: pass, Log: m.cfg.Log}
 	perr := m.pullFn(ctx, o, func(au cams.AU) error {
 		if err := tr.WriteAU(au.Nals, au.Timestamp); err != nil {
 			return err

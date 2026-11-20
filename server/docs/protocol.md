@@ -467,10 +467,18 @@ nisbatan yangi, RTSP esa barqaror (root §17).
 - FFmpeg versiyasi tekshiriladi: `-f whip` muxer **FFmpeg ≥ 7.1** da bor (bizning dev muhitda 9.0.2 — mavjud).
 
 ### 8.3a RTP bo'laklash (H.265) — 1.0-draft.12
-H.265 ingest/egress'da FU paketi **turi 62** (H.264'dagi 28/49 EMAS) va
-payload tartibi: `[NAL bayt0 (tur=62, 1..6-bit)] [NAL bayt1 nusxasi]
-[FU boshi S|E|tur] [bo'lak]`. Agentda ham paketlash, ham depaketlash
-shu formatda (round-trip testi bilan tekshirilgan).
+RFC 7798: AP turi **48**, FU turi **49**, PACI turi 50 (HEVC specida
+62 — "unspecified", RTP uni qayta-yigmaydi). Payload tartibi:
+`[NAL bayt0 (tur=49, 1..6-bit)] [NAL bayt1 nusxasi] [FU boshi S|E|tur]
+[bo'lak]`. Agentda ham paketlash, ham depaketlash shu formatda
+(round-trip testi bilan tekshirilgan).
+**Tarix (2026-11-20/21):** dastlab paketlashda tur `62<<2` yozilgan edi
+(layer-id buzilardi); keyin `62<<1` qilingan — lekin 62 noto'g'ri TUR:
+MediaMTX uni oddiy NAL deb uzatardi, FFmpeg esa `Unsupported (HEVC)
+NAL type (62)` deb rad etardi. To'g'ri tur 49 (FFmpeg `rtpdec_hevc.c`
+`HEVC_NAL_FRAGMENT=49`). Tuzatishdan keyin jonli Hikvision (HEVC
+2688x1520) oqimi MediaMTX orqali `ffprobe`da 4 s'da 66 kadr, xatosiz
+dekodlandi.
 
 ### 8.3b Kamera autentifikatsiyasi — 1.0-draft.12
 Hikvision digest URI'sini **standart port tushirilgan** ko'rinishda
@@ -842,6 +850,8 @@ tasodifan qutulgan).
 | Versiya | Sana | O'zgarish |
 |---|---|---|
 | 1.0-draft.12 | 2026-11-20 | **Qo'shimcha (haqiqiy Hikvision kamerasi bilan sinov, 192.168.0.24):** §4.5 `codec_probe` endi haqiqatan yuboriladi (probe SDP'dan kodekni o'rganadi); §8.3a H.265 FU turi 62 va 3 baytli FU boshi (ikkala tomonda ham noto'g'ri edi — round-trip testi qo'shildi); §8.3b Hikvision digest URI quyi izohi (standart portsiz URI bilan qayta urinish); §8.3c interleaved yozish muddati har freymda yangilanadi (publish 5 s'da uzilardi); serverda qayta ulanish poygasi tuzatildi — eski WS sessiyasi yopilishi mijozni (va kameralarini) offline qilmaydi. **Hali to'liq yopilmagan:** H.265 qayta-yuborilgan oqimning brauzer/ffprobe tomonidan dekodlanishi (o'quvchi "NAL type 62" va kalit kadr yetishmasligini xabar qiladi) — davomiy ish. |
+| 1.0-draft.12 | 2026-11-21 | **H.265 zanjiri yopildi (§8.3a):** FU NAL turi 49 (RFC 7798) — 62 emas; agent paketlashi va depaketlashi tuzatildi, natijada qayta-yuborilgan H.265 oqim MediaMTX orqali toza dekodlanadi (jonli kamera: 4 s'da 66 kadr, xato yo'q). **MediaMTX API:** `PUT /v3/config/paths/put/{name}` `/` li nomlar bilan route'ga mos kelmaydi (v1.11.3) — server endi `~^cam/.+` / `~^tc/.+` patternlarini `paths/list` orqali tekshiradi va EnsurePath'ni zarur bo'lganda chaqiradi (log'dagi 404 shovqini yo'qoldi). **Yangi ochiq xatolar:** (1) `server_tc` rejimida FFmpeg `tc/...` ga ANNOUNCE'ni kech (jarayon tugashida) qiladi — o'quvchilar 404 oladi; (2) bir kameraga avval `hevc:true` keyin `hevc:false` so'rovi kelganda agent ikkinchi publish'ni tushirib yuboradi (`media_stopped reason=dropped`) va transcode umuan boshlanmaydi. |
+| 1.0-draft.12 | 2026-11-21 | **Yurishni davomi (S4 qoldiqlari):** (a) §2 heartbeat: server har 30 sda `ping` **envelope**ini yuboradi — WS control ping agentning o'qish muddatini uzamaydi (agent `PingHandler` qo'shildi); bu tuzatilgunga qadar agent har 60 s'da `i/o timeout` bilan uzilib qayta ulanar edi; (b) §4.2 `position` endi sync'da server bazasiga yoziladi; (c) kamera RTSP foydalanuvchisi (`user`) agent modelida saqlanadi (standart `admin`) — pull shu nom bilan kirishadi; (d) serverda retention (`sessions`/`audit_log`, `retention_days`) va token sweep ishga tushdi (soatlik janitor); (e) `vmsd -backup <fayl>` — `VACUUM INTO` bilan issiq nusxa + butunlik tekshiruvi (`deploy/backup.sh`); (f) `deploy/firewall.md`, `deploy/install-notes.md`. |
 | 1.0-draft.12 | 2026-11-20 | **Kamera holati va oqim zanjiri tuzatildi** (operator kuzatuvi: "mijozda kamera qo'shsam serverda ko'rinmadi, preview chiqmadi"): (a) `cam_status` endi haqiqatan yuboriladi — sessiya ochilganda to'liq snapshot + holat o'zgarganda (§4.4); (b) kamera qo'shish/tahrirlash/o'chirish `cams_sync`ni **darhol** yuboradi, server UI'ga `cams_changed` uzatiladi (§4.2); (c) `media_start.ingest` qiymati tuzatildi — server "rtsp" yuborardi, kontrakt esa `whip|rtsp_tcp` (§5.2); (d) `media_ready.path` — MediaMTX yo'li, profil emas; server mos kelmasa o'z path'ida qoladi (§4.6); (e) `cameras.last_error`/`last_error_at` — probe va `media_stopped` sababi UI'da ko'rinadi (§4.4); (f) §8.4: SDP'dagi sprop parameter setlari kalit kadr oldiga qo'shiladi. |
 | 1.0-draft.11 | 2026-11-20 | **Eskirgan identity holati** (operator kuzatuvi:
   client „connected as ag_…“ deb turardi, Request access o'chirilgan edi,

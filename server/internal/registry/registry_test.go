@@ -348,3 +348,50 @@ func TestCameraLastError(t *testing.T) {
 		t.Fatalf("bo'sh sabab eskisini o'chirdi: %+v", c)
 	}
 }
+
+// S4.3 retention: eski sessiyalar va audit yozuvlari o'chiriladi,
+// yangilari qoladi.
+func TestPurgeOlderThan(t *testing.T) {
+	r := testReg(t)
+	c1 := mustClient(t, r, "ret-client")
+	mustCamera(t, r, c1, "ret-cam")
+	u := mustUser(t, r, "ret-user", "viewer")
+
+	// Eski yozuvlar (2020-yil) — qo'lda SQL bilan kiritiladi.
+	if _, err := r.db.Exec(`INSERT INTO sessions (id, camera_id, user_id, started_at, ended_at, profile, kind, state)
+		VALUES ('old-1','ret-cam',?,'2020-01-01T00:00:00Z','2020-01-01T00:05:00Z','sub','preview','ended'),
+		       ('old-2','ret-cam',?,'2020-06-01T00:00:00Z',NULL,'main','play','ended')`, u, u); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.db.Exec(`INSERT INTO audit_log (user_id, action, target, at)
+		VALUES (?, 'eski_amal','x','2020-01-01T00:00:00Z')`, u); err != nil {
+		t.Fatal(err)
+	}
+	// Yangi yozuv (hozir) — qolishi kerak.
+	if err := r.InsertSession("new-1", "ret-cam", u, "sub", "preview", "2999-01-01T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.db.Exec(`INSERT INTO audit_log (user_id, action, target, at)
+		VALUES (?, 'yangi_amal','y',strftime('%Y-%m-%dT%H:%M:%SZ','now'))`, u); err != nil {
+		t.Fatal(err)
+	}
+
+	sess, audit, err := r.PurgeOlderThan(90)
+	if err != nil {
+		t.Fatalf("purge: %v", err)
+	}
+	if sess != 2 || audit != 1 {
+		t.Fatalf("o'chirish sonlari noto'g'ri: sessions=%d audit=%d", sess, audit)
+	}
+	var n int
+	if err := r.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id='new-1'`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("yangi sessiya o'chdi (n=%d err=%v)", n, err)
+	}
+	if err := r.db.QueryRow(`SELECT COUNT(*) FROM audit_log WHERE action='yangi_amal'`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("yangi audit o'chdi (n=%d err=%v)", n, err)
+	}
+	// days<=0 → hech narsa qilinmaydi.
+	if s, a, err := r.PurgeOlderThan(0); err != nil || s != 0 || a != 0 {
+		t.Fatalf("days=0 himoyasi ishlamadi: %d %d %v", s, a, err)
+	}
+}

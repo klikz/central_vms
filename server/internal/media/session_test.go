@@ -64,17 +64,30 @@ func (f *fakeSender) lastStart() proto.MediaStart {
 }
 
 type fakeMTX struct {
-	mu      sync.Mutex
-	paths   map[string]bool
-	deleted []string
-	readers int
-	alive   bool
+	mu        sync.Mutex
+	paths     map[string]bool
+	deleted   []string
+	readers   int
+	alive     bool
+	patterned bool // mediamtx.yml'da ~^cam/.+ patternlari bor deb hisoblash
+	ensure    int  // EnsurePath chaqiruvlari soni
 }
 
 func newFakeMTX() *fakeMTX {
 	return &fakeMTX{paths: map[string]bool{}, readers: 1, alive: true}
 }
+
+// PathConfigured — dev/prod mediamtx.yml'dagi kabi patternlar bilan
+// qoplangan yo'llar uchun EnsurePath chaqirilmasligi kerak.
+func (f *fakeMTX) PathConfigured(name string) (bool, error) {
+	if f.patterned {
+		return strings.HasPrefix(name, "cam/") || strings.HasPrefix(name, "tc/"), nil
+	}
+	return false, nil
+}
+
 func (f *fakeMTX) EnsurePath(name string, _ PathConf) error {
+	f.ensure++
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.paths[name] = true
@@ -655,5 +668,28 @@ func TestMediaStoppedNormalReasonNoError(t *testing.T) {
 	}
 	if c.LastError != "" {
 		t.Fatalf("normal sabab xato deb yozildi: %q", c.LastError)
+	}
+}
+
+// 1.0-draft.12: MediaMTX konfiguratsiyasi yo'lni pattern bilan qoplaydi —
+// EnsurePath chaqirilmaydi (v1.11.3'da `/` li nomlar bilan PUT ishlamaydi;
+// har preview'da log'da 404 ko'rinardi).
+func TestEnsurePathSkippedForPatternedPaths(t *testing.T) {
+	mt := newMTest(t, MgrConfig{IdleStop: time.Second}, gpu.Caps{Backend: gpu.BackendNone})
+	mt.mtx.patterned = true
+	if _, err := mt.m.Start(mt.cam, 1, "", "preview", BrowserCaps{}); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if mt.mtx.ensure != 0 {
+		t.Fatalf("pattern bilan qoplangan yo'l uchun EnsurePath chaqirildi: %d", mt.mtx.ensure)
+	}
+
+	mt2 := newMTest(t, MgrConfig{IdleStop: time.Second}, gpu.Caps{Backend: gpu.BackendNone})
+	mt2.mtx.patterned = false
+	if _, err := mt2.m.Start(mt2.cam, 1, "", "preview", BrowserCaps{}); err != nil {
+		t.Fatalf("start2: %v", err)
+	}
+	if mt2.mtx.ensure == 0 {
+		t.Fatal("qoplanmagan yo'l uchun EnsurePath chaqirilishi kerak edi")
 	}
 }

@@ -78,7 +78,10 @@ func (ps *previewSvc) authURL(c cams.Camera) string {
 	if err != nil {
 		return u
 	}
-	user := "admin"
+	user := c.User
+	if user == "" {
+		user = "admin"
+	}
 	p.User = url.UserPassword(user, pass)
 	return p.String()
 }

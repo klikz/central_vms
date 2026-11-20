@@ -38,6 +38,10 @@ func (c *Conn) handleCamsSync(cs proto.CamsSync) error {
 				ID: cam.ID, Name: cam.Name, RTSPMasked: cam.RTSPMasked,
 				CodecMain: cam.Codecs.Main, CodecSub: cam.Codecs.Sub,
 				BFrameMain: cam.BFrame.Main, BFrameSub: cam.BFrame.Sub,
+				// 1.0-draft.12: `position` (§4.2) va ONVIF manzili sync'da
+				// kelardi, lekin bu yerga yetkazilmasdi — serverda
+				// kameralar doim 0-tartibda qolardi.
+				Position: cam.Position,
 			})
 		}
 		if err != nil && firstErr == nil && !isNotFound(err) {

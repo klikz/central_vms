@@ -64,6 +64,9 @@ func (s *Service) Get(id string) (cams.Camera, bool) {
 
 // Create — yangi kamera: UUIDv4 agent tomonidan (§5), parol keystore'ga (§10.1).
 func (s *Service) Create(c cams.Camera, secret string) (cams.Camera, error) {
+	if c.User == "" {
+		c.User = "admin" // §10.2: RTSP foydalanuvchisi standart "admin"
+	}
 	if c.ID == "" {
 		c.ID = cams.NewID()
 	}
@@ -118,6 +121,9 @@ func (s *Service) Update(id string, patch cams.Camera, secret *string) (cams.Cam
 		}
 		if patch.Position == 0 {
 			patch.Position = c.Position
+		}
+		if patch.User == "" {
+			patch.User = c.User // tahrirda maydon bo'sh kelsa saqlanadi
 		}
 		s.St.Cameras[i] = patch
 		s.St.BumpEpoch()

@@ -189,3 +189,45 @@ func TestCamsNotReady501(t *testing.T) {
 		t.Fatalf("javob: %s", body)
 	}
 }
+
+// 1.0-draft.12: UI'dagi "RTSP user" maydoni modelga yoziladi (avval API
+// uni yo'qqa chiqarardi va hardcode "admin" ishlatilardi).
+func TestCamUserField(t *testing.T) {
+	ts, _ := newCamServer(t)
+	res, body := doJSON(t, ts, http.MethodPost, "/api/ui/cams",
+		`{"name":"Boshqa-user","host":"10.0.0.9","user":"viewer","secret":"parol123"}`)
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create: %d %s", res.StatusCode, body)
+	}
+	var got struct {
+		ID   string `json:"id"`
+		User string `json:"user"`
+	}
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.User != "viewer" {
+		t.Fatalf("user saqlanmadi: %q", got.User)
+	}
+	// Bo'sh user → standart "admin".
+	res, body = doJSON(t, ts, http.MethodPost, "/api/ui/cams",
+		`{"name":"Standart","host":"10.0.0.10","secret":"p"}`)
+	var got2 struct {
+		User string `json:"user"`
+	}
+	if err := json.Unmarshal([]byte(body), &got2); err != nil {
+		t.Fatal(err)
+	}
+	if got2.User != "admin" {
+		t.Fatalf("standart user noto'g'ri: %q", got2.User)
+	}
+	// Tahrirda user bo'sh kelsa eski qiymat saqlanadi.
+	res, body = doJSON(t, ts, http.MethodPut, "/api/ui/cams/"+got.ID,
+		`{"name":"Boshqa-user2","host":"10.0.0.9"}`)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("update: %d %s", res.StatusCode, body)
+	}
+	if !strings.Contains(body, `"user":"viewer"`) {
+		t.Fatalf("tahrirda user yo'qoldi: %s", body)
+	}
+}

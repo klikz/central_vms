@@ -49,6 +49,18 @@ func (s *Session) serve(ctx context.Context, conn *websocket.Conn) error {
 	s.setConn(conn)
 	defer func() { s.setSendCh(nil); s.setConn(nil) }()
 
+	// §2 + §15 izoh: WS control ping kelganda o'qish muddati uzatiladi.
+	// Gorilla control frame ReadJSON'ni qaytarmaydi — deadline o'z
+	// o'rnida qolsa, faqat ping/pong bilan yashayotgan ulanish 60 s'da
+	// "i/o timeout" bilan uzilardi (2026-11-21 kuzatildi: agent har
+	// daqiqada qayta ulanar edi). Default pong handler overwrite
+	// qilingani uchun pong o'zimiz yuboriladi.
+	conn.SetPingHandler(func(appData string) error {
+		_ = conn.SetReadDeadline(s.cfg.Clock.Now().Add(readTimeout))
+		return conn.WriteControl(websocket.PongMessage, []byte(appData),
+			s.cfg.Clock.Now().Add(writeTimeout))
+	})
+
 	// Yagona yozuvchi goroutine (TASKS §0.3: murakkab mutex'lar yo'q)
 	go func() {
 		for env := range sendCh {

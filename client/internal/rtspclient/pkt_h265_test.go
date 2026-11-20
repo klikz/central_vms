@@ -6,7 +6,7 @@ import (
 )
 
 // RFC 7798 H.265 RTP: singleton (2 baytli NAL header saqlanadi) va
-// FU (type=62, S/E bitlari).
+// FU (RFC 7798 turi=49, S/E bitlari).
 
 func TestH265Packetizer_Singleton(t *testing.T) {
 	p := NewH265Packetizer(96, 5)
@@ -41,14 +41,14 @@ func TestH265Packetizer_FU(t *testing.T) {
 		if len(pl) < 2 {
 			t.Fatal("FU payload qisqa")
 		}
-		// RFC 7798: [bayt0: tur=62 (1..6-bit)] [bayt1: asl NAL bayt1 nusxasi]
+		// RFC 7798: [bayt0: tur=49 (1..6-bit)] [bayt1: asl NAL bayt1 nusxasi]
 		// [bayt2: FU boshi S|E|tur] [bo'lak].
 		if len(pl) < 3 {
 			t.Fatal("FU payload qisqa")
 		}
 		h0, fu := pl[0], pl[2]
-		if typ := (h0 >> 1) & 0x3f; typ != 62 {
-			t.Errorf("b%d: FU type = %d, 62 kutilardi", i, typ)
+		if typ := (h0 >> 1) & 0x3f; typ != 49 {
+			t.Errorf("b%d: FU type = %d, 49 kutilardi", i, typ)
 		}
 		if pl[1] != nal[1] {
 			t.Errorf("b%d: NAL bayt1 nusxasi buzildi", i)

@@ -528,7 +528,7 @@ function openNewCamModal() {
     const secret = pass;
     try {
       await api("/api/ui/cams", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: $("#c-name").value.trim(), host, port: parseInt($("#c-port").value || "554", 10), secret }) });
+        body: JSON.stringify({ name: $("#c-name").value.trim(), host, port: parseInt($("#c-port").value || "554", 10), user: $("#c-user").value.trim() || "admin", secret }) });
       toast(I18N.saved, "ok");
       $("#modal").hidden = true;
       await loadCams();

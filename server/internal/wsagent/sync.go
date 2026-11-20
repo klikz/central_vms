@@ -67,9 +67,15 @@ func (c *Conn) pingLoop(done chan struct{}) {
 		case <-done:
 			return
 		case <-time.After(interval):
-			// WS control ping (protocol.md §2 "ping/pong"); agent kutubxonalari
-			// avtomatik pong qaytaradi, qo'shimcha envelope yuborilmaydi.
+			// §2/§5.8: server har 30 s `ping` yuboradi, agent 5 s ichida
+			// `pong` bilan javob beradi. WS control ping ham yuboriladi
+			// (TCP o'likligini erta bilish uchun), lekin u agentning o'qish
+			// muddatini uzamaydi — shuning uchun aynan envelope kerak:
+			// 2026-11-21'da agent har 60 s'da "i/o timeout" bilan uzilar edi.
 			if err := c.ws.WriteControl(websocket.PingMessage, nil, time.Now().Add(5*time.Second)); err != nil {
+				return
+			}
+			if err := c.sendEnvelope(proto.MsgPing, map[string]any{}); err != nil {
 				return
 			}
 		}
@@ -218,5 +224,9 @@ func (c *Conn) shutdown() {
 	c.closeOnce.Do(func() {
 		close(c.out)
 		close(c.done)
+		// O'quvchi sikl `done`ni sezmaydi — socketni yopish shart,
+		// aks holda Kick/offline belgisi DeadTO tugagunicha kechikadi
+		// (prod'da 90 s davomida o'chirilgan mijoz "online" qolardi).
+		_ = c.ws.Close()
 	})
 }

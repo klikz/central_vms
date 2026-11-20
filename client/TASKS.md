@@ -391,6 +391,14 @@ Boshqaruv → „O'chirish“ bilan tozalanadi. Kontrakt: 1.0-draft.11 (§3.6, �
   qayta-yuborishda ularni yo'qotardi va MediaMTX'dagi oqim dekodlanmadi
   ("non-existing PPS"). `cams.Pull` endi ularni kalit kadr oldiga qo'shadi (§8.4).
 
+2026-11-21 davomi: **WS heartbeat uzilishi** tuzatildi — server WS
+control ping yuborardi, u esa agentning o'qish muddatini uzamaydi
+(§15 izohi), natijada agent har 60 s'da `i/o timeout` bilan uzilib
+qayta ulanar edi (kameralar "doim offline" ko'rinar edi). Endi agent
+`PingHandler`da read deadline'ni uzaytiradi va pong yuboradi; server
+qo'shimcha ravishda §2 bo'yicha `ping` envelope ham yuboradi
+(test: `TestServerSendsPingEnvelope`).
+
 2026-11-20 davomi (haqiqiy Hikvision kamerasi, 192.168.0.24 — H.265):
 - `codec_probe` (§4.5) endi yuboriladi: probe kodekni SDP'dan o'rganadi
   (bitta ulanishda `DESCRIBE`; qo'shimcha ulanishlar kamera sessiya
@@ -407,12 +415,20 @@ Boshqaruv → „O'chirish“ bilan tozalanadi. Kontrakt: 1.0-draft.11 (§3.6, �
   holda publish ~5 s'da `i/o timeout` bilan uzilar edi.
 
 Qolgan bo'sh joylar:
-- [ ] **H.265 qayta-yuborilgan oqim hali to'liq dekodlanmaydi**: MediaMTX
-      trekni `H265` deb ochadi, lekin o'quvchi (ffprobe) "Unsupported
-      (HEVC) NAL type (62)" va kalit kadr yetishmasligini aytadi.
-      Keyingi qadam: MediaMTX'ga tushayotgan RTP'ni real NAL'larga
-      ajratib solishtirish (yoki publish'ni FFmpeg fallback orqali
-      `copy` bilan yuborish yo'lini sinash).
-- [ ] `position` maydoni `cams_sync`da yuborilmaydi.
-- [ ] Kamera RTSP foydalanuvchisi modelda saqlanmaydi — UI'da "RTSP user"
-      maydoni bor, lekin API/model uni yo'qqa chiqaradi (hardcode `admin`).
+- [x] **H.265 qayta-yuborilgan oqim dekodlanadi** (2026-11-21): ildiz —
+      §8.3a'dagi FU NAL turi. RFC 7798 bo'yicha FU=**49** (AP=48, PACI=50),
+      biznikida 62 edi; MediaMTX 62 ni oddiy NAL deb uzatardi, FFmpeg esa
+      `Unsupported (HEVC) NAL type (62)` deb rad etardi. Agent paketlashi
+      (`h0 = 49<<1`) va depaketlashi (case 49) tuzatildi.
+      **Jonli tekshiruv:** Hikvision HEVC 2688x1520 → agent publish →
+      MediaMTX (`tracks=[H265]`) → `ffprobe` 4 s'da **66 kadr, xatosiz**.
+      Diagnostika usuli: nashr yo'lini o'z rtspclient'imiz bilan o'qib
+      NAL turlarini sanash (keyingi safar ham foydali).
+      Qolgan ochiq muammo server tomonida: `server_tc` transcode'ining
+      `tc/...` ANNOUNCE kechikishi (server TASKS'da yozilgan).
+- [x] `position` sync'da yuboriladi (agent tomonidan allaqachon yuborilgan
+      edi; server uni bazaga yozmas edi — 2026-11-21'da server tuzatildi,
+      test: `TestCamsSyncStoresPosition`).
+- [x] Kamera RTSP foydalanuvchisi modelga qo'shildi (`cams.Camera.User`,
+      standart `admin`), UI maydoni endi haqiqatan ishlatiladi; pull va
+      probe shu nom bilan kiradi. Test: `TestCamUserField` (2026-11-21).

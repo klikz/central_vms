@@ -4,6 +4,7 @@
 package main
 
 import (
+	"central-vms/server/internal/janitor"
 	"context"
 	"flag"
 	"fmt"
@@ -48,6 +49,7 @@ func run() error {
 		migrate  = flag.String("migrate", "", "migratsiya amali: up|down|status (make migrate-*)")
 		seedAdm  = flag.String("seed-admin", "", "admin yaratish/yangilash: username:parol (make admin)")
 		showVer  = flag.Bool("version", false, "versiyani chiqarish")
+		backupO  = flag.String("backup", "", "bazaning issiq nusxasi (VACUUM INTO) — shu faylga yozib chiqish")
 	)
 	flag.Parse()
 
@@ -81,7 +83,11 @@ func run() error {
 	// qiladi; tashqi MediaMTX bilan to'qnashuvni `make port-check`
 	// (`make start` chaqiradi) oldindan aniqlaydi — vmsd tashqi xizmatni
 	// o'zi to'xtatmaydi. seed-admin/migrate-only rejimlarda portlar kerak emas.
-	if apiPort := portOf(cfg.Bind); apiPort != 0 && *seedAdm == "" && !*migrateO {
+	// Bir martalik rejimlarda (admin yaratish, migratsiya, zaxira, probe)
+	// portlar kerak emas — ishlab turgan serverga xalaqit bermaslik uchun
+	// tekshiruv o'tkazib yuboriladi (S4.4: `-backup` cron'da ishlaydi).
+	oneShot := *seedAdm != "" || *backupO != "" || *migrate != "" || *probe || *migrateO
+	if apiPort := portOf(cfg.Bind); apiPort != 0 && !oneShot {
 		hookPort := portOf(cfg.MediaMTX.AuthHookBind)
 		if err := ports.Check([]int{apiPort, hookPort}, nil); err != nil {
 			return err
@@ -100,6 +106,10 @@ func run() error {
 	if len(done) > 0 {
 		lg.Info("migratsiyalar qo'llanildi", slog.Any("versions", done))
 	}
+	if *backupO != "" {
+		return runBackup(cfg, *backupO)
+	}
+
 	if *migrateO {
 		lg.Info("migrate-only: tayyor")
 		return nil
@@ -201,6 +211,14 @@ func run() error {
 	defer stop()
 
 	srv := newHTTPServer(cfg, lg, deps)
+	// S4.3: token sweep + retention (sessions/audit_log) — soatiga bir.
+	go janitor.Run(ctx, janitor.Deps{
+		Purge:         reg.PurgeOlderThan,
+		SweepTokens:   mtokens.Sweep,
+		RetentionDays: cfg.RetentionDays,
+		Log:           lg,
+	})
+
 	return serveUntilSignal(ctx, lg, cfg, srv)
 }
 

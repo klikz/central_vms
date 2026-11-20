@@ -133,7 +133,9 @@ preview:
 	curl -s -X POST "$(SRV_URL)/api/cameras/$$CAM/preview" -H "Authorization: Bearer $$TOK" -H 'Content-Type: application/json' -d '{"profile":"sub"}' > $(RUN)/preview.json; \
 	$(PY) -c 'import json;d=json.load(open("$(RUN)/preview.json"));print("   whep:",d.get("whep_url"));print("   rtsp:",d.get("rtsp_url"));print("   xato:",d.get("error")) if d.get("error") else None'
 
-frame:
+# frame — preview'ni QAYTA so'raydi (eski preview.json'dagi URL
+# transcode yo'li o'zgarganda eskirgan bo'ladi: token 30 s, yo'l tc/...).
+frame: preview
 	@$(PY) -c 'import json;d=json.load(open("$(RUN)/preview.json"));open("$(RUN)/frame_url.txt","w").write(d["rtsp_url"]+"?token="+d["token"])'; \
 	ffmpeg -hide_banner -loglevel error -rtsp_transport tcp -i "$$(cat $(RUN)/frame_url.txt)" -frames:v 1 -y $(RUN)/preview.jpg \
 		&& echo "   KADR OLINDI: $(RUN)/preview.jpg ($$(stat -c%s $(RUN)/preview.jpg) bayt)" || echo "   KADR OLINMADI"

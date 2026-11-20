@@ -51,6 +51,9 @@ type AgentSender interface {
 // MediaAPI — MediaMTX control (Client shuni qanoatlantiradi).
 type MediaAPI interface {
 	EnsurePath(name string, conf PathConf) error
+	// PathConfigured — MediaMTX konfiguratsiyasi bu yo'lni (to'g'ridan-
+	// to'g'ri nom yoki `~^pattern` orqali) qoplaydimi.
+	PathConfigured(name string) (bool, error)
 	DeletePath(name string) error
 	Readers(path string) (int, error)
 	Alive() bool

@@ -16,11 +16,8 @@ func TestH265DepacketizerFU(t *testing.T) {
 	d := NewH265Depacketizer()
 	// IDR_W_RADL (tur 19) ikki bo'lakka bo'lingan.
 	// Tashqi NAL boshi tur 49 (FU): 49<<1 = 0x62. FU boshida haqiqiy
-	// tur (19 = IDR_W_RADL) saqlanadi.
-	// Tashqi NAL boshi tur 62 (FU): 62<<1 = 0x7C. FU boshida haqiqiy
-	// tur (19 = IDR_W_RADL) saqlanadi.
-	start := []byte{0x7c, 0x01, 0x93, 0xAA, 0xBB} // S=1, type=19 → 0x80|19
-	end := []byte{0x7c, 0x01, 0x53, 0xCC}         // E=1 → 0x40|19
+	start := []byte{0x62, 0x01, 0x93, 0xAA, 0xBB} // S=1, type=19 → 0x80|19
+	end := []byte{0x62, 0x01, 0x53, 0xCC}         // E=1 → 0x40|19
 	if _, ok := d.Add(RTPPacket{Payload: start}); ok {
 		t.Fatal("birinchi bo'lak AU deb berildi")
 	}
@@ -61,7 +58,7 @@ func TestH265DepacketizerAP(t *testing.T) {
 }
 
 // Round-trip: paketlash → depaketlash bir xil NAL'ni qaytarishi kerak
-// (FU turi 62 — ikkala tomonda bir xil bo'lishi shart).
+// (FU turi 49 — ikkala tomonda bir xil bo'lishi shart).
 func TestH265RoundTrip(t *testing.T) {
 	// Katta IDR NAL'i (2 baytli bosh + to'ldirish) — FU bo'linishiga majbur.
 	nal := []byte{19 << 1, 0x01}

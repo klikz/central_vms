@@ -50,7 +50,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	if os.Getenv("VMS_TESTLOG") != "" {
 		lg = slog.New(slog.NewTextHandler(os.Stderr, nil))
 	}
-	hub := NewHub(Config{ServerVersion: "test", MinProto: 1, MaxProto: 1, HandshakeTO: 2 * time.Second, IdleTO: time.Second, DeadTO: 2 * time.Second}, reg, lg)
+	hub := NewHub(Config{ServerVersion: "test", MinProto: 1, MaxProto: 1, HandshakeTO: 2 * time.Second, IdleTO: time.Second, DeadTO: 5 * time.Second}, reg, lg)
 	hub.clock = fc
 	srv := httptest.NewServer(http.HandlerFunc(hub.ServeHTTP))
 	t.Cleanup(func() { srv.Close(); db.Close() })
@@ -517,4 +517,64 @@ func TestOldSessionCloseKeepsClientOnline(t *testing.T) {
 	c, err := e.hub.registry.GetClientByAgentID(agentID)
 	t.Fatalf("mijoz online bo'lib qolmadi: status=%q err=%v hubOnline=%v",
 		c.Status, err, e.hub.Online(agentID))
+}
+
+// §2/§5.8: server har IdleTO da agentga `ping` xabarini (envelope)
+// yuborishi shart — WS control ping agentning o'qish muddatini
+// uzamaydi (2026-11-21: agent har 60 s'da uzilar edi).
+func TestServerSendsPingEnvelope(t *testing.T) {
+	e := newTestEnv(t)
+	agentID, secret := e.enroll(t)
+	ws, _ := dialHandshake(t, e, agentID, secret, 1)
+	t.Cleanup(func() { _ = ws.Close() })
+
+	// Gorilla: o'qish xatosidan keyin ulanish yopiladi — shuning uchun
+	// bitta keng muddat bilan o'qiymiz (IdleTO=1s, sekin mashinada ham
+	// 10 s ichida ping kelishi kerak).
+	_ = ws.SetReadDeadline(time.Now().Add(10 * time.Second))
+	for i := 0; i < 20; i++ {
+		var env proto.Envelope
+		if err := ws.ReadJSON(&env); err != nil {
+			t.Fatalf("ping kutilmadi, o'qish xatosi: %v", err)
+		}
+		if env.Type == proto.MsgPing {
+			// Agent javobi (pong) server tomonidan qabul qilinadi:
+			if err := ws.WriteJSON(proto.Envelope{Type: proto.MsgPong, TS: time.Now().UTC()}); err != nil {
+				t.Fatal(err)
+			}
+			return
+		}
+	}
+	t.Fatal("server `ping` yubormadi")
+}
+
+// 1.0-draft.12: `position` sync'da keladi va server bazasiga yoziladi
+// (avval bu maydon bu yerga yetkazilmasdi — UI tartibi doim 0 bo'lardi).
+func TestCamsSyncStoresPosition(t *testing.T) {
+	e := newTestEnv(t)
+	agentID, secret := e.enroll(t)
+	ws, _ := dialHandshake(t, e, agentID, secret, 1)
+	startHB(t, ws)
+
+	raw, _ := json.Marshal(proto.CamsSync{Epoch: 5, Full: true, SeqNo: 1, ChunkCount: 1, Done: true,
+		Cameras: []proto.CameraEntry{{Op: "upsert", ID: "pos-1", Name: "Tartib",
+			Codecs: proto.CameraProfilePair{Main: "h264"}, Position: 7}}})
+	_ = ws.WriteJSON(proto.Envelope{Type: proto.MsgCamsSync, Seq: 2, TS: time.Now().UTC(), Data: raw})
+	for {
+		env := readEnv(t, ws)
+		if env.Type == proto.MsgCamsAck {
+			break
+		}
+	}
+	cl, err := e.reg.GetClientByAgentID(agentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kam, err := e.reg.ListCamerasByClient(cl.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(kam) != 1 || kam[0].Position != 7 {
+		t.Fatalf("position saqlanmadi: %+v", kam)
+	}
 }

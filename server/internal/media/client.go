@@ -10,6 +10,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
+	"strings"
+	"sync"
 	"time"
 )
 
@@ -22,6 +25,11 @@ type Client struct {
 	hc   *http.Client
 	user string
 	pass string
+
+	// Pattern'lar ro'yxati keshi (har 30 sda yangilanadi).
+	pmu      sync.Mutex
+	patNames []string
+	patAt    time.Time
 }
 
 func NewClient(baseURL string) *Client {
@@ -51,6 +59,47 @@ func (c *Client) EnsurePath(name string, conf PathConf) error {
 }
 
 // DeletePath — path'ni o'chiradi (404 → xato emas: idempotent).
+// PathConfigured — MediaMTX sozlamasida bu yo'l allaqachon mavjudmi
+// (maxsus nom yoki `~^...` regex pattern orqali).
+//
+// v1.11.3'da `/` saqlagan nomlar bilan `PUT /v3/config/paths/put/{name}`
+// ROUTE'ga mos kelmaydi ("404 page not found") — ya'ni bizning
+// `cam/<agent>/<uuid>` va `tc/...` yo'llarini dinamik qo'shib bo'lmaydi.
+// Ularni `mediamtx.yml`'dagi `~^cam/.+` / `~^tc/.+` patternlari qoplaydi,
+// shuning uchun EnsurePath ularga umuman kerak emas (2026-11-21: har
+// preview'da log'da 404 ko'rinardi).
+func (c *Client) PathConfigured(name string) (bool, error) {
+	c.pmu.Lock()
+	defer c.pmu.Unlock()
+	if len(c.patNames) == 0 || time.Since(c.patAt) > 30*time.Second {
+		var out struct {
+			Items []struct {
+				Name string `json:"name"`
+			} `json:"items"`
+		}
+		if err := c.do(http.MethodGet, "/v3/config/paths/list", nil, &out); err != nil {
+			return false, err
+		}
+		c.patNames = make([]string, 0, len(out.Items))
+		for _, it := range out.Items {
+			c.patNames = append(c.patNames, it.Name)
+		}
+		c.patAt = time.Now()
+	}
+	for _, n := range c.patNames {
+		if n == name {
+			return true, nil
+		}
+		if strings.HasPrefix(n, "~") {
+			re, err := regexp.Compile(strings.TrimPrefix(n, "~"))
+			if err == nil && re.MatchString(name) {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
 func (c *Client) DeletePath(name string) error {
 	err := c.do(http.MethodDelete, "/v3/config/paths/delete/"+name, nil, nil)
 	if err != nil && isMTXNotFound(err) {

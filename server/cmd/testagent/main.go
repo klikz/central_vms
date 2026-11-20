@@ -275,6 +275,16 @@ func run(server string, join bool, name, agentID, secret string, nCams int, host
 					fmt.Println("media_start parse:", err)
 					continue
 				}
+				if err := validateMediaStart(ms); err != nil {
+					// Kontrakt tekshiruvi (1.0-draft.12): bundan oldin
+					// testagent `ingest` kabi maydonlarni umuman
+					// o'qimasdi — server noto'g'ri qiymat yuborgani
+					// e2e'da sezilmay qolgan edi.
+					fmt.Printf("KONTRAKT XATOSI media_start: %v\n", err)
+					_ = send(proto.MsgMediaStopped, proto.MediaStopped{
+						SessionID: ms.SessionID, CameraID: ms.CameraID, Reason: "publish_failed"})
+					continue
+				}
 				if !publish {
 					fmt.Printf("media_start (publish rejimi yopiq): %s\n", ms.SessionID)
 					continue
@@ -402,4 +412,29 @@ func randHex(n int) string {
 		return ""
 	}
 	return hex.EncodeToString(b)
+}
+
+// validateMediaStart — §5.2 maydonlarining kontraktga mosligi.
+func validateMediaStart(ms proto.MediaStart) error {
+	if ms.SessionID == "" || ms.CameraID == "" {
+		return fmt.Errorf("session_id/camera_id bo'sh")
+	}
+	switch ms.Ingest {
+	case "whip", "rtsp_tcp":
+	default:
+		return fmt.Errorf("noma'lum ingest %q (kontrakt: whip|rtsp_tcp)", ms.Ingest)
+	}
+	if ms.Publish.Token == "" {
+		return fmt.Errorf("publish.token bo'sh")
+	}
+	if ms.Ingest == "whip" && ms.Publish.URLs.WHIP == "" {
+		return fmt.Errorf("whip uchun urls.whip bo'sh")
+	}
+	if ms.Ingest == "rtsp_tcp" && ms.Publish.URLs.RTSP == "" {
+		return fmt.Errorf("rtsp_tcp uchun urls.rtsp bo'sh")
+	}
+	if ms.Profile != "main" && ms.Profile != "sub" {
+		return fmt.Errorf("noma'lum profil %q", ms.Profile)
+	}
+	return nil
 }

@@ -14,7 +14,7 @@ func NewH265Packetizer(pt byte, ssrc uint32) *H265Packetizer {
 	return &H265Packetizer{pt: pt, ssrc: ssrc, seq: 1}
 }
 
-// Pack — singleton (NAL ≤ maxPayload) yoki FU (type 62) bo'laklash.
+// Pack — singleton (NAL ≤ maxPayload) yoki FU (RFC 7798 turi 49) bo'laklash.
 func (p *H265Packetizer) Pack(nal []byte, ts uint32, marker bool, maxPayload int) [][]byte {
 	if len(nal) < 2 {
 		return nil
@@ -44,14 +44,17 @@ func (p *H265Packetizer) rtp(payload []byte, ts uint32, marker bool) []byte {
 	return b
 }
 
-// fu — RFC 7798 §4.4.2: bayt0 = F|Type(62)|Layer(0);
+// fu — RFC 7798 §4.4.2: bayt0 = F|Type(49)|Layer(0);
 // bayt1 = NALType(6)|S|E|Tid(0). Payload = nal[2:].
 func (p *H265Packetizer) fu(nal []byte, ts uint32, marker bool, maxPayload int) [][]byte {
 	nalType := (nal[0] >> 1) & 0x3f
 	// NAL boshi 2 baytli va tur byte0'ning 1..6-bitlarida (type<<1) —
 	// 62<<2 xato edi: MediaMTX/brauzer "Multi-layer HEVC" deb rad etardi
 	// (2026-11-20: H.265 preview dekodlanmas edi).
-	h0 := byte(62 << 1) // type=62 (FU), F=0, layer MSB=0
+	// RFC 7798: FU NAL turi = 49 (AP=48, PACI=50). HEVC specida 62 —
+	// "unspecified"; uni MediaMTX/FFmpeg qayta-yigmaydi:
+	// "Unsupported (HEVC) NAL type (62)" (2026-11-21 kuzatuvi).
+	h0 := byte(49 << 1) // type=49 (FU), F=0, layer MSB=0
 	body := nal[2:]
 	dataPer := maxPayload - 3
 	if dataPer < 1 {
@@ -72,7 +75,7 @@ func (p *H265Packetizer) fu(nal []byte, ts uint32, marker bool, maxPayload int) 
 		if last {
 			h1 |= 0x40 // E
 		}
-		// RFC 7798: [NAL boshi 2 bayt (tur=62; bayt1 nusxa)] [FU boshi] [bo'lak]
+		// RFC 7798: [NAL boshi 2 bayt (tur=49; bayt1 nusxa)] [FU boshi] [bo'lak]
 		pl := make([]byte, 0, 3+len(chunk))
 		pl = append(pl, h0, nal[1], h1)
 		pl = append(pl, chunk...)
@@ -106,7 +109,7 @@ func (d *H265Depacketizer) Add(p RTPPacket) ([][]byte, bool) {
 	}
 	typ := (pl[0] >> 1) & 0x3f
 	switch {
-	case typ == 62: // FU (fragmentation unit) — RFC 7798 turi 62
+	case typ == 49: // FU (fragmentation unit) — RFC 7798 turi 49
 		if len(pl) < 3 {
 			d.reset()
 			return nil, false

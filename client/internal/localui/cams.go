@@ -21,6 +21,7 @@ type camRequest struct {
 	Port     int     `json:"port,omitempty"`
 	MainPath string  `json:"main_path,omitempty"`
 	SubPath  string  `json:"sub_path,omitempty"`
+	User     string  `json:"user,omitempty"` // RTSP foydalanuvchisi (bo'sh → "admin")
 	Enabled  *bool   `json:"enabled,omitempty"`
 	Position int     `json:"position,omitempty"`
 	Secret   *string `json:"secret,omitempty"` // nil → tegilmaydi, "" → o'chiriladi
@@ -158,8 +159,10 @@ func reqToCamera(req camRequest) cams.Camera {
 	c := cams.Camera{
 		ID: req.ID, Name: req.Name, Host: req.Host, Port: req.Port,
 		MainPath: req.MainPath, SubPath: req.SubPath, Position: req.Position,
+		User:    req.User,
 		Enabled: true,
 	}
+
 	if req.Enabled != nil {
 		c.Enabled = *req.Enabled
 	}

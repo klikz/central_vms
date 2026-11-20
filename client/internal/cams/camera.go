@@ -21,12 +21,17 @@ const (
 
 // Camera — bitta kamera yozuvi (§3.2). Parol SAQLANMAYDI — faqat secret_ref (§10.1).
 type Camera struct {
-	ID         string `json:"id"` // agent generatsiya qilgan UUIDv4, o'zgarmas (§5)
-	Name       string `json:"name"`
-	Host       string `json:"host"`
-	Port       int    `json:"port"`
-	MainPath   string `json:"main_path"`
-	SubPath    string `json:"sub_path,omitempty"`
+	ID       string `json:"id"` // agent generatsiya qilgan UUIDv4, o'zgarmas (§5)
+	Name     string `json:"name"`
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	MainPath string `json:"main_path"`
+	SubPath  string `json:"sub_path,omitempty"`
+	// User — RTSP autentifikatsiya foydalanuvchisi (1.0-draft.12: UI'da
+	// maydon bor edi, lekin model/API yo'qqa chiqarardi va hardcode
+	// "admin" ishlatilardi — admin bo'lmagan kamera ishlamasdi).
+	User string `json:"user,omitempty"`
+
 	OnvifXAddr string `json:"onvif_xaddr,omitempty"`
 	OnvifOK    bool   `json:"onvif_ok"`             // ONVIF orqali sozlash mumkinmi (§4.2, C2.12)
 	SecretRef  string `json:"secret_ref,omitempty"` // keystore'dagi ref (§10.1)

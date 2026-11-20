@@ -285,17 +285,41 @@ testi yo'q), `browser_caps` yuborish, `getStats()` monitoring taklifi,
   ishga tushishda eski `online` belgilarini tozalaydi (mijoz + kameralar);
   aks holda Boshqaruv/Kuzatuv ulanmagan mijozni "online" deb ko'rsatardi.
   Test: `TestResetOnlineStates`.
-- [ ] **Mijozlarni tozalash:** endpoint mavjud (`DELETE /api/admin/clients/{id}`,
-  Boshqaruv sahifasida „O‘chirish“ tugmasi) — lekin eski/offlayn qoldiqlar
-  `clients.name` UNIQUE bo'lgani uchun kerakli nomni band qilib qo'yishi mumkin;
-  dev DB'da shunday qoldiqlar bor, ular UI orqali o'chiriladi.
+- [x] **Mijozlarni tozalash:** `DELETE /api/admin/clients/{id}` mijozni o'chiradi
+  va agentni `Hub.Kick` bilan uzadi (1.0-draft.11); tasdiq so'rovida nom band
+  bo'lsa preauth avtomatik tasdiqi „ (2)“ qo'shadi. Qoldiqlar UI orqali
+  o'chiriladi (2026-11-21da dev DB tozalandi).
 
-- [ ] Retention: `sessions`/`audit_log` 90 kundan eski o'chiriladi (cron-ish job vmsd ichida)
-- [ ] `deploy/backup.sh`: SQLite `VACUUM INTO` kundalik; journald disk chegarasi
-- [ ] MediaMTX tuning tekshiruvi: `writeQueueSize: 1024`, protokollar cheklangan; **v1.11.3'da `udpReadBufferSize` yo'q — UDP bufferi `sysctl net.core.rmem_max=100000000` orqali (install-notes.md)**; `pprof` + `/metrics`
+- [x] Retention: `sessions`/`audit_log` 90 kundan eski o'chiriladi — `internal/janitor` (soatlik ticker: token sweep + `registry.PurgeOlderThan`), `retention_days` config'dan o'tadi; testlar: `TestPurgeOlderThan`, `TestRunTickAndStop` (2026-11-21)
+- [x] `deploy/backup.sh`: SQLite `VACUUM INTO` kundalik — `vmsd -backup <fayl>` rejimi orqali (sqlite3 CLI shart emas; butunlik tekshiruvi ichida), test: `TestRunBackup`; jonli sinov: `/tmp/vms_backup/vmsd-*.db` olindi. journald chegarasi — `install-notes.md` §7 (prod mashinada qo'yiladi)
+- [~] MediaMTX tuning: `install-notes.md` §5 yozildi (v1.11.3'da `udpReadBufferSize` yo'q — `sysctl net.core.rmem_max=100000000`), dev config'da protokollar cheklangan. **`pprof`/`/metrics` hali yo'q** (keyingi band)
 - [ ] `vmsd` `/metrics` (Prometheus): sessiyalar, limitlar, transcode navbati, hook natijalari
-- [ ] systemd unitlar: `vmsd` + `vms-media` (MediaMTX prod alohida unit); `make install` /vmsd'ni `/opt/vmsd` ga soladi
-- [ ] `deploy/firewall.md` (WebRTC UDP port oralig'i, RTSP 8554, WHEP 8889, WS), `install-notes.md`
+- [x] systemd unitlar: `systemd/vmsd.service` + `systemd/vms-media.service` (MediaMTX alohida unit, vmsd uni boshqarmaydi), `make install` `/opt/vmsd` ga soladi; qadamlar `deploy/install-notes.md` §2. **Yangi Ubuntu'da jonli sinov operator mashinasida qilinadi**
+- [x] `deploy/firewall.md` (portlar jadvali + ufw namunasi: 9997/8189 faqat localhost) va `deploy/install-notes.md` (10 bandlik tekshir ro'yxati, `make probe` majburiy qadam) — 2026-11-21
+- [x] **MediaMTX `ensure path` 404 shovqini** (2026-11-21): v1.11.3'da
+      `PUT /v3/config/paths/put/{name}` `/` li nomlar bilan route'ga mos
+      kelmaydi ("404 page not found") — har preview'da log shu bilan
+      to'lar edi. Server endi `paths/list`dagi `~^cam/.+` / `~^tc/.+`
+      patternlarini tekshiradi (`Client.PathConfigured`, 30 s kesh) va
+      EnsurePath'ni faqat qoplanmagan yo'llar uchun chaqiradi.
+      Test: `TestEnsurePathSkippedForPatternedPaths`.
+- [ ] **Transcode `tc/...` yo'li kech ochiladi (2026-11-21 kuzatuvi):**
+      H.265 kamerada brauzer `hevc:false` so'roviga server `tc/...` URL'ini
+      qaytaradi, lekin MediaMTX logida ANNOUNCE faqat FFmpeg jarayoni
+      tugashida (`transcode tugadi exit=0`) ko'rinadi — o'quvchilar orada
+      `404 / "no one is publishing to path 'tc/...'"` oladi. Keyingi qadam:
+      FFmpeg'ni qo'lda shu arg'umentlar bilan ishga tushirib (tokenlar DB'dan),
+      input dekodlash kechikishimi yoki rtsp muxer lazy ANNOUNCE'mi aniqlash;
+      kerak bo'lsa `-fflags +igndts` o'rniga `-rtsp_transport tcp` bilan
+      oldindan `+nocrop`/`-g` parametrlari yoki output'ni `sdp` bilan
+      majburiy ochish.
+- [ ] **Aralash rejimli publish (2026-11-21):** bir kamera/profile uchun
+      avval `browser.hevc=true` (direct), keyin `browser.hevc=false`
+      (server_tc) so'rovi kelganda agent ikkinchi publish'ni qabul
+      qilmaydi (`media_stopped reason=dropped`) va transcode umuman
+      boshlanmaydi. Yechim: publish'ni mode bo'yicha qayta ko'tarish
+      yoki agentda camera+profile bo'yicha bitta pull, rejimlarni
+      serverda alohida hisoblash.
 - [ ] Load test: 48 copy sessiya 30 daq uzluksiz, memory o'smaydi; transcode chegarasi + zaxira zanjir (`server GPU → server CPU → transcode.by=client`) o'lchangan. **Eslatma (2026-11-20):** prod GPU'si dev'dan farq qilishi mumkin — `make install` dan keyin `make probe` majburiy qadam (`install-notes.md` ga yoziladi), natijalar prod'da qayta tekshiriladi
 
 ### 2026-11-20 — kamera holati va oqim zanjiri (1.0-draft.12)
@@ -329,13 +353,13 @@ qo'shildi: server + agent BITTA mashinada (`make run`, `make addcam`,
 `make check`).
 
 Qolgan bo'sh joylar (hujjatlashtirilgan, keyingi yurish):
-- [ ] `codec_probe` (§4.5) agent tomonidan **hali yuborilmaydi** → serverda
-      `codec_main/sub = unknown`, kodek badge bo'sh, whip/rtsp_tcp tanlovi
-      doim `rtsp_tcp`.
-- [ ] `position` synclanmaydi (serverda hamisha 0).
+- [x] `codec_probe` (§4.5) yuboriladi: probe SDP'dan kodekni o'rganadi va
+      `codec_probe` yuboradi; serverda `codec: h265` ko'rindi (jonli
+      Hikvision kamerasida tasdiqlangan, 2026-11-20).
+- [x] `position` sinclanadi: server `cams_sync`da `Position`ni bazaga yozadi (test: `TestCamsSyncStoresPosition`, 2026-11-21).
 - [ ] Server H.264 uchun ham `rtsp_tcp` yuboradi — WHIP tanlashi agent
       imkoniyati `caps`da e'lon qilingandan keyin qaytiladi.
-- [ ] Testagent `media_start` maydonlarini (ingest/token/urls) tekshirmaydi.
+- [x] Testagent `media_start`ni kontrakt bo'yicha tekshiradi (`validateMediaStart`: ingest `whip|rtsp_tcp`, token, ingest'ga mos URL, profil) — buzilsa „KONTRAKT XATOSI“ + `media_stopped{publish_failed}` (2026-11-21).
 
 **Qabul:** root §15 "MVP bajarildi" ro'yxatidagi server bandlari yashil; load test natijasi `docs/` da.
 

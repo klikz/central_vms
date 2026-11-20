@@ -249,9 +249,7 @@ func (m *Manager) getOrCreatePub(st *loopState, cam registry.Camera, agentID, pr
 		} else {
 			p.srcReadTok = tok
 		}
-		if err := m.deps.MTX.EnsurePath(p.tcPath, PathConf{Source: "publisher"}); err != nil {
-			m.deps.Lg.Warn("ensure tc path", "path", p.tcPath, "err", err)
-		}
+		m.ensureMTXPath(p.tcPath, "ensure tc path")
 	}
 	raw, _, err := m.deps.Tokens.Mint("", path, "publish", m.cfg.PublishTTL+5*time.Minute)
 	if err != nil {
@@ -259,9 +257,7 @@ func (m *Manager) getOrCreatePub(st *loopState, cam registry.Camera, agentID, pr
 		return nil
 	}
 	p.token = raw
-	if err := m.deps.MTX.EnsurePath(path, PathConf{Source: "publisher"}); err != nil {
-		m.deps.Lg.Warn("ensure path", "path", path, "err", err)
-	}
+	m.ensureMTXPath(path, "ensure path")
 	st.pubs[p.id] = p
 	st.byKey[key] = p.id
 	return p
@@ -652,5 +648,18 @@ func oqimXatosi(reason string) bool {
 		return false
 	default:
 		return true
+	}
+}
+
+// ensureMTXPath — MediaMTX'da publish yo'li mavjudligini ta'minlash.
+// Konfiguratsiya (dev/prod mediamtx.yml) `~^cam/.+` va `~^tc/.+`
+// patternlari bilan bizning yo'llarni qoplaydi — bunday holda API orqali
+// qo'shishga hojat yo'q (v1.11.3'da `/` li nomlar bilan PUT ishlamaydi).
+func (m *Manager) ensureMTXPath(path, label string) {
+	if ok, err := m.deps.MTX.PathConfigured(path); err == nil && ok {
+		return
+	}
+	if err := m.deps.MTX.EnsurePath(path, PathConf{Source: "publisher"}); err != nil {
+		m.deps.Lg.Warn(label, "path", path, "err", err)
 	}
 }

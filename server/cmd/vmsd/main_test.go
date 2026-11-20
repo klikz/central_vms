@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"central-vms/server/internal/config"
+	"central-vms/server/internal/store"
 	"go.uber.org/goleak"
 )
 
@@ -98,5 +99,42 @@ func TestProbeRuns(t *testing.T) {
 	}
 	if err := runProbe(testLogger(), testCfg(t), nil, true); err != nil {
 		t.Fatalf("runProbe: %v", err)
+	}
+}
+
+// S4.4: -backup — bazaning issiq nusxasi olinadi va butunligi tekshiriladi.
+func TestRunBackup(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Default()
+	cfg.DBPath = filepath.Join(dir, "vms.db")
+	cfg.Migrations = filepath.Join("..", "..", "migrations")
+	db, err := store.Open(cfg.DBPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.MigrateUp(db, cfg.Migrations); err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO settings (key, value) VALUES ('k','v')`); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+
+	out := filepath.Join(dir, "backup.db")
+	if err := runBackup(cfg, out); err != nil {
+		t.Fatalf("backup: %v", err)
+	}
+	cp, err := store.Open(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cp.Close()
+	var v string
+	if err := cp.QueryRow(`SELECT value FROM settings WHERE key='k'`).Scan(&v); err != nil || v != "v" {
+		t.Fatalf("nusxa mazmuni yo'q: %v", err)
+	}
+	if err := runBackup(cfg, ""); err == nil {
+		t.Error("bo'sh chiqish yo'li qabul qilindi")
 	}
 }

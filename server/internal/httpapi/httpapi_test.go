@@ -43,6 +43,10 @@ type fakeMTX struct {
 	readers int
 }
 
+// PathConfigured — false: patternlar yo'q deb hisoblaymiz, EnsurePath
+// chaqiruvi sinovda ko'rinishi uchun.
+func (f *fakeMTX) PathConfigured(string) (bool, error) { return false, nil }
+
 func (f *fakeMTX) EnsurePath(n string, _ media.PathConf) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
