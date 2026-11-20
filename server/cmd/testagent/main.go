@@ -224,6 +224,21 @@ func run(server, code, agentID, secret string, nCams int, hostname string, once,
 	// O'qish alohida goroutine'da: media_start/media_stop darhol javob berish
 	// kerak (ready taymauti 5 s).
 	msgs := make(chan proto.Envelope, 16)
+	// Pong — server ping'iga javob. Read deadline faqat DATA frame'lar bilan
+	// uzaradi (kontrol frame'lar bilan uzarmaydi): shuning uchun pong'da
+	// qo'lda uzatamiz, aks holda 90 sdan keyin jim uziladi (2026-11-20 dev
+	// stack'da kuzatildi — haqiqiy client ham shuni qilishi shart).
+	// Server ping yuboradi, agent pong qaytaradi — agent o'z pong'ini
+	// OLMAAYDI, shuning uchun faollik belgisi sifatida KELGAN PING'ni
+	// hisoblaymiz (PingHandler default: pong yuboradi + deadline uzaytiradi).
+	// Aks holda 90 sda read timeout bo'lib jim uziladi (2026-11-20 kuzatildi).
+	conn.SetPingHandler(func(appData string) error {
+		_ = conn.SetReadDeadline(time.Now().Add(90 * time.Second))
+		return conn.WriteControl(websocket.PongMessage, []byte(appData), time.Now().Add(5*time.Second))
+	})
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(90 * time.Second))
+	})
 	go func() {
 		for {
 			var e proto.Envelope

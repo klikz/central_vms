@@ -44,13 +44,6 @@ func (m *Manager) handle(st *loopState, c *cmd) {
 	case "refresh":
 		c.err = m.refresh(st, c)
 	case "stop":
-		m.deps.Lg.Info("DBG stop cmd", "sess", c.sessionID, "found", st.sessions[c.sessionID] != nil,
-			"pubID", func() string {
-				if x := st.sessions[c.sessionID]; x != nil {
-					return x.pubID
-				}
-				return ""
-			}())
 		c.err = m.stopSession(st, c.sessionID, c.reason)
 	case "ready":
 		m.mediaReady(st, c)

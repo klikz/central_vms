@@ -186,6 +186,37 @@ Bu client tomoniga uzatiladigan kontrakt talabi (protocol.md §5.2 izohi).
   xatoni ochib berdi).
 - JWT base64url (avvalgi commit) — UI WS query'da token uzatishi uchun.
 
+**Dizayn parity (2026-11-20):** server webui dizayni client lokal konsoli
+(`client/internal/localui/web/app.css`) bilan **bir xil** qilib qayta yozildi:
+grafit fon + amber aksent (`#ffb000`), chap panel (brend belgisi, guruhlangan
+nav, hotkey `kbd`, foydalanuvchi/rol qatori), yuqori statusline (`ulangan`,
+`SESSIYALAR`, `KAMERALAR on/total`), `.cards` ko'rsatkichlari, mono raqamlar,
+badge'lar (`H264/H265/TC`), katak ustidagi chiziqli overlay, tashqi shrift/CDN
+yo'q (`@fontsource` ham olib tashlandi — offline). UI unit testlari 25 ta.
+
+**Shu kun topilgan va tuzatilgan (dizayn + dev stack ishlashi):**
+- Yuqoridagi `KAMERALAR` hisoblagichi faqat WS hodisalaridan olardi → REST
+  ro'yxati + hodisalardan keladigan `lib/metrics.ts` qo'shildi.
+- Kamera ro'yxati va grid avto-to'ldirishi **onlayn birinchi** saralanadi;
+  oflayn kamerada katak o'qishga urinmaydi ("kamera oflayn" holati).
+- Agent WS'da 90 sda jim uzilardi: gorilla'da read deadline kontrol frame
+  bilan uzarmaydi → `SetPingHandler`'da uzatiladi (testagent; protocol.md
+  1.0-draft.6 izohi).
+- `SessionRow` json tag'siz edi → API `ID/CameraID` chiqarardi, Admin jadvali
+  bo'sh. Endi snake_case (api.md hujjatlashtirildi).
+- `media_ready` default taymauti 5 s edi → **10 s** (REJA §7.1); 4 parallel
+  publish/transcode'da 5 s yetmadi (o'lchandi).
+- "Arvoh" sessiyalar: brauzer yopilsa sessiya TTL'gacha (5 daq) limitni band
+  qilardi. UI `pagehide`'da keepalive DELETE yuboradi + server readers
+  watchdog'i **3×IdleStop** deraza bilan sessiyani `idle_no_readers` bilan
+  yopadi (1× deraza juda agressiv chiqdi — jonli o'quvchini ham yopdi).
+- WHEP urinish byudjeti kengaytirildi (direct 12, transcode 16; sovuq
+  startda path 404 qaytaradi).
+- Cheklangan narsa (S4 yuk testiga qoldi): 4 yadroli dev mashinada 2+ ta
+  720p WHEP sessiyasi parallel ochilganda MediaMTX o'quvchini `terminated`
+  deydi (CPU to'yinishi). Bir oqim barqaror; 2×2 skrinshot uchun testagent
+  oqimi 640×360/10 fps'ga tushirildi.
+
 **S3 qoldiqlari:** drag&drop (ro'yxat→katak, katak↔katak) va double-click
 fullscreen brauzer testi, layout saqlash/yuklash/default UI, favorites
 reorder, pagination'da eski oqimlarni darhol stop (kodda bor, brauzer

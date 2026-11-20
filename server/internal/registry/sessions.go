@@ -8,14 +8,14 @@ import (
 
 // SessionRow — sessions jadvalidagi yozuv (S2 menejeri bilan sinxron).
 type SessionRow struct {
-	ID        string
-	CameraID  string
-	UserID    int64
-	Profile   string
-	Kind      string
-	State     string
-	ExpiresAt string
-	PublishID string
+	ID        string `json:"id"`
+	CameraID  string `json:"camera_id"`
+	UserID    int64  `json:"user_id"`
+	Profile   string `json:"profile"`
+	Kind      string `json:"kind"`
+	State     string `json:"state"`
+	ExpiresAt string `json:"expires_at"`
+	PublishID string `json:"publish_id,omitempty"`
 }
 
 // InsertSession — sessiyani yaratadi (state=pending).

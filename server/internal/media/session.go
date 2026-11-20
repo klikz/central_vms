@@ -68,15 +68,17 @@ type Store interface {
 
 // MgrConfig — §7.1 taymautlari va limitlar.
 type MgrConfig struct {
-	MediaReadyTO time.Duration // 5 s: media_ready kutiladi
-	SessionTTL   time.Duration // 5 min
-	RefreshExt   time.Duration // 2 min (media_refresh)
-	PublishTTL   time.Duration // 60 s: refcount=0 bo'lsa idle hisob
-	IdleStop     time.Duration // 10 s: readers=0 → upload to'xtatish
-	UserMax      int           // 16
-	GlobalMax    int           // 48
-	PreviewMax   int           // 8 — bir vaqtdagi preview sessiyalari
-	Tick         time.Duration // default 1 s
+	MediaReadyTO time.Duration // 10 s: media_ready kutiladi (REJA §7.1;
+	// og'ir yukda — bir necha publish/transcode parallel — 5 s yetmadi,
+	// 2026-11-20 dev stack'da o'lchandi)
+	SessionTTL time.Duration // 5 min
+	RefreshExt time.Duration // 2 min (media_refresh)
+	PublishTTL time.Duration // 60 s: refcount=0 bo'lsa idle hisob
+	IdleStop   time.Duration // 10 s: readers=0 → upload to'xtatish
+	UserMax    int           // 16
+	GlobalMax  int           // 48
+	PreviewMax int           // 8 — bir vaqtdagi preview sessiyalari
+	Tick       time.Duration // default 1 s
 }
 
 // Deps — menejer bog'liqliklari.
@@ -128,7 +130,7 @@ type StartResult struct {
 
 func NewManager(cfg MgrConfig, deps Deps) *Manager {
 	if cfg.MediaReadyTO == 0 {
-		cfg.MediaReadyTO = 5 * time.Second
+		cfg.MediaReadyTO = 10 * time.Second
 	}
 	if cfg.SessionTTL == 0 {
 		cfg.SessionTTL = 5 * time.Minute
@@ -275,15 +277,21 @@ type publish struct {
 	codecIn    string   // h264|h265 — decode tezlashtirish tanlovi uchun
 	caps       gpu.Caps // transcode uchun tanlangan imkoniyatlar (fallback bilan)
 
-	ready     bool
-	started   time.Time
-	idleOn    bool      // refcount=0 bo'lsa — idle hisob faol (IdleStop=0 ham)
-	stopAt    time.Time // idle hisob tugash vaqti
-	readyTO   time.Time
-	stopSent  bool
-	tcStarted bool
-	tcTries   int // transcode urinishlari (manba kechikishi mumkin)
-	tcNextTry time.Time
+	ready   bool
+	started time.Time
+	idleOn  bool      // refcount=0 bo'lsa — idle hisob faol (IdleStop=0 ham)
+	stopAt  time.Time // idle hisob tugash vaqti
+	// "Arvoh" sessiya nazorati: o'quvchi bir marta bo'lgan (sawReaders) va
+	// keyin readers=0 bo'lib qolsa (brauzer yopildi/tarmoq uzildi),
+	// sessiyalar IdleStop muddatdan keyin yopiladi — aks holda ular
+	// TTL'gacha (5 daq) limitni band qiladi.
+	sawReaders bool
+	zeroSince  time.Time
+	readyTO    time.Time
+	stopSent   bool
+	tcStarted  bool
+	tcTries    int // transcode urinishlari (manba kechikishi mumkin)
+	tcNextTry  time.Time
 }
 
 type session struct {

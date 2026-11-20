@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -156,6 +157,9 @@ func newMTest(t *testing.T, cfg MgrConfig, caps gpu.Caps) *mtest {
 	fs := &fakeSender{online: map[string]bool{"ag_1": true}}
 	mtx := newFakeMTX()
 	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+	if os.Getenv("VMS_TEST_LOG") != "" {
+		lg = slog.New(slog.NewTextHandler(os.Stderr, nil))
+	}
 	cfg.Tick = 10 * time.Millisecond
 	tr := NewTranscoder(fixturePath("fakeffmpeg.sh"), 5, lg)
 	t.Cleanup(tr.StopAll)
@@ -542,5 +546,46 @@ func TestAutoH264SkipsTranscode(t *testing.T) {
 	mt.fc.advance(2 * time.Second)
 	if n := mt.m.deps.Transcode.Count(); n != 0 {
 		t.Fatalf("FFmpeg boshlanmasligi kerak edi, bor: %d", n)
+	}
+}
+
+// Brauzer yopilib qo'ysa (o'quvchilar 0 ga tushsa) sessiya TTL'gacha
+// limitni band qilmasligi kerak: readers watchdog uni yopadi.
+func TestGhostSessionClosedByReadersWatchdog(t *testing.T) {
+	mt := newMTest(t, MgrConfig{IdleStop: 100 * time.Millisecond}, gpu.Caps{Backend: gpu.BackendNone})
+	res, err := mt.m.Start(mt.cam, 1, "", "play", BrowserCaps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mt.m.OnMediaReady("ag_1", proto.MediaReady{SessionID: res.SessionID, PublishID: "p1", Path: "cam/ag_1/cam-uuid-1"})
+	mt.fc.advance(20 * time.Millisecond)
+
+	// O'quvchi paydo bo'ldi (watchdog sawReaders=true deb yozadi —
+	// tick haqiqiy taymer bilan aylanadi, shuning uchun kutamiz).
+	mt.mtx.setReaders(2)
+	time.Sleep(60 * time.Millisecond) // tick'lar readers>0 ni ko'rsin
+	if len(mt.m.SessionsFor(1, mt.cam.ID, "play")) != 1 {
+		t.Fatal("o'quvchi bor paytda sessiya yopilmasligi kerak")
+	}
+
+	// ...keyin yo'qoldi (brauzer o'ldi) — watchdog yopishi kerak.
+	// Soatni ikki bosqichda suramiz: birinchi tick zeroSince belgilaydi,
+	// ikkinchisi IdleStop o'tganini ko'radi.
+	mt.mtx.setReaders(0)
+	mt.fc.advance(60 * time.Millisecond)
+	time.Sleep(60 * time.Millisecond) // tick readers=0 ni ko'radi → zeroSince
+	if len(mt.m.SessionsFor(1, mt.cam.ID, "play")) != 1 {
+		t.Fatal("sessiya erta yopildi")
+	}
+	mt.fc.advance(400 * time.Millisecond)
+	waitFor(t, func() bool { return len(mt.m.SessionsFor(1, mt.cam.ID, "play")) == 0 }, "arvoh sessiya yopilmadi")
+	rows, err := mt.reg.ListActiveSessions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rows {
+		if r.ID == res.SessionID {
+			t.Fatalf("DB'da ham faol qoldi: %+v", r)
+		}
 	}
 }

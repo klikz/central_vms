@@ -33,6 +33,12 @@ Login rate-limit: 5 urinish / 5 min → `429 rate_limited`. Noto'g'ri parol: `40
 | POST | `/api/sessions/refresh` | `{session_id, extend_s}` → TTL uzatish (2 min) |
 | GET | `/api/sessions` | faol oqimlar (admin: barchasi, viewer: o'ziniki) |
 
+  Javob (`GET /api/sessions`): massivi, har biri
+  `{id, camera_id, user_id, profile, kind, state, expires_at, publish_id?}`
+  — maydon nomlari **snake_case** (2026-11-20: Go strukturasida json tag
+  bo'lmagani uchun `ID/CameraID/...` chiqib, UI jadvali bo'sh qolgan edi;
+  tuzatildi + UI tipi moslashtirildi).
+
 Xato kodlari: `404 not_found`, `403 disabled`, `409 client_offline`,
 `429 user_limit` / `global_limit` / `client_uploads` / `preview_limit`
 (`detail`da limit holati; navbat — S2.5 qoldig'i), `503 media_offline`.

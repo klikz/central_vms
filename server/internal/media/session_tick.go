@@ -3,6 +3,8 @@
 package media
 
 import (
+	"time"
+
 	"central-vms/server/internal/proto"
 )
 
@@ -62,6 +64,38 @@ func (m *Manager) tick(st *loopState) {
 			}
 		}
 		// Idle stop: refcount=0 va readers=0 → upload to'xtatish (§16.2).
+		// Sessiyalar biriktirilgan publish'da o'quvchilar yo'qolib qolsa
+		// (brauzer yopildi, o'ldi, tarmoq uzildi) — ularni ham yopamiz:
+		// UI pagehide'da o'zi yopadi, lekin server ishonchi bu.
+		if p.refcount > 0 {
+			if n, err := m.deps.MTX.Readers(p.path); err == nil {
+				switch {
+				case n > 0:
+					p.sawReaders = true
+					p.zeroSince = time.Time{}
+				case p.sawReaders:
+					// Deraza keng: UI WHEP'ni qayta ochishi ~10-25 s
+					// (transcode'li) bo'lishi mumkin — shuning uchun
+					// 3×IdleStop. Qisqa uzilish jonli ko'rishni
+					// buzmasligi kerak (2026-11-20 dev'da 1× juda
+					// agressiv chiqdi: tirik sessiyalarni yopdi).
+					if p.zeroSince.IsZero() {
+						p.zeroSince = now
+					} else if !now.Before(p.zeroSince.Add(3 * m.cfg.IdleStop)) {
+						for _, sid := range append([]string(nil), p.sessions...) {
+							if x := st.sessions[sid]; x != nil {
+								m.endSessionLocked(st, x, "idle_no_readers", true)
+							}
+						}
+						m.dropPubLocked(st, p)
+						continue
+					}
+				}
+			} else {
+				m.deps.Lg.Warn("readers poll", "path", p.path, "err", err)
+			}
+		}
+
 		if p.refcount == 0 && p.idleOn && !now.Before(p.stopAt) {
 			if n, err := m.deps.MTX.Readers(p.path); err == nil && n == 0 {
 				m.dropPubLocked(st, p)
