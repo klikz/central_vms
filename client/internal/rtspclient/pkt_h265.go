@@ -48,9 +48,12 @@ func (p *H265Packetizer) rtp(payload []byte, ts uint32, marker bool) []byte {
 // bayt1 = NALType(6)|S|E|Tid(0). Payload = nal[2:].
 func (p *H265Packetizer) fu(nal []byte, ts uint32, marker bool, maxPayload int) [][]byte {
 	nalType := (nal[0] >> 1) & 0x3f
-	h0 := byte(62 << 2) // type=62, F=0, Layer=0
+	// NAL boshi 2 baytli va tur byte0'ning 1..6-bitlarida (type<<1) —
+	// 62<<2 xato edi: MediaMTX/brauzer "Multi-layer HEVC" deb rad etardi
+	// (2026-11-20: H.265 preview dekodlanmas edi).
+	h0 := byte(62 << 1) // type=62 (FU), F=0, layer MSB=0
 	body := nal[2:]
-	dataPer := maxPayload - 2
+	dataPer := maxPayload - 3
 	if dataPer < 1 {
 		dataPer = 1
 	}
@@ -69,10 +72,83 @@ func (p *H265Packetizer) fu(nal []byte, ts uint32, marker bool, maxPayload int) 
 		if last {
 			h1 |= 0x40 // E
 		}
-		pl := make([]byte, 0, 2+len(chunk))
-		pl = append(pl, h0, h1)
+		// RFC 7798: [NAL boshi 2 bayt (tur=62; bayt1 nusxa)] [FU boshi] [bo'lak]
+		pl := make([]byte, 0, 3+len(chunk))
+		pl = append(pl, h0, nal[1], h1)
 		pl = append(pl, chunk...)
 		out = append(out, p.rtp(pl, ts, marker && last))
 	}
 	return out
 }
+
+// --- H.265 DEPAKETIZATOR (RFC 7798) -------------------------------------
+//
+// 1.0-draft.12: avval faqat H.264 depaketizatori bor edi — H.265 kamera
+// oqimi NAL darajasida buzilib, MediaMTX'ga noto'g'ri payload ketardi.
+
+// H265Depacketizer — RTP paketlardan NAL ro'yxatini tiklaydi. AU marker
+// paketi bilan tugaydi (H.264 bilan bir xil kelishuv).
+type H265Depacketizer struct {
+	cur   [][]byte
+	fua   []byte
+	fuaOn bool
+}
+
+// NewH265Depacketizer — bo'sh depaketizator.
+func NewH265Depacketizer() *H265Depacketizer { return &H265Depacketizer{} }
+
+// Add — bitta RTP paketi; AU to'lganda NAL'lar qaytadi.
+func (d *H265Depacketizer) Add(p RTPPacket) ([][]byte, bool) {
+	pl := p.Payload
+	if len(pl) < 2 {
+		d.reset()
+		return nil, false
+	}
+	typ := (pl[0] >> 1) & 0x3f
+	switch {
+	case typ == 62: // FU (fragmentation unit) — RFC 7798 turi 62
+		if len(pl) < 3 {
+			d.reset()
+			return nil, false
+		}
+		fu := pl[2]
+		start, end := fu&0x80 != 0, fu&0x40 != 0
+		fuType := fu & 0x3f
+		if start {
+			// NAL boshi qayta tiklanadi: bit0 (F) + bit7 (layer MSB) saqlanadi.
+			h0 := (pl[0] & 0x81) | byte(fuType<<1)
+			d.fua = append([]byte{h0, pl[1]}, pl[3:]...)
+			d.fuaOn = true
+		} else if d.fuaOn {
+			d.fua = append(d.fua, pl[3:]...)
+		}
+		if end && d.fuaOn {
+			d.cur = append(d.cur, d.fua)
+			d.fua, d.fuaOn = nil, false
+		}
+	case typ == 48: // AP (aggregation packet): [NAL][ST2][NAL][ST2]...
+		i := 2
+		for i+2 <= len(pl) {
+			sz := int(pl[i])<<8 | int(pl[i+1])
+			i += 2
+			if sz <= 0 || i+sz > len(pl) {
+				break
+			}
+			d.cur = append(d.cur, append([]byte(nil), pl[i:i+sz]...))
+			i += sz
+		}
+	default: // singleton NAL (0..47, shu jumladan VPS/SPS/PPS va IDR)
+		d.cur = append(d.cur, append([]byte(nil), pl...))
+	}
+	if p.Marker {
+		if len(d.cur) == 0 {
+			return nil, false
+		}
+		au := d.cur
+		d.cur = nil
+		return au, true
+	}
+	return nil, false
+}
+
+func (d *H265Depacketizer) reset() { d.cur, d.fua, d.fuaOn = nil, nil, false }

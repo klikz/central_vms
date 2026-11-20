@@ -1,0 +1,51 @@
+# vmsd LOCALHOST konfiguratsiyasi — server VA agent BITTA mashinada
+# ishga tushiriladi (ildovdagi `make run`). Dev/prod uchun: dev.yaml /
+# prod.yaml.example.
+#
+# Farqi: `public_host: "127.0.0.1"` — agent MediaMTX'ga o'z LAN IP'si
+# orqali emas, loopback orqali chiqadi (2026-11-20: bu mashinada o'z LAN
+# IP'siga hairpin ulanishlari yuklama ostida tortib qo'yilardi).
+# LAN'dagi boshqa mashinadan ko'rish uchun public_host ni LAN IP qilib
+# qo'ying va agentni o'sha manzilga ulang.
+
+bind: ":8081"
+web_dir: "build/web"
+db_path: "var/vmsd-localhost.db"
+migrations_dir: "migrations"
+
+mediamtx:
+  control_url: "http://127.0.0.1:9997"
+  auth_hook_bind: "127.0.0.1:8189"
+  webrtc_port: 8889
+  rtsp_port: 8554
+  hls_port: 8888
+  public_host: "127.0.0.1"
+
+auth:
+  jwt_secret: "localhost-only-secret-change-me-0123456789"  # FAQAT lokal sinov
+  access_ttl_min: 15
+  refresh_ttl_days: 7
+
+join:
+  rate_per_5m: 5
+
+limits:
+  user_max_sessions: 16
+  global_max_sessions: 48
+  preview_max: 8
+  per_client_uploads: 8
+
+media:
+  idle_stop_s: 10
+  session_ttl_min: 5
+  session_renew_min: 2
+  publish_ttl_s: 60
+  read_token_ttl_s: 30
+  server_max_transcodes: 5
+  ffmpeg_path: "ffmpeg"
+
+retention_days: 90
+log_level: "info"
+log_file: "var/log/vmsd-localhost.log"
+log_max_mb: 8
+log_keep: 5

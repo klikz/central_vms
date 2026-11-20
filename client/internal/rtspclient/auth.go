@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"net/url"
 	"strings"
 )
 
@@ -120,6 +121,23 @@ func (c *Conn) authHeader(ch challenge, method, uri string) (string, error) {
 		fields = append(fields, `qop=auth`, "nc="+nc, `cnonce="`+cnonce+`"`)
 	}
 	return "Digest " + strings.Join(fields, ", "), nil
+}
+
+// normalizeDigestURI — Hikvision kabi kameralar digest HA2'ni RTSP
+// standart portini tushirib qoldirib hisoblaydi (2026-11-20:
+// rtsp://192.168.0.24:554/... bilan 401, rtsp://192.168.0.24/... bilan
+// 200 qaytardi). Port standart bo'lmasa bo'sh qaytadi (urinish shart emas).
+func normalizeDigestURI(u string) string {
+	p, err := url.Parse(u)
+	if err != nil || p.Port() == "" {
+		return ""
+	}
+	def := map[string]string{"rtsp": "554", "rtsps": "322"}[strings.ToLower(p.Scheme)]
+	if p.Port() != def {
+		return ""
+	}
+	p.Host = p.Hostname()
+	return p.String()
 }
 
 func quoteAuth(s string) string {

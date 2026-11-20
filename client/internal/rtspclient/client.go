@@ -130,7 +130,23 @@ func (c *Conn) Do(ctx context.Context, method string, headers Headers, body []by
 				h2[k] = v
 			}
 		}
-		return c.doOnce(ctx, method, h2, body)
+		resp2, err2 := c.doOnce(ctx, method, h2, body)
+		// Ba'zi kameralar (Hikvision) digest URI'sini standart portsiz
+		// kutadi — bir marta shu ko'rinishda ham urinamiz (auth.go).
+		if resp2 != nil && resp2.Status == 401 && err2 == nil {
+			if alt := normalizeDigestURI(c.uri); alt != "" {
+				if auth2, aerr := c.authHeader(ch, method, alt); aerr == nil {
+					h3 := Headers{"authorization": auth2}
+					for k, v := range headers {
+						if k != "authorization" {
+							h3[k] = v
+						}
+					}
+					return c.doOnce(ctx, method, h3, body)
+				}
+			}
+		}
+		return resp2, err2
 	}
 	return resp, nil
 }

@@ -115,7 +115,12 @@ func pullOnce(ctx context.Context, o PullOptions, sink func(AU) error) error {
 	h265 := h265Stream(vmedia)
 	param := spropNALs(vmedia)
 
-	dep := &rtspclient.H264Depacketizer{}
+	var dep interface {
+		Add(rtspclient.RTPPacket) ([][]byte, bool)
+	} = &rtspclient.H264Depacketizer{}
+	if h265 {
+		dep = rtspclient.NewH265Depacketizer()
+	}
 	for {
 		if err := ctx.Err(); err != nil {
 			return err

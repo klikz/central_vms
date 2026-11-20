@@ -492,3 +492,29 @@ func TestKickClosesSession(t *testing.T) {
 		t.Fatal("yo'q agentga Kick true qaytardi")
 	}
 }
+
+// 1.0-draft.12: agent tez qayta ulangsa, ESKI sessiyaning yopilishi
+// mijozni offline qilib qo'ymasligi kerak (aks holda yangi sessiyaning
+// `online` holati bosilib qolardi — operator kuzatgan "doim offline").
+func TestOldSessionCloseKeepsClientOnline(t *testing.T) {
+	e := newTestEnv(t)
+	agentID, secret := e.enroll(t)
+	oldWS, _ := dialHandshake(t, e, agentID, secret, 1)
+	newWS, _ := dialHandshake(t, e, agentID, secret, 1) // hub eskinisini siqadi
+	t.Cleanup(func() { _ = newWS.Close() })
+
+	if err := oldWS.Close(); err != nil {
+		t.Fatalf("eski ws yopilmadi: %v", err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		c, err := e.hub.registry.GetClientByAgentID(agentID)
+		if err == nil && c.Status == "online" && e.hub.Online(agentID) {
+			return // online saqlandi — to'g'ri
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	c, err := e.hub.registry.GetClientByAgentID(agentID)
+	t.Fatalf("mijoz online bo'lib qolmadi: status=%q err=%v hubOnline=%v",
+		c.Status, err, e.hub.Online(agentID))
+}

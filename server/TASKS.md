@@ -320,6 +320,14 @@ Tekshiruvda topilganlar va tuzatilganlar:
 - **Kamera ro'yxati faqat qayta ulanganda kelardi**: endi agent darhol
   `cams_sync` yuboradi, server UI'ga `cams_changed` uzatadi (`api.md` §Realtime).
 
+2026-11-20 davomi: **qayta ulanish poygasi** tuzatildi — agent tez
+qayta ulangda eski WS sessiyasining yopilishi mijozni va kameralarini
+`offline` qilib qo'yardi (operator ko'rgan "doim offline"). Endi offline
+belgilash faqat sessiya hali faol bo'lsa bajariladi (regressiya testi
+bilan). Shuningdek `config/localhost.yaml` va ildovdagi `Makefile`
+qo'shildi: server + agent BITTA mashinada (`make run`, `make addcam`,
+`make check`).
+
 Qolgan bo'sh joylar (hujjatlashtirilgan, keyingi yurish):
 - [ ] `codec_probe` (§4.5) agent tomonidan **hali yuborilmaydi** → serverda
       `codec_main/sub = unknown`, kodek badge bo'sh, whip/rtsp_tcp tanlovi

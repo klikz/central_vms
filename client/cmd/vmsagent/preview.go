@@ -59,7 +59,7 @@ func (ps *previewSvc) targets() []cams.Target {
 		if !c.Enabled {
 			continue
 		}
-		out = append(out, cams.Target{ID: c.ID, URL: ps.authURL(c)})
+		out = append(out, cams.Target{ID: c.ID, URL: ps.authURL(c), WantCodec: c.CodecMain == ""})
 	}
 	return out
 }

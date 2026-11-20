@@ -160,6 +160,10 @@ func (c *Conn) WriteInterleaved(ch int, payload []byte) error {
 	if ch < 0 || ch > 255 {
 		return fmt.Errorf("rtsp: kanal %d 0..255 tashqarisida", ch)
 	}
+	// Yozish muddati har freymda yangilanadi: so'rov (RECORD) deadline'i
+	// oqimga meros bo'lib qolsa, publish ~5 s'da "i/o timeout" bilan
+	// uzilardi (2026-11-20: H.265 kamera oqimi shu sababli uzlanar edi).
+	_ = c.conn.SetWriteDeadline(time.Now().Add(interleavedWriteTimeout))
 	hdr := make([]byte, 4)
 	hdr[0] = '$'
 	hdr[1] = byte(ch)
@@ -176,6 +180,10 @@ func (c *Conn) WriteInterleaved(ch int, payload []byte) error {
 // interleavedIdleTimeout — ReadInterleaved uchun idle o'qish chegarasi
 // (so'rov dediti oqimga meros bo'lmasin, §8).
 const interleavedIdleTimeout = 10 * time.Second
+
+// interleavedWriteTimeout — publish tomonidagi yozish muddati (har freymda
+// qayta qo'yiladi).
+const interleavedWriteTimeout = 10 * time.Second
 
 func (c *Conn) ReadInterleaved() (byte, []byte, error) {
 	// Streaming o'qish: har chaqiruvda idle deditini yangilaymiz — aks

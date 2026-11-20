@@ -251,6 +251,12 @@ Event-driven (holat o'zgarganda); davomiy `error` holatida 5 min'da bir marta ta
   "profiles_sdp": { "main": "High", "sub": "Baseline" },
   "onvif_switch_ok": false, "reason": null }
 ```
+> 1.0-draft.12: agent `codec_probe`ni **probe siklida** ham yuboradi —
+> kamera kodi noma'lum bo'lsa, probe bitta ulanishda `DESCRIBE` qilib
+> SDP'dan kodekni oladi (`h264|h265`), modelga yozadi (§4.2 orqali
+> serverga ham boradi) va shu xabarni yuboradi. Qo'shimcha `DESCRIBE`
+> faqat kodek noma'lum bo'lganda bajariladi (kamera sessiyalarini
+> tejash uchun; Hikvision bir vaqtda cheklangan sessiyaga ruxsat beradi).
 
 ### 4.6 `media_ready` / `media_stopped` / `media_stats`
 ```json
@@ -459,6 +465,23 @@ nisbatan yangi, RTSP esa barqaror (root §17).
 - Subprocess boshqaruvi: `exec.CommandContext`, `Wait()` goroutine, **yetim (zombie) processlar
   taqiqlangan**; agent o'lsa `SIGKILL` zanjiri (`cmd.Process.Kill` + process group).
 - FFmpeg versiyasi tekshiriladi: `-f whip` muxer **FFmpeg ≥ 7.1** da bor (bizning dev muhitda 9.0.2 — mavjud).
+
+### 8.3a RTP bo'laklash (H.265) — 1.0-draft.12
+H.265 ingest/egress'da FU paketi **turi 62** (H.264'dagi 28/49 EMAS) va
+payload tartibi: `[NAL bayt0 (tur=62, 1..6-bit)] [NAL bayt1 nusxasi]
+[FU boshi S|E|tur] [bo'lak]`. Agentda ham paketlash, ham depaketlash
+shu formatda (round-trip testi bilan tekshirilgan).
+
+### 8.3b Kamera autentifikatsiyasi — 1.0-draft.12
+Hikvision digest URI'sini **standart port tushirilgan** ko'rinishda
+kutadi: `rtsp://192.168.0.24:554/...` bilan 401, `rtsp://192.168.0.24/...`
+bilan 200. Agent avvalgi URI bilan urinib, 401 kelsa URI'ni
+normallashtirib (554/322 portini tushirib) qayta uradi.
+
+### 8.3c Yozish muddati — 1.0-draft.12
+Interleaved (RTSP/TCP) yozish har freymda write-deadline'ni yangilaydi:
+aks holda RECORD so'rovining 5 s'lik dediti butun oqimga meros bo'lib,
+publish ~5 s'da `i/o timeout` bilan uzilar edi.
 
 ### 8.4 Parameter setlar (SPS/PPS/VPS) — 1.0-draft.12
 Manba (kamera yoki boshqa RTSP server) `sprop-parameter-sets`ni faqat
@@ -818,6 +841,7 @@ tasodifan qutulgan).
 
 | Versiya | Sana | O'zgarish |
 |---|---|---|
+| 1.0-draft.12 | 2026-11-20 | **Qo'shimcha (haqiqiy Hikvision kamerasi bilan sinov, 192.168.0.24):** §4.5 `codec_probe` endi haqiqatan yuboriladi (probe SDP'dan kodekni o'rganadi); §8.3a H.265 FU turi 62 va 3 baytli FU boshi (ikkala tomonda ham noto'g'ri edi — round-trip testi qo'shildi); §8.3b Hikvision digest URI quyi izohi (standart portsiz URI bilan qayta urinish); §8.3c interleaved yozish muddati har freymda yangilanadi (publish 5 s'da uzilardi); serverda qayta ulanish poygasi tuzatildi — eski WS sessiyasi yopilishi mijozni (va kameralarini) offline qilmaydi. **Hali to'liq yopilmagan:** H.265 qayta-yuborilgan oqimning brauzer/ffprobe tomonidan dekodlanishi (o'quvchi "NAL type 62" va kalit kadr yetishmasligini xabar qiladi) — davomiy ish. |
 | 1.0-draft.12 | 2026-11-20 | **Kamera holati va oqim zanjiri tuzatildi** (operator kuzatuvi: "mijozda kamera qo'shsam serverda ko'rinmadi, preview chiqmadi"): (a) `cam_status` endi haqiqatan yuboriladi — sessiya ochilganda to'liq snapshot + holat o'zgarganda (§4.4); (b) kamera qo'shish/tahrirlash/o'chirish `cams_sync`ni **darhol** yuboradi, server UI'ga `cams_changed` uzatiladi (§4.2); (c) `media_start.ingest` qiymati tuzatildi — server "rtsp" yuborardi, kontrakt esa `whip|rtsp_tcp` (§5.2); (d) `media_ready.path` — MediaMTX yo'li, profil emas; server mos kelmasa o'z path'ida qoladi (§4.6); (e) `cameras.last_error`/`last_error_at` — probe va `media_stopped` sababi UI'da ko'rinadi (§4.4); (f) §8.4: SDP'dagi sprop parameter setlari kalit kadr oldiga qo'shiladi. |
 | 1.0-draft.11 | 2026-11-20 | **Eskirgan identity holati** (operator kuzatuvi:
   client „connected as ag_…“ deb turardi, Request access o'chirilgan edi,

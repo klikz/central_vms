@@ -204,7 +204,8 @@ func run(ctx context.Context, log *slog.Logger, cfgPath string,
 
 	// UI (§17): holat chizig'i sessiya holatini ko'rsatadi (C1.13)
 	cs := camsvc.New(rt.st, rt.ks)
-	cs.OnChanged = rt.onCamsChanged // §6.5: qo'shish/o'chirish darhol sync
+	cs.OnChanged = rt.onCamsChanged
+	rt.cs = cs // §6.5: qo'shish/o'chirish darhol sync
 	pv := newPreviewSvc(cs, rt.ks, rt.previews, rt.snap, rt.log, rt.reportCamStatus)
 	rt.pv = pv
 	go pv.Run(ctx)

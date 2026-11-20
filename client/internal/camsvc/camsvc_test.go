@@ -284,3 +284,39 @@ func TestOnChangedFires(t *testing.T) {
 		t.Fatalf("SetStatus signal bermasligi kerak edi: %d", fired)
 	}
 }
+
+// SetCodec — kodek o'rganilganda epoch o'sadi va OnChanged ishlaydi
+// (server cams_sync orqali kodekni o'z vaqtida bilib oladi).
+func TestSetCodec(t *testing.T) {
+	s := newSvc(t)
+	fires := 0
+	s.OnChanged = func() { fires++ }
+	c, err := s.Create(cams.Camera{ID: "c1", Name: "K1", Host: "10.0.0.5"}, "parol")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.CodecMain != "" {
+		t.Fatalf("yangi kamerada kodek bo'sh bo'lishi kerak: %+v", c)
+	}
+	if err := s.SetCodec("c1", "h265", ""); err != nil {
+		t.Fatalf("SetCodec: %v", err)
+	}
+	got, ok := s.Get("c1")
+	if !ok || got.CodecMain != "h265" {
+		t.Fatalf("kodek yozilmadi: %+v", got)
+	}
+	if fires < 2 {
+		t.Errorf("OnChanged kamerasi qo'shish + kodek uchun 2 marta ishlashi kerak edi, got %d", fires)
+	}
+	// O'zgarmas qiymat — takroriy sync chaqirilmaydi.
+	before := fires
+	if err := s.SetCodec("c1", "h265", ""); err != nil {
+		t.Fatal(err)
+	}
+	if fires != before {
+		t.Errorf("o'zgarish bo'lmasa OnChanged ishlamasligi kerak")
+	}
+	if err := s.SetCodec("yo'q", "h264", ""); err == nil {
+		t.Error("noma'lum kamera uchun xato kutilardi")
+	}
+}

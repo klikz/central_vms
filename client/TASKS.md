@@ -391,9 +391,28 @@ Boshqaruv → „O'chirish“ bilan tozalanadi. Kontrakt: 1.0-draft.11 (§3.6, �
   qayta-yuborishda ularni yo'qotardi va MediaMTX'dagi oqim dekodlanmadi
   ("non-existing PPS"). `cams.Pull` endi ularni kalit kadr oldiga qo'shadi (§8.4).
 
+2026-11-20 davomi (haqiqiy Hikvision kamerasi, 192.168.0.24 — H.265):
+- `codec_probe` (§4.5) endi yuboriladi: probe kodekni SDP'dan o'rganadi
+  (bitta ulanishda `DESCRIBE`; qo'shimcha ulanishlar kamera sessiya
+  limitini tugatgani uchun bitta ulanishda qilinadi) va `camsvc.SetCodec`
+  orqali modelga yoziladi → `cams_sync` bilan serverga ham boradi.
+- H.265 depaketizatori qo'shildi (RFC 7798: singleton/AP/FU).
+- H.265 **paketlash** xatosi tuzatildi: FU turi 62 bo'lishi va 3 baytli
+  bosh ([NAL0][NAL1 nusxa][FU boshi]) kerak edi — eski kod `62<<2` va
+  2 bayt bilan yuborardi, natijada o'quvchi "Multi-layer HEVC" deb
+  rad etardi. Round-trip testi qo'shildi (paketlash→depaketlash).
+- Hikvision digest URI'si: standart port (554) tushirilgan URI bilan
+  qayta urinish qo'shildi (`normalizeDigestURI`).
+- Interleaved yozishda write-deadline har freymda yangilanadi — aks
+  holda publish ~5 s'da `i/o timeout` bilan uzilar edi.
+
 Qolgan bo'sh joylar:
-- [ ] `codec_probe` (§4.5) yuborilmaydi — SDP tahlili tayyor (`cams.CodecProbe`),
-      transportga ulanmagan.
-- [ ] `cams.Pull` H.265 uchun depaketizatorga ega emas (faqat H.264) — H.265
-      kamera direct yo'lda buziladi, FFmpeg fallback'ga tushadi.
+- [ ] **H.265 qayta-yuborilgan oqim hali to'liq dekodlanmaydi**: MediaMTX
+      trekni `H265` deb ochadi, lekin o'quvchi (ffprobe) "Unsupported
+      (HEVC) NAL type (62)" va kalit kadr yetishmasligini aytadi.
+      Keyingi qadam: MediaMTX'ga tushayotgan RTP'ni real NAL'larga
+      ajratib solishtirish (yoki publish'ni FFmpeg fallback orqali
+      `copy` bilan yuborish yo'lini sinash).
 - [ ] `position` maydoni `cams_sync`da yuborilmaydi.
+- [ ] Kamera RTSP foydalanuvchisi modelda saqlanmaydi — UI'da "RTSP user"
+      maydoni bor, lekin API/model uni yo'qqa chiqaradi (hardcode `admin`).

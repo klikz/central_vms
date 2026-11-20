@@ -1,0 +1,35 @@
+# vmsagent LOCALHOST konfiguratsiyasi — server bilan BITTA mashinada
+# sinash uchun (ildovdagi `make run`). To'liq sxema: docs/protocol.md §11.
+#
+# Yo'llar repo ichida (./var/…) — root huquqi talab qilinmaydi.
+# Kamera parollari bu faylda EMAS: ular agentning shifrlangan keystore'ida
+# saqlanadi (state_dir/secrets.bin), serverga faqat mask'langan RTSP boradi.
+
+server_url: ws://127.0.0.1:8081
+ui_bind: 127.0.0.1:8082
+client_name: "Lokal-sinov"
+
+state_dir: ./var/agent-state
+key_file: ./var/agent-state/agent.key
+log_level: info
+log_file: ./var/log/vmsagent.log
+log_max_mb: 4
+log_keep: 5
+
+probe:
+  status_parallel: 5
+  status_keepalive: auto
+  codec_probe_interval_h: 24
+  full_probe_on_publish_fail: true
+
+limits:
+  max_uploads: 8
+  max_local_transcodes: 4
+
+onvif:
+  enabled: true
+  switch_codec: false
+
+discovery:
+  cidrs: ["192.168.0.0/24"]
+  onvif_timeout_s: 10

@@ -201,3 +201,18 @@ func TestDigestSHA256Rad(t *testing.T) {
 		t.Fatal("SHA-256 rad etilishi kerak")
 	}
 }
+
+// Hikvision digest URI'si: standart port tushiriladi (2026-11-20).
+func TestNormalizeDigestURI(t *testing.T) {
+	cases := map[string]string{
+		"rtsp://192.168.0.24:554/Streaming/Channels/102": "rtsp://192.168.0.24/Streaming/Channels/102",
+		"rtsps://cam.example:322/live":                   "rtsps://cam.example/live",
+		"rtsp://192.168.0.24:8554/live":                  "", // port standart emas
+		"rtsp://192.168.0.24/live":                       "", // port yo'q
+	}
+	for in, want := range cases {
+		if got := normalizeDigestURI(in); got != want {
+			t.Errorf("normalizeDigestURI(%q) = %q, kutilardi %q", in, got, want)
+		}
+	}
+}

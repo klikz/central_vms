@@ -41,22 +41,28 @@ func TestH265Packetizer_FU(t *testing.T) {
 		if len(pl) < 2 {
 			t.Fatal("FU payload qisqa")
 		}
-		h0, h1 := pl[0], pl[1]
-		typ := (h0 >> 2) & 0x3f
-		if typ != 62 {
+		// RFC 7798: [bayt0: tur=62 (1..6-bit)] [bayt1: asl NAL bayt1 nusxasi]
+		// [bayt2: FU boshi S|E|tur] [bo'lak].
+		if len(pl) < 3 {
+			t.Fatal("FU payload qisqa")
+		}
+		h0, fu := pl[0], pl[2]
+		if typ := (h0 >> 1) & 0x3f; typ != 62 {
 			t.Errorf("b%d: FU type = %d, 62 kutilardi", i, typ)
 		}
-		nalType := h1 & 0x3f
-		if nalType != uint8((nal[0]>>1)&0x3f) {
+		if pl[1] != nal[1] {
+			t.Errorf("b%d: NAL bayt1 nusxasi buzildi", i)
+		}
+		if nalType := fu & 0x3f; nalType != uint8((nal[0]>>1)&0x3f) {
 			t.Errorf("b%d: NAL type buzildi: %d", i, nalType)
 		}
-		if i == 0 && h1&0x80 == 0 {
+		if i == 0 && fu&0x80 == 0 {
 			t.Error("S=1 kutilardi")
 		}
-		if i == len(pkts)-1 && h1&0x40 == 0 {
+		if i == len(pkts)-1 && fu&0x40 == 0 {
 			t.Error("E=1 kutilardi")
 		}
-		reas = append(reas, pl[2:]...)
+		reas = append(reas, pl[3:]...)
 	}
 	full := append([]byte{nal[0], nal[1]}, reas...)
 	if !bytes.Equal(full, nal) {

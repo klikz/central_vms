@@ -20,6 +20,9 @@ import (
 type Target struct {
 	ID  string
 	URL string
+	// WantCodec — kamera kodeki noma'lum bo'lsa, probe DESCRIBE orqali
+	// uni ham aniqlaydi (1.0-draft.12).
+	WantCodec bool
 }
 
 // Prober — rtspclient'ning watcher ishlatadigan qismi (fake bilan
@@ -39,6 +42,10 @@ type ProbeResult struct {
 	Status Status
 	Method string // get_parameter | options | describe | dial
 	Err    string // keepalive_unsupported | unreachable (xom kod; redaktasiya chaqiruvchida)
+	// Codec — DESCRIBE SDP'idan olingan kodek (h264|h265); bo'sh = noma'lum.
+	// 1.0-draft.12: kodek noma'lum bo'lsa agent H.265 kamerani H.264 deb
+	// e'lon qilardi va oqim buzilar edi (§4.5, §8.1).
+	Codec string
 }
 
 // WatcherConfig — barcha sozlamalar struktura orqali (global yo'q, §0.3).
@@ -117,7 +124,7 @@ func (w *Watcher) ProbeCycle(ctx context.Context) []ProbeResult {
 		go func(i int, t Target) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			r := ProbeOnce(ctx, w.cfg.Dial, t.URL, w.cfg.Timeout)
+			r := ProbeOnceCodec(ctx, w.cfg.Dial, t.URL, w.cfg.Timeout, t.WantCodec)
 			r.ID = t.ID
 			results[i] = r
 		}(i, t)
@@ -152,7 +159,30 @@ func (w *Watcher) ProbeCycle(ctx context.Context) []ProbeResult {
 
 // ProbeOnce — bitta kamera zanjiri: GET_PARAMETER → OPTIONS → DESCRIBE.
 // Muvaffaqiyatli fallback bo'lsa Err=keepalive_unsupported (§12.1).
+// ProbeOnceCodec — wantCodec=true bo'lsa kodek DESCRIBE orqali aniqlanadi
+// (kamera sessiyalarini tejab, faqat kerak bo'lganda qo'shimcha DESCRIBE).
+func ProbeOnceCodec(ctx context.Context, dial DialProber, url string, timeout time.Duration, wantCodec bool) ProbeResult {
+	return probeOnce(ctx, dial, url, timeout, wantCodec)
+}
+
+// ProbeOnce — holat probe'i (kodek aniqlanmaydi).
 func ProbeOnce(ctx context.Context, dial DialProber, url string, timeout time.Duration) ProbeResult {
+	return probeOnce(ctx, dial, url, timeout, false)
+}
+
+// maybeCodec — xohish bo'lsa, joriy ulanishda DESCRIBE qilib kodekni oladi.
+func maybeCodec(ctx context.Context, want bool, p Prober) string {
+	if !want {
+		return ""
+	}
+	sdp, err := p.Describe(ctx)
+	if err != nil {
+		return ""
+	}
+	return codecFromSDP(sdp)
+}
+
+func probeOnce(ctx context.Context, dial DialProber, url string, timeout time.Duration, wantCodec bool) ProbeResult {
 	if timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, timeout)
@@ -163,14 +193,31 @@ func ProbeOnce(ctx context.Context, dial DialProber, url string, timeout time.Du
 		return ProbeResult{Status: StatusOffline, Method: "dial", Err: "unreachable"}
 	}
 	defer func() { _ = closeFn() }()
+	// Kodek bir ulanishda o'qiladi: ayrim kameralar (Hikvision) qo'shimcha
+	// parallel sessiyani rad etadi yoki ikkinchi ulanishda 401 qaytaradi
+	// (2026-11-20: kodek shu sababli noma'lum qolardi).
 	if err := p.GetParameter(ctx); err == nil {
-		return ProbeResult{Status: StatusOnline, Method: "get_parameter"}
+		return ProbeResult{Status: StatusOnline, Method: "get_parameter", Codec: maybeCodec(ctx, wantCodec, p)}
 	}
 	if _, err := p.Options(ctx); err == nil {
-		return ProbeResult{Status: StatusOnline, Method: "options", Err: "keepalive_unsupported"}
+		return ProbeResult{Status: StatusOnline, Method: "options", Err: "keepalive_unsupported",
+			Codec: maybeCodec(ctx, wantCodec, p)}
 	}
-	if _, err := p.Describe(ctx); err == nil {
-		return ProbeResult{Status: StatusOnline, Method: "describe", Err: "keepalive_unsupported"}
+	if sdp, err := p.Describe(ctx); err == nil {
+		return ProbeResult{Status: StatusOnline, Method: "describe", Err: "keepalive_unsupported",
+			Codec: codecFromSDP(sdp)}
 	}
 	return ProbeResult{Status: StatusOffline, Err: "unreachable"}
+}
+
+// codecFromSDP — DESCRIBE javobidagi birinchi video oqim kodeki.
+func codecFromSDP(b []byte) string {
+	s, err := ParseSDP(string(b))
+	if err != nil {
+		return ""
+	}
+	if vs := s.VideoStreams(); len(vs) > 0 {
+		return vs[0].Codec
+	}
+	return ""
 }

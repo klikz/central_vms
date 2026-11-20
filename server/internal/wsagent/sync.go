@@ -30,11 +30,20 @@ func (h *Hub) runConn(c *Conn) {
 	err := c.readLoop()
 
 	h.mu.Lock()
-	if h.conns[c.agentID] == c {
+	active := h.conns[c.agentID] == c // bu sessiya hali faolmi
+	if active {
 		delete(h.conns, c.agentID)
 	}
 	h.mu.Unlock()
 	c.shutdown() // out+done bir marta yopiladi: writeLoop/pingLoop tugaydi
+	// 1.0-draft.12: agent tez qayta ulangsa ESKI sessiyaning yopilishi
+	// mijozni (va kameralarini) "offline" qilib qo'ymasligi kerak —
+	// aks holda yangi sessiya yuborgan `online` holat bosilib qolardi.
+	if !active {
+		h.lg.Info("eski sessiya yopildi (yangisi faol)", "agent_id", c.agentID)
+		c.ws.Close()
+		return
+	}
 	if err := h.registry.MarkClientOffline(c.clientID); err != nil {
 		h.lg.Warn("offline belgilash", "agent_id", c.agentID, "err", err)
 	}

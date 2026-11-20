@@ -1,0 +1,16 @@
+# Yigish/ishga tushirish chiqishi (root REJA §4.3)
+build/
+var/
+*.db
+*.db-wal
+*.db-shm
+coverage.out
+node_modules/
+
+# Maxfiy mahalliy fayllar — hech qachon git'ga kirmaydi
+secrets/
+*.local.yaml
+*.key
+agent.key
+secrets.bin
+state.json

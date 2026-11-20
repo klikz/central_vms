@@ -145,6 +145,35 @@ func (s *Service) SetStatus(id string, st cams.Status, at time.Time) error {
 	return fmt.Errorf("%w: %s", ErrNotFound, id)
 }
 
+// SetCodec — probe'dan olingan kodekni modelga yozadi va sync'ni
+// harakatlantiradi (1.0-draft.12: kodek noma'lum bo'lsa agent H.265
+// kamerani H.264 deb e'lon qilardi — oqim buzilar edi).
+func (s *Service) SetCodec(id, main, sub string) error {
+	for i := range s.St.Cameras {
+		if s.St.Cameras[i].ID == id {
+			changed := false
+			if main != "" && s.St.Cameras[i].CodecMain != main {
+				s.St.Cameras[i].CodecMain = main
+				changed = true
+			}
+			if sub != "" && s.St.Cameras[i].CodecSub != sub {
+				s.St.Cameras[i].CodecSub = sub
+				changed = true
+			}
+			if !changed {
+				return nil
+			}
+			if err := s.St.Save(); err != nil {
+				return err
+			}
+			s.St.BumpEpoch()
+			s.changed()
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: %s", ErrNotFound, id)
+}
+
 // Delete — bir nechta kamerani o'chirish; parollar ham tozalanadi (§10.1).
 // O'chirilgan id qayta ishlatilmaydi (UUIDv4, §5).
 func (s *Service) Delete(ids []string) int {

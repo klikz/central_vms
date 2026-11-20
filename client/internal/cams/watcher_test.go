@@ -309,3 +309,25 @@ func TestWatcher_StatusChangeStructuredLog(t *testing.T) {
 		t.Errorf("offline WARN bo'lishi kerak: %s", out)
 	}
 }
+
+// 1.0-draft.12: kodek noma'lum bo'lsa probe DESCRIBE orqali uni ham
+// aniqlaydi (H.265 kamera H.264 deb e'lon qilinasini oldini oladi).
+func TestProbeOnceCodec(t *testing.T) {
+	sdp := []byte("v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=x\r\n" +
+		"m=video 0 RTP/AVP 96\r\na=rtpmap:96 H265/90000\r\na=control:trackID=0\r\n")
+	fp := &fakeProber{gpErr: errors.New("keepalive yo'q"), desc: sdp}
+	dial := func(context.Context, string) (Prober, func() error, error) {
+		return fp, func() error { return nil }, nil
+	}
+	r := ProbeOnceCodec(context.Background(), dial, "rtsp://192.168.0.24/x", time.Second, true)
+	if r.Status != StatusOnline || r.Codec != CodecH265 {
+		t.Fatalf("kodek o'rganilmadi: %+v", r)
+	}
+	fp2 := &fakeProber{gpErr: errors.New("keepalive yo'q"), desc: sdp}
+	dial2 := func(context.Context, string) (Prober, func() error, error) {
+		return fp2, func() error { return nil }, nil
+	}
+	if r2 := ProbeOnceCodec(context.Background(), dial2, "rtsp://h/x", time.Second, false); r2.Codec != "" {
+		t.Errorf("wantCodec=false bo'lsa kodek o'qilmasligi kerak edi: %+v", r2)
+	}
+}

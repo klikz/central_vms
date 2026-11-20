@@ -1,6 +1,7 @@
 package main
 
 import (
+	"central-vms/client/internal/camsvc"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -53,6 +54,7 @@ type runtime struct {
 	media     *media.Manager    // C3.20 media sessiyalari
 	selftest  *selftest.Runner  // C4.6 paneli
 
+	cs       *camsvc.Service   // kamera modeli (kodek/probe natijalari)
 	pv       *previewSvc       // §12.2 probe sikli + preview snapshotlari
 	previews *preview.Store    // <state_dir>/previews/<camID>.jpg
 	snap     *preview.Capturer // ffmpeg orqali 1 kadr
@@ -555,6 +557,18 @@ func (r *runtime) reportCamStatus(res cams.ProbeResult) {
 	}
 	if err := rep.SendCamStatus(st); err != nil {
 		r.log.Debug("cam_status yuborilmadi", "camera_id", res.ID, "err", err)
+	}
+	// Kodek SDP'dan o'rganiladi: modelga yozamiz (cams_sync orqali serverga
+	// ham boradi) va §4.5 codec_probe yuboramiz.
+	if res.Codec != "" && r.cs != nil {
+		cam, ok := r.cs.Get(res.ID)
+		if ok && string(cam.CodecMain) != res.Codec {
+			if err := r.cs.SetCodec(res.ID, res.Codec, ""); err == nil {
+				r.log.Info("kamera kodeki aniqlandi", "camera_id", res.ID, "codec", res.Codec)
+				_ = rep.SendCodecProbe(proto.CodecProbe{CameraID: res.ID,
+					Codecs: proto.CameraProfilePair{Main: res.Codec, Sub: string(cam.CodecSub)}})
+			}
+		}
 	}
 }
 
