@@ -2,7 +2,8 @@
 
 Holat: tasdiqlangan talablar asosida yakuniy arxitektura + bosqichlar.
 Sana: 2026-11-17, yangilandi: 2026-11-19 (transcode dedup, sessiya holat mashinasi + auth-hook, H.265 ingest = RTSP/TCP, MediaMTX versiya pin, preview debounce, kechikish mezoni, operator PC minimal, Dahua/RTSP aniqligi)
-Yangilandi (2026-11-19, 2): **agent↔server kontrakti yozildi va muzlatildi — `client/docs/protocol.md` (1.0-draft.4)**; enrollment endpoint, `media_start` maydonlari, token uzatish (RTSP query / WHIP Bearer), kamera `id` ni agent yaratadi, publish refcount + TTL watchdog, ingest kutubxonalari (gortsplib + pion, FFmpeg zaxira), kamera kashf etish + ommaviy qo'shish, lokal UI dizayn talabi.
+Yangilandi (2026-11-19, 2): **agent↔server kontrakti yozildi va muzlatildi — `client/docs/protocol.md` (1.0-draft.5)**; enrollment endpoint, `media_start` maydonlari, token uzatish (RTSP query / WHIP Bearer), kamera `id` ni agent yaratadi, publish refcount + TTL watchdog, ingest kutubxonalari (gortsplib + pion, FFmpeg zaxira), kamera kashf etish + ommaviy qo'shish, lokal UI dizayn talabi.
+Yangilandi (2026-11-20, server ishi boshlanishi oldidan): kontrakt versiyasi **1.0-draft.5** (barcha draft.4 havolalari yangilandi); **`MEDIAMTX_VERSION = v1.11.3`** qulflandi; **server GPU modeli oldindan belgilangan emas** — transcode backend'i ishga tushishda avtomatik aniqlanadi (`nvenc → vaapi/amf → software libx264`) va `make probe` har bir mashinada qayta o'lchanadi (barcha "RTX 3070" yozuvlari shunga ko'ra tuzatildi, zaxiraga **server CPU** qo'shildi); **dev portlar to'qnashuvi:** dev mashinada tashqi MediaMTX 8554/8888/8889 ni band qiladi → `make start` oldin portlarni tekshiradi va band bo'lsa aniq xato beradi (band tashqi xizmatni biz o'zi to'xtatmaymiz); **proto tiplari serverda nusxa** (`server/internal/proto`) + protocol.md golden fixture'lari bilan sinxron ushlanadi — umumiy `shared/` modul YO'Q.
 Loyiha **2 qismga bo'lib bajariladi**: `server/` va `client/` — har birida o'z `REJA.md` + `TASKS.md`, implementatsiya alohida. Umumiy kontrakt: `docs/protocol.md` (**client tomonida tuzildi**, server S0'da ko'chiradi va muzlaydi).
 
 ---
@@ -24,7 +25,7 @@ Loyiha **2 qismga bo'lib bajariladi**: `server/` va `client/` — har birida o'z
 | 11 | UDP ruxsat etilgan (WebRTC mumkin). TLS hozircha yo'q (tashqi himoya boshqacha) |
 | 12 | UI tili: **o'zbek**. Kelingida ~1500–2000 kamera |
 | 13 | `server/` va `client/` papkalari **alohida**; har birida `make start` (ishga tushirish) va `make build`; `make build` backend + frontend + migrationsni `build/` papkasiga tushiradi. Root Makefile **kerak emas** |
-| 14 | **Kodek aniq emas** va kelajakda har xil kamera ulanadi → **H.264 va H.265 ikkalasi ham hisobga olinishi kerak**. H.265 bo'lsa transcode: **CPU yoki GPU** orqali. Kamera ulanganda kodek avtomatik aniqlanadi va kerakli amal bajariladi. **Serverda GPU bor: RTX 3070 8 GB (NVENC)** → transcode default **server** tomonda |
+| 14 | **Kodek aniq emas** va kelajakda har xil kamera ulanadi → **H.264 va H.265 ikkalasi ham hisobga olinishi kerak**. H.265 bo'lsa transcode: **CPU yoki GPU** orqali. Kamera ulanganda kodek avtomatik aniqlanadi va kerakli amal bajariladi. **Serverda GPU bor (modeli oldindan belgilangan emas — NVENC bo'lsa afzal, bo'lmasa server CPU zaxira)** → transcode default **server** tomonda |
 | 15 | Location tanlanganda grid **avtomatik** o'sha joy kameralari bilan to'ldiriladi, 16 tadan ko'p bo'lsa **pagination** |
 | 16 | MediaMTX `make start` ichida **avtomatik** ishga tushadi (prod'da alohida systemd unit) |
 | 17 | Bitta shaharda **bir nechta client** (agent) bo'lishi mumkin, lekin **joy/client nomlari har xil — bir xil nomli client yo'q** (nom unikal) |
@@ -44,7 +45,7 @@ Loyiha **2 qismga bo'lib bajariladi**: `server/` va `client/` — har birida o'z
 | DB | **SQLite (WAL)** + migratsiyalar → kerak bo'lsa Postgres | 2000 kamera + 10 user uchun yetadi, deploy oddiy |
 | Server UI | **React + TypeScript + Vite**, CSS (Tailwind yoki oddiy CSS) | Grid/player komponentlari oson, build statik — Go'ga embed |
 | Client | **Go agent** + ichiga embed qilingan lokal web UI (`:8082`) + **systemd unit** | Autostart, headless, past xotira (~30 MB), update oson. Electron/Tauri kerak emas |
-| Transcode (zarur bo'lsa) | **FFmpeg** subprocess. H.264 bo'lsa faqat remux (`-c copy`). H.265 bo'lsa H.264'ga siqish — **default: serverda, RTX 3070 NVENC**; zaxira: joyda GPU (`h264_nvenc/vaapi/amf`) yoki CPU (`libx264 -preset veryfast -tune zerolatency`) | H.265 kameralar brauzerda o'ynalmaydi — 8.1 siyosat. Faqat ochiq kameralar uchun, sessiya cheklovi bilan (NVENC: 8) |
+| Transcode (zarur bo'lsa) | **FFmpeg** subprocess. H.264 bo'lsa faqat remux (`-c copy`). H.265 bo'lsa H.264'ga siqish — **default: serverda, backend avtomatik aniqlanadi (`h264_nvenc` → `h264_vaapi/amf` → `libx264` software)**; zaxira: joyda GPU (`h264_nvenc/vaapi/amf`) yoki CPU (`libx264 -preset veryfast -tune zerolatency`) | H.265 kameralar brauzerda o'ynalmaydi — 8.1 siyosat. Faqat ochiq kameralar uchun, sessiya cheklovi bilan (NVENC: 3–8, **har GPU'da `make probe` bilan o'lchanadi**) |
 | Kamera bilan ish | RTSP probe + publish: **`bluenviron/gortsplib` v4** (probe, RTSP pull, H.265 RTSP/TCP publish) va **`pion/webrtc` v4** (H.264 WHIP); FFmpeg faqat remux/re-encode/transcode/zaxira | Client o'zi tekshiradi, serverga faqat natija beradi. **pion'da H.265 packetizer yo'q** (faqat Opus/PCM/H264/VP8/VP9) — H.265 WHIP orqali yuborilmaydi |
 
 **Muhim dizayn qarori:** kamera RTSP login/paroli **faqat client'da** saqlanadi (shifrlangan fayl). Serverga mask'langan URL va metadata uzatiladi. Server buzilsa ham kameralar paroli o'g'irlanmaydi.
@@ -72,7 +73,7 @@ JOY (Oxangaron / Angren / Toshkent)              SERVER (static IP)
 - Client **tashqariga** WS chiqaradi → joylarda port ochish / port-forward shart emas.
 - Server **fan-out** qiladi: bitta kamera 5 user ko'rsa ham joy→server upload **bitta**.
 - Oqim faqat tomoshobi bor payt yuboriladi; tomoshobi qolmasa 10 s ichida to'xtatiladi.
-- Serverda H.265 kamera bo'lsa FFmpeg (RTX 3070 NVENC) transcode jarayoni qo'shiladi: `cam/...` → `tc/...` (8.1).
+- Serverda H.265 kamera bo'lsa FFmpeg transcode jarayoni qo'shiladi: `cam/...` → `tc/...` (8.1); backend — server GPU'si (modeli o'zgaruvchan, avtomatik aniqlanadi) yoki server CPU zaxirasi.
 - **Ingest rejimi:** H.264 → WHIP (UDP); H.265 → **RTSP/TCP publish** (MediaMTX'da H.265 WHIP ingest'i nisbatan yangi — RTSP ancha barqaror, risk P3 dan olib tashlanadi). **Qo'shimcha sabab:** agent kutubxonasi `pion/webrtc` v4'da **H.265 packetizer yo'q** — texnik jihatdan ham H.265 WHIP bilan yuborib bo'lmaydi (protocol.md §8).
 - **Transcode dedup:** har kamera uchun **bitta** FFmpeg jarayoni — barcha tomoshobilarga umumiy (8.1, 16.3).
 
@@ -145,7 +146,7 @@ central_vms/
                    kashf etish, self-test, jurnal, sozlamalar
       selftest/    server WS / WHIP UDP-TCP / RTSP publish / kamera connectivity o'lchovi
       redact/      parol/token/secret redaksiyasi (barcha log va UI xabarlari)
-    docs/protocol.md                # AGENT↔SERVER KONTRAKTI (1.0-draft.4, yozilgan) → S0'da docs/ ga ko'chiriladi
+    docs/protocol.md                # AGENT↔SERVER KONTRAKTI (1.0-draft.5, yozilgan, muzlatilgan) → S0'da docs/ ga ko'chiriladi
     systemd/vmsagent.service          # unit fayl (build'ga ko'chiriladi)
     config/client.yaml.example        # to'liq sxema: protocol.md §11
     build/                            # QURILISH CHIQISHI (git'ga kirmaydi)
@@ -183,13 +184,13 @@ Frontend binary'ga **embed qilinmaydi** — `build/web/` alohida papka bo'ladi, 
 
 | Target | Vazifa |
 |---|---|
-| `make start` | Hammasini quradi → migratsiyani ishga tushiradi → MediaMTX + `vmsd` ni **dev** rejimda ishga tushiradi (Ctrl+C bilan to'xtaydi) |
+| `make start` | Hammasini quradi → migratsiyani ishga tushiradi → MediaMTX + `vmsd` ni **dev** rejimda ishga tushiradi (Ctrl+C bilan to'xtaydi). Ochilishda **8554/8888/8889/8189/8081 portlari band-emasligi tekshiriladi**; band bo'lsa aniq xato ("tashqi MediaMTX ishlayapti, to'xtating") — tashqi xizmatni biz avtomatik to'xtatmaymiz (dev mashinada premier-cv MediaMTX'i shu portlarda, tasdiqlangan qaror: dev paytida uni operator o'zi to'xtatadi) |
 | `make dev` | Tez ish: backend `go run`, frontend `vite dev` (proxy), MediaMTX alohida — hot reload |
 | `make build` | `build/` ichiga yuqoridagi tarkibni yig'adi (frontend build + backend binary + migrations + config) |
 | `make run` | Faqat `build/vmsd` ni mavjud `build/config` bilan ishga tushiradi |
 | `make media` | MediaMTX ni `mediamtx/mediamtx.yml` bilan ishga tushiradi (`make start` buni o'zi qiladi) |
-| `make media-get` | MediaMTX binary'sini **qulflangan versiyadan** yuklab `mediamtx/mediamtx` ga qo'yadi (git'da saqlanmaydi). Makefile'da `MEDIAMTX_VERSION = <git tag>` — P0'da tanlanib qulflanadi; WHEP/H.265 xatti-harakati versiyalar orasida o'zgaradi, prod'da ham xuddi shu versiya ishlatiladi |
-| `make probe` | Server quvvatini o'lchaydi: NVENC sessiya limiti, CPU transcode tezligi, kanal — natija `settings` ga yoziladi (16.3) |
+| `make media-get` | MediaMTX binary'sini **qulflangan versiyadan** yuklab `mediamtx/mediamtx` ga qo'yadi (git'da saqlanmaydi). Makefile'da **`MEDIAMTX_VERSION = v1.11.3`** (tasdiqlangan, 2026-11-20; dev mashinada ham shu versiya); WHEP/H.265 xatti-harakati versiyalar orasida o'zgaradi, prod'da ham xuddi shu versiya ishlatiladi |
+| `make probe` | Server quvvatini o'lchaydi: **GPU modelini aniqlash + transcode backend tanlash (`nvenc → vaapi/amf → software`)**, NVENC/NVDEC sessiya limiti, CPU transcode tezligi, kanal — natija `settings` ga yoziladi (16.3). Har yangi prod mashinada (GPU boshqa bo'lishi mumkin) `make install` dan keyin qayta ishga tushiriladi |
 | `make migrate-up` / `migrate-down` / `migrate-status` | SQLite migratsiyalari |
 | `make ui-build` / `ui-dev` | Frontend ichki targetlari |
 | `make test` / `lint` / `fmt` | `go test ./...`, `golangci-lint`, `gofmt` |
@@ -235,7 +236,7 @@ Frontend binary'ga **embed qilinmaydi** — `build/web/` alohida papka bo'ladi, 
 - `make start` oldin `make build` ni chaqiradi — "klon qildim → `cd server && make start`" bitta buyruq bilan ishlaydi.
 - Maxfiy sozlamalar (`config/*.local.yaml`, agent parollari) git'da emas, `.gitignore`'da.
 - **Client tashqi bog'liqligi:** `ffmpeg` (zaxira H.265→H.264 transcode va RTSP remux uchun). `make install` uni tekshiradi, bo'lmasa ogohlantiradi; `make build` ichida `deps` ro'yxati chiqaradi.
-- **Server tashqi bog'liqligi:** `ffmpeg` (NVENC/CUVID bilan) + NVIDIA drayveri — H.265 transcode default shu yerda. `make start` va `make install` buni tekshiradi (`nvidia-smi`, `ffmpeg -hide_banner -encoders | grep nvenc`), topilmasa ogohlantiradi va transcode zaxira zanjiri (joy GPU → joy CPU) ishlatiladi.
+- **Server tashqi bog'liqligi:** `ffmpeg` (GPU kodeklari bilan) — H.265 transcode default shu yerda, lekin **GPU modeli oldindan belgilangan emas**. `make start` va `make install` imkoniyatlarni tekshiradi (`nvidia-smi` bo'lsa, `ffmpeg -hide_banner -encoders | grep -E "nvenc|vaapi|amf"`, `libx264`) va backend'ni avtomatik tanlaydi: `h264_nvenc` → `h264_vaapi/amf` → `libx264` (software). Hech GPU bo'lmasa dastur **xato bermaydi** — software backend ishlaydi, limit pastroq; zaxira zanjiri (server CPU → joy GPU → joy CPU) ishlatiladi.
 
 ---
 
@@ -267,11 +268,12 @@ sessions     id, camera_id, user_id, started_at, ended_at, profile,
              state(pending|publishing|playing|stopping|ended|failed — 7.1)
 audit_log    id, user_id, action, target, at
 settings     key, value    # global limitlar: global_max_sessions=48,
-                           # server_max_transcodes=5 (NVENC limiti o'lchanadi: 3–8),
+                           # server_max_transcodes=5 boshlang'ich (probe o'lchaydi; GPU modeliga
+                           # qarab 3–8 NVENC yoki software holatda CPU yadrolar soni),
                            # preview_max=8, idle_stop_s=10, user_max_sessions=16
 ```
 
-Server quvvati (ma'lum): **GPU RTX 3070 8 GB** → NVENC encode + HEVC dekod. Talab: NVIDIA drayveri + `ffmpeg` nvenc/cuvid bilan (`ffmpeg -hide_banner -encoders | grep nvenc`). VRAM yetarli: 720p sessiya ≈ 200–400 MB, 8 sessiya ≈ 2–3 GB.
+Server quvvati (**GPU modeli oldindan belgilangan emas**, tasdiqlangan 2026-11-20): prod serverga boshqa-boshqa GPU o'rnatilishi mumkin (RTX 3070, RTX 4090, professional Tesla/A-series yoki umuman GPU yo'q). Shuning uchun: (1) transcode backend'i `vmsd` start'ida **avtomatik aniqlanadi** (`h264_nvenc` + `hevc_cuvid` → `h264_vaapi/amf` → `libx264` software); (2) parallel sessiya limiti `make probe` bilan **o'sha mashinada o'lchanadi** va `settings` ga yoziladi; (3) kodda birorta GPU modeli **hardcode qilinmaydi**. Dev mashina (hozircha RTX 4090, Ubuntu 26.04, ffmpeg 9 + nvenc/cuvid) — natijalari faqat orientir; prod'ga o'rnatilganda `make probe` qayta ishga tushiriladi.
 
 Izoh (tasdiqlangan):
 - **Nomlar unikal** — `sites.name` va `clients.name` `UNIQUE`. Bir xil nomli client yo'q, joy nomlari har xil, shuning uchun UI'da chalkashlik bo'lmaydi va blok sarlavhasi to'g'ridan-to'g'ri joy nomi bo'ladi.
@@ -453,15 +455,15 @@ Agent FFmpeg imkoniyatlarini tekshiradi: `h264_nvenc` (NVIDIA), `h264_vaapi` (In
 2.5. **Brauzer imkoniyatini hisobga olish (katta tejash).** UI birinchi ochilishda brauzerning H.265 (HEVC) qo'llab-quvvatini aniqlab serverga yuboradi: `RTCRtpReceiver.getCapabilities('video')` ichida h265 payload qidiriladi (yordamchi: `navigator.mediaCapabilities.decodingInfo`). Chrome **136+** WebRTC'da HEVC'ni standart holda yoqdi (HW decode sharti bilan; Windows — D3D11, Linux — VAAPI, Chrome 108+). **Agar operator brauzeri HEVC'ni qo'llab-quvvatlasa — H.265 oqimi to'g'ridan-to'g'ri beriladi: transcode yo'q, NVENC band emas, kanal ~30–50% kam.** Qo'llab-quvvatlamasa 4-qadamga o'tiladi.
 2.6. **B-frame tekshiruvi.** WebRTC H.264 B-frame'larni qo'llab-quvvatlamaydi — kamera `High` profile + B-frame yuborsa oqim brauzerda o'ynalmaydi. Agent SDP/kadr tahlili bilan B-frame'ni aniqlaydi va kamerani `Main`/`Baseline` (B-frame'siz) profiliga o'tkazadi (ONVIF), bo'lmasa re-encode qiladi.
 3. **ONVIF bilan tuzatish (ixtiyoriy qadam).** Agar kerakli profil H.265 bo'lsa, agent `SetVideoEncoderConfiguration` orqali sub-stream'ni H.264'ga o'tkazishga urinadi (client UI'da yoqiladi/o'chiriladi, default yoqilgan). **Eslatma (tasdiqlangan): kameralar asosan Dahua va RTSP orqali ulangan** — ONVIF umuman bo'lmasa yoki switch'ni qo'llab-quvvatlamasa bu qadam jimgina o'tkazib yuboriladi. Kamera qo'llab-quvvatlamasa 4-qadamga o'tiladi.
-4. **Transcode H.265 → H.264.** Serverda **RTX 3070 (NVENC)** bor — shuning uchun default **server** tomonda:
+4. **Transcode H.265 → H.264.** Default **server** tomonda; server GPU'si modeli o'zgaruvchan — backend start'da avtomatik tanlanadi (`nvenc → vaapi/amf → software`):
    - Server oqimi: upload H.265 (kichikroq bitrate, **RTSP/TCP publish** orqali) → MediaMTX `cam/...` path → **FFmpeg** jarayoni (HEVC dekod + `h264_nvenc` encode, 720p) → yangi `tc/...` path → brauzerga WHEP. MediaMTX o'zi transcode qilmaydi — jarayonni `vmsd` boshqaradi (zaxira usul: MediaMTX `runOnDemand` hook'i).
    - **Deduplikatsiya (majburiy):** har kamera uchun **bitta** FFmpeg jarayoni — nechta user / katak ko'rsa ham bitta process, barcha tomoshobilar shundan oladi. NVENC sessiyalari soni = transcode qilinayotgan **kamera** soni, tomoshobi soni emas. `tc/...` reader=0 bo'lsa 10 s keyin jarayon o'ldiriladi.
    - **Ochilish kechikishi ~1–3 s** (process start + pipeline iliq bo'lishi): UI `publishing` holatida **"transcode boshlandi…"** spinner/badge ko'rsatadi; taymaut 15 s (7.1).
-   - **NVENC sessiya cheklovi:** GeForce kartalarda drayver/avlodga qarab **3–8** parallel sessiya (rasmiy hujjat 8 ko'rsatsa-da, amalda 3 ga cheklangan holatlar qayd etilgan). Shuning uchun `server_max_transcodes` **o'lchanadi**: `make probe` (yoki `vmsd --probe`) bir necha test encode ochib haqiqiy limitni topadi va `settings` ga yozadi (boshlang'ich qiymat konservativ **5**). Cheklovdan chiqqan H.265 kamera zaxira zanjirga o'tadi.
-   - **Zaxira zanjiri:** server GPU → joy GPU (`caps` da nvenc/vaapi/amf bo'lsa client'da) → client CPU (`libx264 -preset veryfast -tune zerolatency`, max 4) → aniq xato xabari.
+   - **GPU sessiya cheklovi modelga qarab farq qiladi:** GeForce kartalarda drayver/avlodga qarab **3–8** parallel NVENC sessiya (rasmiy hujjat 8 ko'rsatsa-da, amalda 3 ga cheklangan holatlar qayd etilgan); NVDEC dekodlash limiti ham alohida o'lchanadi; GPU bo'lmasa software `libx264` (yadro hisobiga). Shuning uchun `server_max_transcodes` **har mashinada `make probe` (yoki `vmsd --probe`) bilan o'lchanadi**: bir necha test encode ochib haqiqiy limit topiladi va `settings` ga yoziladi (boshlang'ich qiymat konservativ **5**). Cheklovdan chiqqan H.265 kamera zaxira zanjirga o'tadi.
+   - **Zaxira zanjiri:** server GPU → **server CPU (`libx264`, GPU bo'lmasa yoki limit tugasa)** → joy GPU (`caps` da nvenc/vaapi/amf bo'lsa client'da) → client CPU (`libx264 -preset veryfast -tune zerolatency`, max 4) → aniq xato xabari.
    - Cheklovlar: `server_max_transcodes` (8), per-client `max_transcodes` (GPU bo'lsa 8, CPU-only 4); chegaradan oshsa navbat + UI'da "navbatda" belgisi.
 5. **Fallback.** Transcode mumkin bo'lmasa → LL-HLS (`hls.js`) **H.264** uchun. Eslatma: H.265 uchun HLS ham Chrome'da ishonchsiz (HEVC MSE qo'llab-quvvati platformaga bog'liq), shuning uchun **H.265 holatda transcode deyarli majburiy** hisoblanadi; transcode yo'q bo'lsa UI aniq xato ko'rsatadi: *"Bu kamera H.265 — H.264 profilini sozlang yoki transcode'ni yoqing"*.
-6. **UI badge:** `H.264` · `H.265→GPU(S)` (server GPU) · `H.265→GPU(J)` (joy GPU) · `H.265→CPU(J)` · `H.265⚠` · `preview`. Admin kamera yoki client darajasida `transcode_mode` ni qo'lda o'zgartira oladi (`auto|server|client|off`, default **auto → server GPU**).
+6. **UI badge:** `H.264` · `H.265→GPU(S)` (server GPU — backend nvenc/vaapi/amf, aniqlangan) · `H.265→CPU(S)` (server software) · `H.265→GPU(J)` (joy GPU) · `H.265→CPU(J)` · `H.265⚠` · `preview`. Admin kamera yoki client darajasida `transcode_mode` ni qo'lda o'zgartira oladi (`auto|server|client|off`, default **auto → server**, backend avtomatik).
 7. **Kengaytiriluvchanlik:** `codec` maydoni erkin satr (`av1`, `mjpeg`, `unknown`) — kelajakda ulanadigan har qanday kamera uchun sxema o'zgarmaydi.
 
 ### 8.2 Preview siyosati (tasdiqlangan: past sifatli live; og'ir bo'lsa snapshot'ga almashtiriladi)
@@ -500,14 +502,14 @@ Agent FFmpeg imkoniyatlarini tekshiradi: `h264_nvenc` (NVIDIA), `h264_vaapi` (In
 | Global preview | 8 | Preview yukini cheklar |
 | Per-client upload | 8 | Joy internetini himoya qiladi, client UI'da o'zgartiriladi |
 | Per-client transcode | GPU bo'lsa **8**, faqat CPU bo'lsa **4** | H.265→H.264 parallel soni, oshsa navbat |
-| Server transcode (NVENC) | **5** boshlang'ich, keyin **o'lchanadi (3–8)** | GeForce drayver/kartasiga qarab parallel NVENC sessiya cheklovi |
+| Server transcode | **5** boshlang'ich, keyin **`make probe` bilan o'lchanadi** (GPU: NVENC 3–8; GPU yo'q: software `libx264`, ~1 vCPU/oqim 720p) | Limit GPU modeli/drayveriga bog'liq — har mashinada qayta o'lchanadi |
 | Idle stop | 10 s | Reader 0 bo'lsa (preview: ~1 s) |
 | Session TTL | 5 min, har 2 min'da uzaytiriladi | UI yopilsa oqim o'zi o'ladi |
 
 **Operator PC minimal konfiguratsiyasi (belgilangan talab):** 4 yadro CPU (Intel 8-avlod+ / Ryzen 3+), **8 GB RAM**, apparat dekoderi bor GPU (Intel UHD 620+ / NVIDIA / AMD — WebRTC HW decode uchun shart), Chrome yoki Edge **136+** (Linux'da VAAPI HW decode bilan), monitor 1080p. 4x4 grid doimiy ishlatiladigan bo'lsa tavsiya: 6+ yadro, 16 GB RAM, mustaqil GPU. HEVC'to'g'ridan-to'g'ri yo'li (8.1, 2.5-qadam) shu minimal konfiguratsiyada ishlaydi; undan past PC'da brauzer HEVC aniqlagi "yo'q" chiqadi va transcode zanjiri ishlatiladi.
 
 Hisob: 30 concurrent × 1.5 Mbps ≈ **45 Mbps** joy→server upload va server→browser download. Transcoding bo'lmagani uchun server CPU ~4–8 vCPU yetadi.
-**Transcode yuk:** serverda **RTX 3070** bor — H.265→H.264 default shu yerda, CPU deyarli band bo'lmaydi. Cheklov: GeForce'da parallel NVENC sessiyasi drayver/kartaga qarab **3–8** (boshlang'ich sozlamamiz **5**, `make probe` bilan o'lchanadi). Limitdan chiqqan H.265 kamera zaxira zanjirga o'tadi: **brauzer HEVC'ni o'zi esa o'ynatadi (transcode yo'q)** → joy GPU (bo'lsa) → joy CPU (`libx264 ultrafast`, 720p ≈ 1 vCPU/oqim, max 4) → aniq xato. Kameralarning aksariyati `sub` profilni H.264 beradi — transcode umuman kerak bo'lmasligi kutiladi.
+**Transcode yuk:** serverda GPU bor (modeli o'zgaruvchan — backend avtomatik tanlanadi, 8.1-4) — H.265→H.264 default shu yerda, GPU bo'lsa CPU deyarli band bo'lmaydi. Cheklov: GeForce'da parallel NVENC sessiyasi drayver/kartaga qarab **3–8**, GPU bo'lmasa software `libx264` (720p ≈ 1 vCPU/oqim); barchasi **`make probe` bilan o'sha mashinada o'lchanadi** (boshlang'ich sozlamamiz **5**). Limitdan chiqqan H.265 kamera zaxira zanjirga o'tadi: **brauzer HEVC'ni o'zi esa o'ynatadi (transcode yo'q)** → server CPU → joy GPU (bo'lsa) → joy CPU (`libx264 ultrafast`, max 4) → aniq xato. Kameralarning aksariyati `sub` profilni H.264 beradi — transcode umuman kerak bo'lmasligi kutiladi.
 **Copy (transcodesiz) holat:** 48 sessiyada server CPU ≈ 4–8 vCPU, kanal ≈ 70 Mbps download; VRAM band emas.
 
 ---
@@ -551,7 +553,7 @@ Hisob: 30 concurrent × 1.5 Mbps ≈ **45 Mbps** joy→server upload va server�
 - Har 5 min: client heartbeat; 30 s javobsiz → offline belgi.
 - SQLite kundalik `VACUUM INTO` zaxira (`backup.sh`), `/var/lib/vmsd/`.
 - O'lchash vositalari: MediaMTX `pprof: yes` + `/metrics` (Prometheus), `vmsd` `/metrics`, brauzer `getStats()` (bitrate, packet loss) — yuqorida 16.3.
-- Admin panel: faol sessionlar, client offline ro'yxati, versiya, **transcode yuklamasi** (FFmpeg jarayonlari soni, NVENC sessiyalari `nvidia-smi` orqali, navbatda turganlar).
+- Admin panel: faol sessionlar, client offline ro'yxati, versiya, **transcode yuklamasi** (FFmpeg jarayonlari soni, GPU sessiyalari — NVIDIA bo'lsa `nvidia-smi`, AMD/Intel bo'lsa `radeontop`/VA status yoki o'z hisoblagichimiz, navbatda turganlar, tanlangan backend).
 
 ---
 
@@ -567,12 +569,12 @@ tuzilma darajasida kamaytirishga tayanish.
 
 | Bosqich | Ishlar | Qabul mezoni | Taxmin |
 |---|---|---|---|
-| **P0** | `docs/protocol.md` (7.1 holat mashinasi + auth-hook shartnomasi bilan) + `api.md` + MediaMTX config loyihasi + **versiyani qulflash (`MEDIAMTX_VERSION`)**; `server/` va `client/` alohida skelet + Makefile (`start`/`build`) + `build/` chiqishi | `cd server && make build` va `cd client && make build` alohida ishlaydi; `make start` qurib ishga tushiradi | 2 kun |
+| **P0** | `docs/protocol.md` (7.1 holat mashinasi + auth-hook shartnomasi bilan) + `api.md` + MediaMTX config loyihasi + **versiyani qulflash (`MEDIAMTX_VERSION = v1.11.3`)**; `server/` va `client/` alohida skelet + Makefile (`start`/`build`) + `build/` chiqishi | `cd server && make build` va `cd client && make build` alohida ishlaydi; `make start` qurib ishga tushiradi (port band bo'lsa aniq xato) | 2 kun |
 | **P1** | Server: auth (admin/viewer), sites/clients/cameras registry, enrollment, agent WS hub, cams_sync | Agent ulanadi, 100 kamera serverda ko'rinadi, status yangilanadi | 3–4 kun |
 | **P2** | Client: systemd, lokal UI (kamera CRUD + **bulk/CSV** + ONVIF, dizayn talabi client REJA §8), **kamera `id` generatsiyasi (UUID, o'zgarmas) + `cams_epoch`**, RTSP probe, **quvvat probe (GPU/CPU `caps`)**, **kodek probe (SDP: main/sub + profile + B-frame)**, **kashf etish (ONVIF WS-Discovery + RTSP port-scan) va ommaviy qo'shish**, ONVIF orqali profil almashtirish (**ixtiyoriy — kameralar asosan Dahua, RTSP orqali, 8.1-3-qadam**; sub'ni 720p / 10 fps / 600–800 kbps CBR / GOP 2 s / B-frame'siz qilib sozlash, 16.1; `codec_fix.apply_all` bulk), parol store, WS/backoff, `secret_rotate`/`config_push` | Joyda 100 kamera qo'shilib (≥10 tasi kashf etish orqali bir amaliyotda), serverda ro'yxat + status + **kodek** + **caps** to'g'ri ko'rinadi; sub profil parametrlari o'lchanadi; kamera o'chirilsa serverda ham o'chadi, nom o'zgarsa `id` saqlanadi | 6–8 kun |
-| **P3** | Media: MediaMTX + **ingest: H.264 → WHIP (`pion/webrtc` v4), H.265 → RTSP/TCP publish (`gortsplib` v4 ANNOUNCE/RECORD; pion'da H.265 packetizer yo'q)** + WHEP play, session manager + **holat mashinasi/taymautlar (7.1)** + **auth-hook (`/internal/auth`)**, idle stop, limitlar, LL-HLS fallback, **kodek siyosati (8.1): H.264 remux / brauzer HEVC aniqlash (transcodesiz H.265 yo'li) / H.265 transcode — server NVENC default (kamera bo'yicha bitta FFmpeg), zaxira joy GPU→CPU / fallback**, **agent tomonida publish refcount + TTL watchdog + graceful shutdown**, NVENC real limitini o'lchash (`make probe`) | Brauzerda H.264 kamera **≤1.5s** kechikishda ochiladi (target ~0.5–1.0s, eng yaxshi ~0.3s); **HEVC'li brauzerda H.265 transcodesiz (RTSP/TCP ingest bilan) ochiladi**; HEVC'siz brauzerda server GPU transcode bilan ochiladi — **"transcode boshlandi…"** holati ko'rinadi, 2 user bitta H.265 kamerada **bitta** FFmpeg jarayoni ishlaydi; **2 user + preview bo'lsa agentda bitta publish**; `media_ready` 10 s taymauti va `failed` + qayta urinish ishlashi; yopilsa upload to'xtaydi; WS uzilsa TTL watchdog publish'ni yopadi | 7–10 kun |
+| **P3** | Media: MediaMTX + **ingest: H.264 → WHIP (`pion/webrtc` v4), H.265 → RTSP/TCP publish (`gortsplib` v4 ANNOUNCE/RECORD; pion'da H.265 packetizer yo'q)** + WHEP play, session manager + **holat mashinasi/taymautlar (7.1)** + **auth-hook (`/internal/auth`)**, idle stop, limitlar, LL-HLS fallback, **kodek siyosati (8.1): H.264 remux / brauzer HEVC aniqlash (transcodesiz H.265 yo'li) / H.265 transcode — server default (backend avtomatik tanlanadi: nvenc→vaapi/amf→software; kamera bo'yicha bitta FFmpeg), zaxira server CPU→joy GPU→joy CPU / fallback**, **agent tomonida publish refcount + TTL watchdog + graceful shutdown**, transcode real limitini o'lchash (`make probe`) | Brauzerda H.264 kamera **≤1.5s** kechikishda ochiladi (target ~0.5–1.0s, eng yaxshi ~0.3s); **HEVC'li brauzerda H.265 transcodesiz (RTSP/TCP ingest bilan) ochiladi**; HEVC'siz brauzerda server GPU transcode bilan ochiladi — **"transcode boshlandi…"** holati ko'rinadi, 2 user bitta H.265 kamerada **bitta** FFmpeg jarayoni ishlaydi; **2 user + preview bo'lsa agentda bitta publish**; `media_ready` 10 s taymauti va `failed` + qayta urinish ishlashi; yopilsa upload to'xtaydi; WS uzilsa TTL watchdog publish'ni yopadi | 7–10 kun |
 | **P4** | Server UI: login, client bloklari + **live preview (8.2)**, grid 1x1–4x4 (**default 3x3**), **avtomatik to'ldirish + pagination**, favorites, layout saqlash, drag&drop, status/kodek belgilari, **IntersectionObserver + Page Visibility bilan avtomatik to'xtatish (16.2)** | 2 user parallel 15 tadan kamera ko'radi, layout saqlanadi, preview og'irlik yaratmaydi, tab yashirinsa barcha oqim to'xtaydi | 6–8 kun |
-| **P5** | Qotirish: limitlar sozlamasi, audit, backup, offline holatlar, **MediaMTX tuning (`udpReadBufferSize`, `writeQueueSize`, faqat RTSP+WebRTC protokollari) + `pprof`/`metrics`**, load test (48 copy session + NVENC transcode limiti), deploy skriptlari | 48 concurrent session 30 daq uzluksiz, memory o'smaydi; NVENC chegarasi va zaxira zanjir ishlashi o'lchangan; metrikalar ko'rinadi | 3–4 kun |
+| **P5** | Qotirish: limitlar sozlamasi, audit, backup, offline holatlar, **MediaMTX tuning (`writeQueueSize`, sysctl rmem_max — v1.11.3'da udpReadBufferSize yo'q, faqat RTSP+WebRTC protokollari) + `pprof`/`metrics`**, load test (48 copy session + transcode limiti, `make probe`), deploy skriptlari | 48 concurrent session 30 daq uzluksiz, memory o'smaydi; transcode chegarasi va zaxira zanjir ishlashi o'lchangan; metrikalar ko'rinadi | 3–4 kun |
 | **P6** | Keyin (talab bo'lsa): TLS, location bo'yicha ruxsat, Telegram alert, **preview'ni snapshot rejimiga almashtirish** (agar live preview og'ir bo'lsa), arxiv playback | — | — |
 
 Jami MVP: **~4–5 hafta** (bitta dasturchi, taktik tekshiruvlar bilan).
@@ -638,7 +640,7 @@ Jami MVP: **~4–5 hafta** (bitta dasturchi, taktik tekshiruvlar bilan).
 - **Transcode deduplikatsiyasi:** `tc/...` uchun har kamera **bitta** FFmpeg jarayoni — barcha tomoshobilar undan oladi; NVENC sessiyalari soni = H.265 kamera soni, tomoshobi soni emas (8.1). Sessiya bo'yicha transcoder qilish **taqiqlangan** — NVENC limiti bir zumda portlanadi.
 - Transcode FFmpeg parametrlari: NVENC `-c:v h264_nvenc -preset p1 -tune ll -rc cbr -b:v 800k -maxrate 1M -bufsize 1M -g 50 -profile:v baseline -pix_fmt yuv420p`; CPU fallback `-c:v libx264 -preset ultrafast -b:v 600k`.
 - MediaMTX hook varianti (`runOnAvailable` + FFmpeg → boshqa path) hujjatlashtirilgan zaxira; asosiy yo'l — `vmsd` boshqaradi (limitlar sababli).
-- **MediaMTX tuning:** `udpReadBufferSize: 1000000` (+ `sysctl net.core.rmem_max=100000000`), `writeQueueSize: 1024`, packet loss bo'lsa `rtspTransports: [tcp]` / path uchun `rtspTransport: tcp`.
+- **MediaMTX tuning:** `writeQueueSize: 1024`; packet loss bo'lsa `rtspTransports: [tcp]` / path uchun `rtspTransport: tcp`. **Eslatma (2026-11-20, v1.11.3 tekshirildi):** qulflangan versiyada `udpReadBufferSize` / `readBufferCount` parametrlari **yo'q** (eski versiyalarniki) — UDP bufferi faqat syscall orqali: `sysctl net.core.rmem_max=100000000` (install-notes.md, S4).
 - **Faqat kerakli protokollar:** RTSP (publish) + WebRTC (play) + HLS (faqat fallback). RTMP / SRT / MPEG-TS o'chiriladi — har bir modul CPU/RAM sarflaydi.
 - **O'lchash:** `pprof: yes` + `/metrics` (Prometheus) — yukni bilmasdan tejab bo'lmaydi.
 - **Snapshot preview (keyin):** `runOnAvailable` + FFmpeg JPEG (har 10 s) — 16 kamera preview uchun ~0.5–1 MB bir marta, live preview (≈10 Mbps uzluksiz) o'rniga. `PreviewProvider` abstraksiyasi tufayli UI o'zgarmaydi.
@@ -666,13 +668,13 @@ Jami MVP: **~4–5 hafta** (bitta dasturchi, taktik tekshiruvlar bilan).
 Yuqoridagi 1-bo'limdagi barcha bandlar **tasdiqlangan**. Qolgan noaniq nuqtalar va risklar:
 
 **Ochiq (aniqlash kerak)**
-1. **Serverda NVIDIA drayveri va `ffmpeg` NVENC/CUVID bilan o'rnatilganmi** (Ubuntu versiyasi qaysi)? Transcode shunga bog'liq.
-2. **Bir vaqtda 8 tadan ko'p H.265 kamera ochilishi kutiladimi?** NVENC sessiya cheklovi 8 — ko'proq bo'lsa qo'shimcha GPU yoki joy transcode'iga o'tamiz.
+1. ~~Serverda NVIDIA drayveri va `ffmpeg` NVENC/CUVID bilan o'rnatilganmi~~ — **YOPILDI (2026-11-20):** dev mashinada NVIDIA + ffmpeg nvenc/cuvid tayyor (Ubuntu 26.04, ffmpeg 9). Prod GPU modeli **oldindan belgilangan emas** — backend avtomatik aniqlanadi va limit `make probe` bilan o'sha mashinada o'lchanadi (5-izoh, 8.1-4).
+2. ~~Bir vaqtda 8 tadan ko'p H.265 kamera ochilishi kutiladimi?~~ — **YOPILDI (2026-11-20):** NVENC cheklovi GPU modeliga qarab 3–8, software holda CPU yadrolar soniga qarab. Kod limitni bilmaydi — `make probe` o'lchaydi, limitdan chiqqan zaxira zanjirga o'tadi (server CPU → joy GPU → joy CPU), UI'da "navbatda".
 3. **Joy mashinasi quvvati/GPU** — agent `caps` orqali o'zi aniqlaydi, lekin xarid rejalashtiruvida GPU'li mini-PC zaxira transcode uchun qulayroq.
 
 **Qabul qilingan (e'tiroz bo'lmasa shu qoladi)**
 - Preview manba — **`sub`** (kameralarda uchinchi profil yo'q), qo'shimcha siqish yo'q; ochiq kamera uchun preview qo'shimcha upload ochmaydi.
-- Transcode default — **server, RTX 3070 NVENC**; zaxira zanjir: joy GPU → joy CPU → xato xabari.
+- Transcode default — **server, backend avtomatik tanlanadi (GPU modeli o'zgaruvchan: nvenc → vaapi/amf → software libx264)**; zaxira zanjir: server CPU → joy GPU → joy CPU → xato xabari.
 - Client offline bo'lsa kamera ro'yxati serverda oxirgi sinxron holaticha ko'rinadi, status "offline".
 - Kamera o'sishi ~1000/yil deb hisoblanadi: `cams_sync` chunk'lab uzatiladi, indekslar (`cameras.client_id`, `sessions.camera_id`), SQLite WAL.
 - Frontend binary'ga embed qilinmaydi, `build/web/` diskdan serve qilinadi.
@@ -681,7 +683,7 @@ Yuqoridagi 1-bo'limdagi barcha bandlar **tasdiqlangan**. Qolgan noaniq nuqtalar 
 - Haqiqiy kanal tezliklarini rejada ko'rsatish shart emas (tasdiqlangan) — 10-bo'lim limitlari yetarli, amaliyotda `make probe` + metrikalar bilan tekshiriladi.
 - **H.265 ingest — RTSP/TCP publish** (WHIP emas); H.264 ingest — WHIP. Sabab: MediaMTX'da H.265 WHIP ingest'i nisbatan yangi, RTSP esa barqaror — P3 riski kamayadi. **Qo'shimcha sabab (tasdiqlangan):** `pion/webrtc` v4'da **H.265 packetizer yo'q** (faqat Opus, PCM, H264, VP8, VP9) — H.265'ni WHIP orqali yuborish texnik jihatdan ham imkonsiz.
 - **Agent ingest kutubxonalari (tasdiqlangan):** `bluenviron/gortsplib` v4 (RTSP pull + H.265 RTSP/TCP publish — MediaMTX bilan bir xil RTSP implementatsiyasi, sof Go, qo'shimcha process yo'q) + `pion/webrtc` v4 (H.264 WHIP). FFmpeg faqat remux / B-frame re-encode / transcode / interop zaxirasi (`-f rtsp`, `-f whip`, FFmpeg ≥ 7.1).
-- **Kontrakt manbasi (tasdiqlangan):** `client/docs/protocol.md` (1.0-draft.4) — client tomonida yozilgan va muzlatilgan; server S0'da `docs/protocol.md` ga ko'chiradi. Ziddiyat bo'lsa kontrakt kuchli.
+- **Kontrakt manbasi (tasdiqlangan):** `client/docs/protocol.md` (**1.0-draft.5**, 2026-11-20 holati) — client tomonida yozilgan va muzlatilgan; server S0'da `docs/protocol.md` ga ko'chiradi. Ziddiyat bo'lsa kontrakt kuchli.
 - **Enrollment endpoint (tasdiqlangan):** `POST /api/agent/enroll` (ochiq, rate-limit 5/5 min) → `{agent_id, agent_secret}`; WS'da `auth {agent_id, secret}` → `welcome` handshake; `agent_id` ni server beradi.
 - **Token semantikasi (tuzatilgan):** RTSP'da `?token=`, WHIP/WHEP'da `Authorization: Bearer`; token bir martalik emas — TTL davomida bitta session/path/action uchun qayta ishlatiladi (WHIP POST+PATCH+DELETE). Auth-hook `action` ro'yxatida `update` yo'q.
 - **Kamera `id` (tasdiqlangan):** UUIDv4 ni agent yaratadi va o'zgarmaydi; sync `cams_epoch` + `op: upsert|delete` orqali (o'chirish `cams_sync` ichida).
@@ -689,7 +691,10 @@ Yuqoridagi 1-bo'limdagi barcha bandlar **tasdiqlangan**. Qolgan noaniq nuqtalar 
 - **Kamera kashf etish + ommaviy qo'shish (tasdiqlangan, C2):** ONVIF WS-Discovery (`239.255.255.250:3702`) + RTSP port-scan (`discovery.cidrs`, ≤1024 host); checkbox + naming pattern bilan bir amaliyotda qo'shish; qayta skanda mavjud `id` saqlanadi; skan natijalari serverga yuborilmaydi.
 - **Lokal UI dizayni (tasdiqlangan):** `go:embed`, qorong'i, ixcham, zich jadval, hotkeylar, 5 ekran (Kameralar / Kashf etish / Sozlamalar / Holat-Self-test / Jurnal) — client REJA §8, protocol.md §17.
 - **Qo'shimcha mexanizmlar (tasdiqlangan):** `secret_rotate`, `config_push`, `media_stats` (10 s), `hb`, `media_refresh`, `codec_fix.apply_all` (bulk), `selftest_done`, graceful shutdown, log redaksiyasi, defensive limitlar, `probe_cycle_s` o'lchovi, Dahua `GET_PARAMETER` ishlamasa `OPTIONS`/`DESCRIBE` fallback.
-- **MediaMTX versiyasi qulflangan** (`MEDIAMTX_VERSION`, P0'da tanlanadi) — prod takrorlanmasligi uchun; agent tomonida ham minimum MediaMTX versiyasi kontraktga yoziladi (WHIP/WHEP/H.265 xatti-harakati versiyaga bog'liq).
+- **MediaMTX versiyasi qulflangan:** **`MEDIAMTX_VERSION = v1.11.3`** (tasdiqlangan 2026-11-20 — dev mashinada ham shu o'rnatilgan) — prod takrorlanmasligi uchun; agent tomonida ham minimum MediaMTX versiyasi kontraktga yoziladi (WHIP/WHEP/H.265 xatti-harakati versiyaga bog'liq).
+- **Server GPU'si o'zgaruvchan (tasdiqlangan 2026-11-20):** prod'ga boshqa GPU o'rnatilishi mumkin yoki umuman bo'lmasligi mumkin → backend avtomatik aniqlanadi, limit probe bilan o'lchanadi, GPU modeli kodda hardcode qilinmaydi; admin panel va `/metrics` tanlangan backend'ni ko'rsatadi.
+- **Proto tiplari (tasdiqlangan 2026-11-20):** server `internal/proto` — client dagi tiplarning nusxasi (mustaqil module qoladi, `shared/` YO'q); sinxronlik `testdata/protocol/*.json` golden fixture'lari (protocol.md JSON misollari) bilan ushlanadi.
+- **Dev portlar (tasdiqlangan 2026-11-20):** dev mashinada tashqi (`premier-cv`) MediaMTX 8554/8888/8889 ni egallaydi → VMS dev ishga tushmasdan oldin u xizmatni operator o'zi to'xtatadi; `make start` portlarni tekshiradi va band bo'lsa aniq xato beradi (biz tashqi xizmatni to'xtatmaymiz).
 - Transcode — **kamera bo'yicha bitta FFmpeg**, barcha tomoshobilarga umumiy; UI'da "transcode boshlandi…" holati (~1–3 s qo'shimcha kechikish).
 - Sessiya holatlari va taymautlar **7.1** da belgilangan; to'liq shartnoma `docs/protocol.md` (MediaMTX auth-hook shartnomasi bilan).
 - Preview hover debounce: ochilish ~600 ms dwell, ochilgach kamida 2 s, yopilish ~1 s (8.2).
@@ -697,7 +702,8 @@ Yuqoridagi 1-bo'limdagi barcha bandlar **tasdiqlangan**. Qolgan noaniq nuqtalar 
 
 **Risklar (reja ichida yechilgan)**
 - **H.265 + WebRTC:** brauzer dekodlamaydi → 8.1 bosqichma-bosqich siyosat (H.264 profil → ONVIF almashtirish → GPU/CPU transcode → fallback). Eng ko'p uchraydigan holat (`main=H.265, sub=H.264`) transcodesiz yechiladi.
-- **Transcode yuk:** server GPU (RTX 3070, NVENC) default; NVENC sessiya cheklovi **3–8** (o'lchanadi) → limitdan chiqsa zaxira zanjir: brauzer HEVC (transcodesiz) → joy GPU → joy CPU. Chegaraga yetilsa UI'da "navbatda" belgisi.
+- **Transcode yuk:** server GPU (modeli o'zgaruvchan) default; NVENC sessiya cheklovi **3–8**, GPU bo'lmasa software `libx264` (ikkalasi ham `make probe` bilan o'lchanadi) → limitdan chiqsa zaxira zanjir: brauzer HEVC (transcodesiz) → server CPU → joy GPU → joy CPU. Chegaraga yetilsa UI'da "navbatda" belgisi.
+- **GPU modeli noma'lum riski:** prod mashinadagi GPU dev mashinadagidan farq qiladi (3070 / 4090 / Tesla / GPU yo'q) → bitta o'lcham mos kelmaydi. Yechim: backend + limit avtomatik aniqlanadi (8.1-4, 5-izoh); har yangi serverda `make install` + `make probe` majburiy qadam (`install-notes.md` ga yoziladi).
 - **Brauzer HEVC holati operator PC'siga bog'liq:** Chrome 136+ WebRTC'da HEVC'ni yoqdi, lekin HW decode sharti bilan (Windows D3D11, Linux VAAPI Chrome 108+); eski brauzer/GPU'da ishlamaydi. Shuning uchun imkoniyat **har bir brauzer uchun alohida aniqlanadi** va natija `sessions` da ko'rinadi.
 - **H.264 profile/level:** kamera `High` profile yuborsa WebRTC negotiation'da muammo bo'lishi mumkin → agent `annexb → avc` remux qiladi, P3'da maxsus test.
 - **TLS yo'q:** parollar va video och tarmoqda (tashqi himoya sizning tomonda). Qisqa TTL tokenlar + agent_secret rotatsiyasi bilan yumshatiladi; domain olinganda Caddy orqali TLS qo'shiladi.

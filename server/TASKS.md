@@ -6,23 +6,41 @@ Har bosqich oxirida "Qabul" bandidagi tekshiruv o'tgan bo'lishi shart.
 ko'rsatkichi, fixture/golden testlar, fake clock, single-writer goroutine, `goleak` + `-race`,
 coverage bo'sagasi — qoidalar: `client/docs/protocol.md §18.2` va `client/TASKS.md §0`.
 
+**Qarorlar (2026-11-20, tasdiqlangan — batafsil `REJA.md §2.1`):** kontrakt **1.0-draft.5**;
+`MEDIAMTX_VERSION = v1.11.3`; proto tiplari serverda **nusxa** (`internal/proto` + golden fixture);
+dev portlari band bo'lsa `make start` **aniq xato** beradi (tashqi xizmatni biz to'xtatmaymiz);
+**GPU modeli o'zgaruvchan** — transcode backend'i avtomatik aniqlanadi (`internal/gpu`), limit
+har mashinada `make probe` bilan o'lchanadi, model nomi kodda hardcode **taqiqlangan**.
+
 ---
 
 ## S0 — Skelet va kontraktlar (≈2 kun)
 
-- [ ] `go.mod` (mustaqil module), `cmd/vmsd/main.go` (flag: `-config`, `-web`, `--probe`), `internal/` bo'sh paket skeletlari
-- [ ] `Makefile`: `start, dev, build, run, media, media-get, probe, migrate-up/down/status, ui-build, ui-dev, test, lint, fmt, package, install, logs, clean`
-- [ ] `MEDIAMTX_VERSION = <git tag>` qulflanadi; `make media-get` o'sha tag binary'sini `mediamtx/mediamtx` ga soladi (git'da emas)
-- [ ] `mediamtx/mediamtx.yml`: `authMethod: http` → `http://127.0.0.1:8189/internal/auth`; path pattern `cam/{client}/{camera}` + `tc/{client}/{camera}`; faqat RTSP + WebRTC + HLS; `webrtcAdditionalHosts` = static IP; `udpReadBufferSize`, `writeQueueSize`, `pprof: yes`
-- [ ] `config/dev.yaml`, `config/prod.yaml.example`
-- [ ] `migrations/0001_init.sql`: root §5 sxemasi (users, sites, clients, cameras, favorites, layouts, sessions, audit_log, settings) + indekslar (`cameras.client_id`, `sessions.camera_id`); migratsiya runner (`internal/store`)
-- [ ] `make build` → `build/` tarkibi root §4.1 (vmsd, web/, migrations/, mediamtx.yml, config, VERSION, run.sh); `CGO_ENABLED=0 GOOS=linux GOARCH=amd64`
-- [ ] **`docs/protocol.md`**: **`client/docs/protocol.md` (1.0-draft.4) dan ko'chiriladi** (yoki symlink) — server tomonida faqat tekshiriladi va tasdiqlanadi; xabar sxemalari, §7.1 holat mashinasi + taymautlar, auth-hook, URL/token formatlari, `ingest: whip|rtsp_tcp` — **muzlatilgan**
-- [ ] **`docs/api.md`**: root §6 to'liq + xato kodlari + **`POST /api/agent/enroll`** (protocol.md §3.1) + Dahua RTSP URL namunasi (`/cam/realmonitor?channel=1&subtype=0|1`)
-- [ ] `.gitignore` (build/, node_modules/, dist/, *.local.yaml)
-- [ ] **Loglar (talab 2026-11-19):** barcha xatolar terminalga batafsil (`level=ERROR`, `err=` zanjiri, kontekst maydonlari) VA alohida SERVER log fayliga yoziladi: `/var/log/vmsd/vmsd.log` (`log_file`/`log_max_mb`/`log_keep`, hajm rotatsiyasi). **Client (`vmsagent`) logi bilan ARALASHMAYDI** — har jarayon o'z faylida (qida: `client/deploy/agent-logging.md`). `make logs` shu faylni ochadi.
+- [x] `go.mod` (mustaqil module), `cmd/vmsd/main.go` (flag: `-config`, `-web`, `--probe`), `internal/` bo'sh paket skeletlari
+- [x] `Makefile`: `start, dev, build, run, media, media-get, probe, migrate-up/down/status, ui-build, ui-dev, test, lint, fmt, package, install, logs, clean`
+- [x] `MEDIAMTX_VERSION = v1.11.3` qulflangan (tasdiqlangan 2026-11-20); `make media-get` o'sha tag binary'sini `mediamtx/mediamtx` ga soladi (git'da emas)
+- [x] **Port tekshiruvi (tasdiqlangan 2026-11-20):** `make start` / `make media` / `vmsd` ochilishda 8554/8888/8889/8189/8081 bandligini tekshiradi — band bo'lsa aniq xato + terminalga "tashqi MediaMTX ishlayapti, to'xtating" maslahati; tashqi jarayonni o'zi to'xtatmaydi. **Eslatma:** tashqi (`premier-cv`) MediaMTX faqat TCP emas, **UDP 8189** (WebRTC ICE) va RTSP UDP 8000/8001 ni ham ushlaydi (9997 — API, TCP) — tekshiruv TCP + UDP bo'yicha o'tkaziladi (`ss -ltn` va `ss -lun`), aks holda vmsd auth-hook porti 8189 jimgina band bo'lib qoladi. Amalda tekshirildi: v1.11.3 UDP 8189 + TCP 8189 (vmsd) yonma-yon ishlaydi (turli protokol) — [Test: band portda `vmsd` start'i → aniq xato, 2 s ichida chiqib ketadi]
+- [x] `mediamtx/mediamtx.yml`: `authMethod: http` → `http://127.0.0.1:8189/internal/auth`; path pattern `cam/{client}/{camera}` + `tc/{client}/{camera}`; faqat RTSP + WebRTC + HLS; `webrtcAdditionalHosts` = static IP; `writeQueueSize`, `pprof: yes` (**v1.11.3'da `udpReadBufferSize` yo'q** — sysctl, S4)
+- [x] `config/dev.yaml`, `config/prod.yaml.example`
+- [x] `migrations/0001_init.sql`: root §5 sxemasi (users, sites, clients, cameras, favorites, layouts, sessions, audit_log, settings) + indekslar (`cameras.client_id`, `sessions.camera_id`); migratsiya runner (`internal/store`)
+- [x] `make build` → `build/` tarkibi root §4.1 (vmsd, web/, migrations/, mediamtx.yml, config, VERSION, run.sh); `CGO_ENABLED=0 GOOS=linux GOARCH=amd64`
+- [x] **`docs/protocol.md`**: **`client/docs/protocol.md` (1.0-draft.5) dan ko'chiriladi** (yoki symlink) — server tomonida faqat tekshiriladi va tasdiqlanadi; xabar sxemalari, §7.1 holat mashinasi + taymautlar, auth-hook, URL/token formatlari, `ingest: whip|rtsp_tcp` — **muzlatilgan**
+- [x] **`internal/proto`** (S0 skelet): client `internal/proto` tiplarining **nusxasi** (envelope, auth/welcome, hello/cams_sync/cams_ack, media_start/stop/refresh/ready/stopped/stats, codec_probe, hb, secret_rotate, config_push) — [Kontrakt §2–§5] — [Test: `testdata/protocol/*.json` golden round-trip; protocol.md JSON misollari ko'chiriladi; coverage ≥70 %] — [Tekshiruv: `go test ./internal/proto -race`]
+- [x] **`docs/api.md`**: root §6 to'liq + xato kodlari + **`POST /api/agent/enroll`** (protocol.md §3.1) + Dahua RTSP URL namunasi (`/cam/realmonitor?channel=1&subtype=0|1`)
+- [x] `.gitignore` (build/, node_modules/, dist/, *.local.yaml)
+- [x] **Loglar (talab 2026-11-19):** barcha xatolar terminalga batafsil (`level=ERROR`, `err=` zanjiri, kontekst maydonlari) VA alohida SERVER log fayliga yoziladi: `/var/log/vmsd/vmsd.log` (`log_file`/`log_max_mb`/`log_keep`, hajm rotatsiyasi). **Client (`vmsagent`) logi bilan ARALASHMAYDI** — har jarayon o'z faylida (qida: `client/deploy/agent-logging.md`). `make logs` shu faylni ochadi.
 
-**Qabul:** `cd server && make build` mustaqil ishlaydi; `make start` MediaMTX + vmsd'ni ko'taradi, Ctrl+C'da ikkalasi ham to'xtaydi; migratsiya avtomatik.
+**Qabul:** `cd server && make build` mustaqil ishlaydi; `make start` MediaMTX + vmsd'ni ko'taradi, Ctrl+C'da ikkalasi ham to'xtaydi; migratsiya avtomatik; port band bo'lsa (tashqi MediaMTX turganda) **aniq xato** beradi; `internal/proto` golden testlari protocol.md misollari bilan yashil.
+
+
+### S0 natijasi (2026-11-20) — **bajarildi**
+- `make build` mustaqil ishlaydi; `build/` tarkibi §4.1 bo'yicha (vmsd, web/ placeholder, migrations/, mediamtx.yml, config, VERSION, run.sh).
+- `make start`: MediaMTX v1.11.3 + vmsd ko'tarildi, barcha portlar ochiq, `/healthz` 200, MediaMTX API 200; SIGINT'da ikkalasi ham mayin to'xtadi, portlar bo'shadi.
+- Port band holati sun'iy tekshirildi (8554+UDP o'g'ri bilan): aniq xato + maslahat, exit≠0.
+- `make gate` (fmt vet lint race + coverage 59.6% ≥ 50) yashil; goleak barcha paketlarda.
+- `internal/proto`: 30 golden fixture, coverage 100 %.
+- `testagent` skeleti client `devserver` mock'ida: enroll → auth → hello → welcome → cams_sync (10 kamera) o'tdi (mock AutoCamsAck=false — ack ixtiyoriy).
+- **Topilmigan farqlar (hujjatlar tuzatildi):** v1.11.3'da `udpReadBufferSize`/`readBufferCount` yo'q (sysctl); path bloklari `paths:` ostida `~regex` + `all_others`; handshake §18 bo'yicha `auth→hello→welcome`.
 
 ---
 
@@ -32,7 +50,7 @@ coverage bo'sagasi — qoidalar: `client/docs/protocol.md §18.2` va `client/TAS
 - [ ] rol middleware: admin / viewer; `POST /api/auth/*`, `GET /api/me`
 - [ ] registry CRUD: users (admin), sites, clients, cameras (PATCH policy: `transcode_mode`, `play_profile`, `enabled`); **`cameras.id` — agent bergan UUIDv4 (o'zgarmas), server uni PK sifatida saqlaydi**
 - [ ] enrollment: `POST /api/admin/enrollments` → bir martalik kod (24 soat); **`POST /api/agent/enroll`** (ochiq endpoint, rate-limit 5/5 min, `401 bad_code` / `409 already_enrolled` / `429`) → `agent_id` (`ag_…`) + `agent_secret` (DB'da sha256); admin nom/site belgilaydi; unikal nom tekshiruvi
-- [ ] `internal/wsagent`: **`auth {agent_id, secret}` → `welcome {server_version, compat, last_seq, cams_epoch, limits, settings, needs_full_sync}`** handshake (≤5 s, kodlar 4001–4004); envelope `{type, seq, ts, data}`; `hello` (version, os, hostname, lan_ip, boot_id, **cams_epoch**, **caps**) qabul + `clients.caps_json`; `cams_sync` chunk'lab + **`op: upsert|delete`** (o'chirish cascade: favorites/layouts slot bo'shatish) + **`cams_ack`** javob; `cam_status`, `codec_probe` saqlash; `hb`/ping-pong + uzilishda status → offline (30 s); **`secret_rotate`** va **`config_push`** yuborish
+- [ ] `internal/wsagent`: **handshake tartibi (protocol.md §18): `auth {agent_id, secret}` → `hello` → `welcome {server_version, compat, last_seq, cams_epoch, limits, settings, needs_full_sync}`** (≤5 s, kodlar 4001–4004); envelope `{type, seq, ts, data}`; `hello` (version, os, hostname, lan_ip, boot_id, **cams_epoch**, **caps**) qabul + `clients.caps_json`; `cams_sync` chunk'lab + **`op: upsert|delete`** (o'chirish cascade: favorites/layouts slot bo'shatish) + **`cams_ack`** javob; `cam_status`, `codec_probe` saqlash; `hb`/ping-pong + uzilishda status → offline (30 s); **`secret_rotate`** va **`config_push`** yuborish
 - [ ] `GET /api/sites`, `/api/clients`, `/api/clients/{id}/cameras`, `/api/cameras/{id}`
 - [ ] audit_log yozuvlari (login, enroll, play, admin amallari)
 - [ ] `testagent` skelet (fake agent: cams_sync + cam_status) — keyinchalik S2'da publish ham qiladi
@@ -43,6 +61,7 @@ coverage bo'sagasi — qoidalar: `client/docs/protocol.md §18.2` va `client/TAS
 
 ## S2 — Media server: session manager + transcode (≈7–10 kun) — *Dependence: S1; real agent uchun client C3, lekin testagent bilan ham yuradi*
 
+- [ ] **`internal/gpu` — server quvvatini aniqlash (tasdiqlangan 2026-11-20, GPU modeli o'zgaruvchan):** `ffmpeg -encoders/-decoders` parse + `nvidia-smi`/`vainfo` tekshiruvi → backend tanlash `nvenc → vaapi/amf → software libx264` (client `caps` parse uslubiga o'xshash, lekin server tomoni); natija `settings` (`server_transcode_backend`, `server_max_transcodes`) va admin panelga; **GPU modeli nomiga qarab tarmoq qilmaydi — faqat imkoniyatlarga qaraydi** — [Test: fixture `testdata/encoders/*.txt` (nvenc-li, vaapi-li, GPU-yo'q 3 holat) → to'g'ri backend] — [Tekshiruv: `go test ./internal/gpu -race`]
 - [ ] MediaMTX control API klienti (path qo'shish/o'chirish, readers count polling ~2 s)
 - [ ] **Session manager + holat mashinasi (§7.1):** `pending → publishing → playing → stopping → ended/failed`; taymautlar 10 s (`media_ready`), 10 s (WHEP), 15 s (transcode publish); `session_state` WS push; `failed` limit hisoblagichidan qaytariladi
 - [ ] Token mint: 256-bit (`base64url`), sha256 hash DB, TTL: read 30 s / publish `ttl_s` (60 s); **uzatish: RTSP'da `?token=`, WHIP/WHEP'da `Authorization: Bearer`** (token bir martalik emas — bitta session/path/action doirasida qayta ishlatiladi, protocol.md §7)
@@ -51,14 +70,14 @@ coverage bo'sagasi — qoidalar: `client/docs/protocol.md §18.2` va `client/TAS
 - [ ] `POST /api/cameras/{id}/play` (profile default `sub`, `browser.hevc`), `/preview`, `/sessions/{id}/stop`, `GET /sessions`
 - [ ] `internal/limits`: user 16 / global 48 / per-client `max_uploads` / preview 1 va 8; chegarada aniq xato + navbat holati
 - [ ] Idle stop: readers=0 → 10 s (preview ~1 s) → `media_stop` agent'ga + path o'chirish
-- [ ] **Transcode manager (server):** FFmpeg subprocess (`hevc decode → h264_nvenc`, parametrlar root §16.3); **kamera bo'yicha dedup** (bitta jarayon, refcount); `tc/...` path; navbat; jarayon o'ldirish (idle, fail); `nvidia-smi` kuzatuvi (admin panel uchun)
-- [ ] `make probe` / `vmsd --probe`: NVENC **va NVDEC** parallel sessiya limitini o'lchash → `settings.server_max_transcodes`
-- [ ] Kodek siyosati server qismi: `play_profile` tanlash (H.264 eng past profil), `browser_caps.hevc` → transcodesiz `cam/...` yo'li, `transcode_mode auto|server|client|off` (zaxira → agent'ga `transcode.by=client`)
+- [ ] **Transcode manager (server):** FFmpeg subprocess (**backend `internal/gpu` natijasidan: `hevc_cuvid → h264_nvenc` / `vaapi` / `libx264` software**, parametrlar root §16.3); **kamera bo'yicha dedup** (bitta jarayon, refcount); `tc/...` path; navbat; jarayon o'ldirish (idle, fail); GPU kuzatuvi (NVIDIA bo'lsa `nvidia-smi`, bo'lmasa o'z hisoblagich — admin panel uchun)
+- [ ] `make probe` / `vmsd --probe`: **mashinaga mos** limitni o'lchash — NVENC **va NVDEC** parallel sessiyalari (NVIDIA bo'lsa) yoki software `libx264` sig'imi (CPU yadro hisobi) → `settings.server_max_transcodes` + `server_transcode_backend`; natijada GPU modeli faqat audit yozuvida (kod uni o'qimaydi)
+- [ ] Kodek siyosati server qismi: `play_profile` tanlash (H.264 eng past profil), `browser_caps.hevc` → transcodesiz `cam/...` yo'li, `transcode_mode auto|server|client|off` (zaxira → agent'ga `transcode.by=client`; server ichida zaxira: GPU → software `libx264`)
 - [ ] LL-HLS fallback: MediaMTX config + UI'ga signal (`hls.js`)
 - [ ] `testagent`ni to'liq publish'ga kengaytirish (WHIP H.264 + RTSP/TCP H.265, FFmpeg test pattern)
 - [ ] `internal/wsui`: `client_status`, `cam_status`, `session_count`, `session_revoked`, `session_state`
 
-**Qabul:** testagent orqali — H.264 kamera WHEP'da ≤1.5 s ochiladi; H.265 → server NVENC transcode, 2 user = **1 FFmpeg**; `media_ready` 10 s taymauti `failed` + qayta urinish; yopilsa upload to'xtaydi; token qayta ishlatilsa 403.
+**Qabul:** testagent orqali — H.264 kamera WHEP'da ≤1.5 s ochiladi; H.265 → server transcode (dev mashinada NVENC; **GPU bo'lmagan mashinada `libx264` software bilan ham ishlaydi** — `ffmpeg -v codec` orqali tekshiriladi), 2 user = **1 FFmpeg**; `media_ready` 10 s taymauti `failed` + qayta urinish; yopilsa upload to'xtaydi; token qayta ishlatilsa 403.
 
 ---
 
@@ -84,14 +103,14 @@ coverage bo'sagasi — qoidalar: `client/docs/protocol.md §18.2` va `client/TAS
 
 ## S4 — Qotirish, kuzatish, deploy (≈3–4 kun) — *Dependence: S2, S3*
 
-- [ ] Admin panel: `settings` limitlari, `/api/admin/media/state` (faol sessiyalar, FFmpeg jarayonlari, NVENC sessiyalari, navbat), audit ko'rinishi
+- [ ] Admin panel: `settings` limitlari, `/api/admin/media/state` (faol sessiyalar, FFmpeg jarayonlari, **tanlangan transcode backend + GPU sessiyalari (aniqlangan usulda)**, navbat), audit ko'rinishi
 - [ ] Retention: `sessions`/`audit_log` 90 kundan eski o'chiriladi (cron-ish job vmsd ichida)
 - [ ] `deploy/backup.sh`: SQLite `VACUUM INTO` kundalik; journald disk chegarasi
-- [ ] MediaMTX tuning tekshiruvi: `udpReadBufferSize: 1000000` + sysctl, `writeQueueSize: 1024`, protokollar cheklangan; `pprof` + `/metrics`
+- [ ] MediaMTX tuning tekshiruvi: `writeQueueSize: 1024`, protokollar cheklangan; **v1.11.3'da `udpReadBufferSize` yo'q — UDP bufferi `sysctl net.core.rmem_max=100000000` orqali (install-notes.md)**; `pprof` + `/metrics`
 - [ ] `vmsd` `/metrics` (Prometheus): sessiyalar, limitlar, transcode navbati, hook natijalari
 - [ ] systemd unitlar: `vmsd` + `vms-media` (MediaMTX prod alohida unit); `make install` /vmsd'ni `/opt/vmsd` ga soladi
 - [ ] `deploy/firewall.md` (WebRTC UDP port oralig'i, RTSP 8554, WHEP 8889, WS), `install-notes.md`
-- [ ] Load test: 48 copy sessiya 30 daq uzluksiz, memory o'smaydi; NVENC chegarasi + zaxira zanjir (`transcode.by=client`) o'lchangan
+- [ ] Load test: 48 copy sessiya 30 daq uzluksiz, memory o'smaydi; transcode chegarasi + zaxira zanjir (`server GPU → server CPU → transcode.by=client`) o'lchangan. **Eslatma (2026-11-20):** prod GPU'si dev'dan farq qilishi mumkin — `make install` dan keyin `make probe` majburiy qadam (`install-notes.md` ga yoziladi), natijalar prod'da qayta tekshiriladi
 
 **Qabul:** root §15 "MVP bajarildi" ro'yxatidagi server bandlari yashil; load test natijasi `docs/` da.
 
