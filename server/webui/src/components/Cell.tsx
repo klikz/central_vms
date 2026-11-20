@@ -8,6 +8,7 @@ export type CellProps = {
   index: number;
   cameraId: string | null;
   cameraName?: string;
+  camStatus?: string;
   transcoded?: boolean;
   visible: boolean;
   kind?: "main" | "preview";
@@ -19,14 +20,16 @@ export type CellProps = {
 
 export function Cell(p: CellProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [state, setState] = useState<"idle" | "connecting" | "live" | "error">("idle");
+  const [state, setState] = useState<"idle" | "connecting" | "live" | "error" | "offline">("idle");
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     const el = videoRef.current;
     const camId = p.cameraId;
     if (!el) return;
-    if (!camId || !p.visible) {
+    const offline = camId != null && p.camStatus != null && p.camStatus !== "online";
+    if (!camId || !p.visible || offline) {
+      setState(offline ? "offline" : "idle");
       setState("idle");
       if (camId && !p.visible) void release(camId, p.kind ? { kind: p.kind } : undefined, el);
       return;
@@ -40,7 +43,7 @@ export function Cell(p: CellProps) {
       alive = false;
       void release(camId, p.kind ? { kind: p.kind } : undefined, el);
     };
-  }, [p.cameraId, p.visible, attempt]);
+  }, [p.cameraId, p.visible, p.camStatus, attempt]);
 
   return (
     <div
@@ -85,6 +88,7 @@ export function Cell(p: CellProps) {
               <button onClick={() => setAttempt((a) => a + 1)}>{t("grid.retry")}</button>
             </>
           )}
+          {state === "offline" && <span>{t("grid.cam_offline")}</span>}
           {state === "idle" && !p.cameraId && <span className="muted">{t("grid.empty")}</span>}
         </div>
       )}

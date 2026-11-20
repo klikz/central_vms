@@ -9,6 +9,7 @@ export function VideoGrid({
   slots,
   active,
   names,
+  statuses,
   tcSet,
   onAssign,
   onSwap,
@@ -21,6 +22,7 @@ export function VideoGrid({
   active: boolean;
   slots: (string | null)[];
   names: Record<string, string>;
+  statuses: Record<string, string>;
   tcSet: Record<string, boolean>;
   onAssign: (i: number, camId: string) => void;
   onSwap: (a: number, b: number) => void;
@@ -62,6 +64,7 @@ export function VideoGrid({
               index={i}
               cameraId={camId}
               cameraName={camId ? names[camId] : undefined}
+              camStatus={camId ? statuses[camId] : undefined}
               transcoded={camId ? tcSet[camId] : false}
               visible={active && visible.has(i)}
               onAssign={onAssign}

@@ -1,5 +1,5 @@
-// Chap panel: joy sarlavhasi + client bloklari (status nuqta, online/total).
-// Blok bosilganda kamera ro'yxati ko'rsatiladi (REJA §16.2).
+// Chap panel: joylar filtri + client bloklari (client konsolidagi
+// .client-block uslubi: chap aksent chizig'i, mono meta satr).
 import { useMemo } from "react";
 import type { Store } from "../store";
 import { t } from "../lib/i18n";
@@ -23,40 +23,40 @@ export function Sidebar({
   );
 
   return (
-    <aside className="side">
-      <div className="side-title">{t("side.sites")}</div>
-      <div className="row wrap">
-        <button className={site === null ? "chip on" : "chip"} onClick={() => onSite(null)}>
+    <div className="panel-side">
+      <p className="side-title">{t("side.sites")}</p>
+      <div className="row">
+        <button className={"chip" + (site === null ? " on" : "")} onClick={() => onSite(null)}>
           {t("side.all")}
         </button>
         {store.sites.map((s) => (
-          <button key={s.id} className={site === s.id ? "chip on" : "chip"} onClick={() => onSite(s.id)}>
+          <button key={s.id} className={"chip" + (site === s.id ? " on" : "")} onClick={() => onSite(s.id)}>
             {s.name}
           </button>
         ))}
       </div>
 
-      <div className="side-title mt">{t("side.clients")}</div>
+      <p className="side-title mt">{t("side.clients")}</p>
       {list.map((c) => (
         <div
           key={c.id}
           className={"client-block" + (selectedClient === c.id ? " active" : "")}
           onClick={() => {
             onSelectClient(selectedClient === c.id ? null : c.id);
-            if (c.id !== null) void store.loadCameras(c.id);
+            void store.loadCameras(c.id);
           }}
         >
-          <div className="row">
+          <div className="row" style={{ marginBottom: 2 }}>
             <span className={"dot " + (c.status === "online" ? "on" : "off")} />
             <span className="name">{c.name}</span>
           </div>
-          <div className="muted">
-            {c.status === "online" ? t("side.online") : t("side.offline")} · {c.online_count}/{c.cameras_count}
+          <div className="meta">
+            {c.online_count}/{c.cameras_count} · {c.status === "online" ? t("side.online") : t("side.offline")}
             {c.version ? ` · ${c.version}` : ""}
           </div>
         </div>
       ))}
       {list.length === 0 && <div className="muted">—</div>}
-    </aside>
+    </div>
   );
 }

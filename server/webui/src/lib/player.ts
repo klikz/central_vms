@@ -101,8 +101,15 @@ export async function attach(
     // Transcode/publish hali tayyor bo'lmasligi mumkin — WHEP'ni
     // qisqa pauzalar bilan qayta uramiz (UI "transcode boshlandi…"
     // holatida turadi, xato ko'rsatmaydi).
+    // Transcode'li sessiyada tc/... path'i FFmpeg start-up tufayli
+    // ~2-4 s (4 katak parallel bo'lsa undan ko'p) keyin tayyor bo'ladi —
+    // shuning uchun ularda urinishlar soni ko'proq.
+    // Sovuq start: agent publish'i endi ko'tarilayotgan bo'lsa path
+    // bir necha soniya 404 qaytaradi (4 parallel FFmpeg start-up'ida
+    // o'lchandi) — shuning uchun umumiy urinish byudjeti ~20 s.
+    const attempts = sess.transcoded ? 16 : 12;
     let lastErr: unknown = null;
-    for (let attempt = 0; attempt < 6; attempt++) {
+    for (let attempt = 0; attempt < attempts; attempt++) {
       try {
         await whep.start();
         lastErr = null;
@@ -148,6 +155,24 @@ async function teardown(e: Entry) {
   if (e.refreshTimer) clearInterval(e.refreshTimer);
   await e.whep?.stop?.().catch(() => undefined);
   if (e.sess?.session_id) await api.stopSession(e.sess.session_id).catch(() => undefined);
+}
+
+// Sahifa yopilayotganda/qayta yuklanayotganda sessiyalarni yopish:
+// keepalive fetch ishlatiladi (odiy fetch unload paytida bekor qilinadi),
+// aks holda "arvoh" sessiyalar TTL (5 daq) gacha limitni band qiladi.
+export function releaseAllKeepalive() {
+  for (const e of pool.values()) {
+    if (e.refreshTimer) clearInterval(e.refreshTimer);
+    if (e.sess?.session_id) {
+      fetch(`/api/sessions/${e.sess.session_id}`, {
+        method: "DELETE",
+        credentials: "include",
+        headers: { Authorization: "Bearer " + (window.__accessToken ?? "") },
+        keepalive: true,
+      }).catch(() => undefined);
+    }
+  }
+  pool.clear();
 }
 
 // Sahifa yashirinsa/brauzer yopilsa — barcha oqimlarni to'xtatish

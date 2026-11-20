@@ -12,13 +12,26 @@ type Handler = (e: UIEvent) => void;
 export class UIChannel {
   private ws: WebSocket | null = null;
   private handlers = new Set<Handler>();
+  private statusHandlers = new Set<(connected: boolean) => void>();
   private retry = 0;
   private closed = false;
-  onStatus: (connected: boolean) => void = () => {};
+  private live = false;
 
   connect(): void {
     this.closed = false;
+    if (this.live) return; // takroriy ulanish bo'lmasin
+    this.live = true;
     this.open();
+  }
+
+  private setStatus(v: boolean) {
+    this.statusHandlers.forEach((h) => h(v));
+  }
+
+  onStatus(h: (connected: boolean) => void): () => void {
+    this.statusHandlers.add(h);
+    h(this.live && this.ws?.readyState === WebSocket.OPEN);
+    return () => this.statusHandlers.delete(h);
   }
 
   private open() {
@@ -30,7 +43,7 @@ export class UIChannel {
     this.ws = ws;
     ws.onopen = () => {
       this.retry = 0;
-      this.onStatus(true);
+      this.setStatus(true);
     };
     ws.onmessage = (m) => {
       try {
@@ -41,7 +54,8 @@ export class UIChannel {
       }
     };
     ws.onclose = () => {
-      this.onStatus(false);
+      this.live = false;
+      this.setStatus(false);
       if (this.closed) return;
       // Eksponensial qayta ulanish (0.5 s → 10 s gacha).
       const wait = Math.min(10000, 500 * 2 ** this.retry++);

@@ -125,8 +125,14 @@ e2e-s3:
 	./scripts/e2e_s3.sh
 
 ## Birinchi admin: make admin USER=admin (parol so'raladi, terminalga chiqmaydi)
+## Admin yaratish/yangilash (login mavjud bo'lsa parolini yangilaydi).
+## Parol ekranda ko'rinmaydi; DB'da argon2id hash saqlanadi.
 admin: build
-	@read -rp "Parol (kamida 8 belgi): " P; 	./$(BUILD_DIR)/$(BIN) -config config/dev.yaml -seed-admin "$${USER:-admin}:$$P"
+	@read -rp "Login [admin]: " U; U=$${U:-admin}; \
+	read -rp "Parol (kamida 8 belgi, ko'rinmaydi): " -s P; echo; \
+	read -rp "Parol (takror): " -s P2; echo; \
+	if [ "$$P" != "$$P2" ]; then echo "XATO: parollar mos kelmadi" >&2; exit 1; fi; \
+	./$(BUILD_DIR)/$(BIN) -config config/dev.yaml -seed-admin "$$U:$$P"
 
 ## UI build (React+Vite, webui/). Node PATH'da bo'lmasa ~/.local/node/bin
 ## va nvm versiyalari sinab ko'riladi (dev mashina talabi — prod'ga bog'liq emas).

@@ -100,9 +100,19 @@ if [ "$UIRC" -eq 0 ]; then ok "ui_smoke o'tdi"; else bad "ui_smoke (exit $UIRC)"
 
 say "6. sessiyalar tozalandi (oqim qolmagan)"
 sleep 2
-LEFT=$(curl -s http://127.0.0.1:8081/api/sessions -H "Authorization: Bearer $TOK" \
-  | python3 -c 'import sys,json; d=json.load(sys.stdin); print(len([s for s in d if s.get("state") in ("pending","publishing","playing")]))')
-[ "$LEFT" = "0" ] && ok "faol sessiya qolmagan" || bad "faol sessiyalar: $LEFT"
+LEFT=1
+for _ in $(seq 1 20); do
+  LEFT=$(curl -s http://127.0.0.1:8081/api/sessions -H "Authorization: Bearer $TOK" | python3 -c 'import sys,json;print(len([s for s in json.load(sys.stdin) if s.get("state") in ("pending","publishing","playing")]))')
+  [ "$LEFT" = "0" ] && break
+  sleep 1
+done
+[ "$LEFT" = "0" ] && ok "faol sessiya qolmagan" || {
+  bad "faol sessiyalar: $LEFT"
+  curl -s http://127.0.0.1:8081/api/sessions -H "Authorization: Bearer $TOK" | python3 -c '
+import sys,json
+for x in json.load(sys.stdin):
+    print("   ", x.get("id"), x.get("state"), x.get("kind"), x.get("profile"), x.get("expires_at"))'
+}
 
 say "7. xulosa"
 echo "PASS=$PASS FAIL=$FAIL"

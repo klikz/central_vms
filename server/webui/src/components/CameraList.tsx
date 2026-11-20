@@ -1,5 +1,5 @@
-// Kamera ro'yxati: nom, status, kodek badge, ⭐ sevimli; katakka sudrash
-// (HTML5 drag) yoki bosish orqali birinchi bo'sh katakka qo'yish.
+// Kamera ro'yxati: status nuqta, nom, kodek badge, ⭐ sevimli; katakka
+// sudrash yoki bosish orqali qo'shish (client konsoli .badge/.dot uslubi).
 import { useMemo } from "react";
 import type { Camera } from "../lib/api";
 import type { Store } from "../store";
@@ -19,12 +19,18 @@ export function CameraList({
   const sorted = useMemo(
     () =>
       [...cameras].sort((a, b) => {
+        // Onlayn kameralar tepada: oflaynlarni gridda ochish xato beradi,
+        // shuning uchun foydalanuvchi avval ishlaydiganlarini ko'radi.
+        const oa = a.status === "online" ? 0 : 1;
+        const ob = b.status === "online" ? 0 : 1;
         const fa = store.isFavorite(a.id) ? 0 : 1;
         const fb = store.isFavorite(b.id) ? 0 : 1;
-        return fa - fb || a.position - b.position || a.name.localeCompare(b.name);
+        return oa - ob || fa - fb || a.position - b.position || a.name.localeCompare(b.name);
       }),
     [cameras, store],
   );
+
+  if (sorted.length === 0) return <div className="cam-list"><span className="muted">—</span></div>;
 
   return (
     <div className="cam-list">
@@ -42,10 +48,15 @@ export function CameraList({
           onMouseLeave={() => onHover?.(cam, false)}
           title={cam.name}
         >
-          <span className={"dot " + (cam.status === "online" ? "on" : "off")} />
+          <span
+            className={
+              "dot " + (cam.status === "online" ? "on" : cam.status === "error" ? "dot-err off" : "off")
+            }
+          />
           <span className="cam-name">{cam.name}</span>
           <span className={"badge " + (cam.codec_main === "H265" ? "h265" : "h264")}>{cam.codec_main}</span>
-          {cam.transcode_mode === "server" && <span className="badge">TC</span>}
+          {cam.transcode_mode === "server" && <span className="badge tc">TC</span>}
+          {!cam.enabled && <span className="badge badge-err">{t("grid.disabled")}</span>}
           <span className="spacer" />
           <button
             className={"star" + (store.isFavorite(cam.id) ? " on" : "")}
@@ -59,7 +70,6 @@ export function CameraList({
           </button>
         </div>
       ))}
-      {sorted.length === 0 && <div className="muted">—</div>}
     </div>
   );
 }

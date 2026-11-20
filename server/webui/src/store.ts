@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type Camera, type Client, type Site } from "./lib/api";
 import { uiChannel, type UIEvent } from "./lib/ws";
+import { setAllClients, setClientMetrics } from "./lib/metrics";
 
 export interface Store {
   sites: Site[];
@@ -32,6 +33,7 @@ export function useStore(): Store {
     setSites(s);
     setClients(c);
     setFavorites(f);
+    setAllClients(c);
     // Ko'rinadigan clientlarning kameralarini yuklaymiz.
     const entries = await Promise.all(c.slice(0, 8).map(async (cl) => [cl.id, await api.cameras(cl.id)] as const));
     setCameras(Object.fromEntries(entries));
@@ -53,6 +55,22 @@ export function useStore(): Store {
     void reload();
     const off = uiChannel.on((e: UIEvent) => {
       if (e.type === "client_status") {
+        if (typeof e.data?.client_id === "number") {
+          const cid = e.data.client_id;
+          setClientMetrics(cid, {
+            on: e.data.online_count ?? 0,
+            total: e.data.cameras_count ?? 0,
+          });
+          // Agent oflayn bo'lsa uning kameralari ham oflayn (DB'da ham
+          // shunday qilinadi — UI eskicha yashil ko'rsatmasin).
+          if (e.data.status === "offline") {
+            setCameras((m) => {
+              const list = m[cid];
+              if (!list) return m;
+              return { ...m, [cid]: list.map((c) => ({ ...c, status: "offline" as const })) };
+            });
+          }
+        }
         setClients((list) => {
           const found = list.some((c) => c.id === e.data.client_id);
           if (!found) {
@@ -86,9 +104,12 @@ export function useStore(): Store {
         setActive(e.data.active ?? 0);
       }
     });
-    uiChannel.onStatus = setConnected;
+    const offStatus = uiChannel.onStatus(setConnected);
     uiChannel.connect();
-    return off;
+    return () => {
+      off();
+      offStatus();
+    };
   }, [reload]);
 
   return useMemo(

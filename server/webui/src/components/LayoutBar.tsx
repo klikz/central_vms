@@ -59,7 +59,7 @@ export function LayoutBar({
 
   return (
     <div className="row">
-      <span className="muted">{t("layout.title")}:</span>
+      <span className="chip-k">{t("layout.title")}</span>
       <select value={sel} onChange={(e) => {
         const r = rows.find((x) => x.id === Number(e.target.value));
         if (r) apply(r);
@@ -71,7 +71,7 @@ export function LayoutBar({
           </option>
         ))}
       </select>
-      <input placeholder={t("layout.name")} value={name} onChange={(e) => setName(e.target.value)} style={{ width: 130 }} />
+      <input className="filter" placeholder={t("layout.name")} value={name} onChange={(e) => setName(e.target.value)} />
       <button
         onClick={async () => {
           if (!name) return;
@@ -85,7 +85,7 @@ export function LayoutBar({
       </button>
       {sel > 0 && (
         <>
-          <button
+          <button className="btn"
             onClick={async () => {
               await api.setDefaultLayout(sel);
               toast(t("layout.default") + " — " + t("toast.saved"));
@@ -94,7 +94,7 @@ export function LayoutBar({
           >
             {t("layout.default")}
           </button>
-          <button
+          <button className="btn btn-danger"
             onClick={async () => {
               await api.deleteLayout(sel);
               setSel(0);

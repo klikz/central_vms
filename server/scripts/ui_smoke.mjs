@@ -107,14 +107,26 @@ async function main() {
     };
     set(document.querySelector('input[autocomplete=username]'), ${JSON.stringify(USER)});
     set(document.querySelector('input[type=password]'), ${JSON.stringify(PASS)});
-    document.querySelector("button.primary").click();
+    document.querySelector(".modal-box button.btn-primary").click();
     return true;
   `);
   await waitFor(`document.querySelector(".shell")`, 10000, "shell (login muvaffaqiyati)");
   check(true, "login → asosiy sahifa");
   check(await js(`return !!document.querySelector('a[href="/admin"]');`), "admin bo'limi ko'rinadi");
+  // Uslub parity: client konsolidagi kabi brend bloki + amber aksent.
   check(
-    await js(`return document.body.innerText.includes("Kuzatuv") && !document.body.innerText.includes("Loading");`),
+    await js(`
+      const b = document.querySelector(".side-brand .brand-text b");
+      const cs = getComputedStyle(document.querySelector(".brand-mark"));
+      return !!b && b.textContent === "CENTRAL VMS" && cs.borderTopColor === "rgb(255, 176, 0)";
+    `),
+    "dizayn parity: brend bloki + amber aksent (client bilan bir xil)",
+  );
+  check(
+    await js(`
+      const txt = document.body.innerText.toUpperCase();
+      return txt.includes("KUZATUV") && !txt.includes("LOADING") && !txt.includes("ERROR");
+    `),
     "interfeys o'zbekcha",
   );
 

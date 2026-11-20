@@ -34,10 +34,30 @@ export function MonitorPage() {
     return ids.flatMap((id) => store.cameras[id] ?? []).filter((c) => c.enabled);
   }, [store.clients, store.cameras, client, site]);
 
+  // Ro'yxat va grid bir xil tartibda: onlayn kameralar tepada
+  // (oflaynni ochib bo'lmaydi — foydalanuvchi avval ishlaydiganlarini ko'radi).
+  const sorted = useMemo(
+    () =>
+      [...cams].sort((a, b) => {
+        const oa = a.status === "online" ? 0 : 1;
+        const ob = b.status === "online" ? 0 : 1;
+        const fa = store.isFavorite(a.id) ? 0 : 1;
+        const fb = store.isFavorite(b.id) ? 0 : 1;
+        return oa - ob || fa - fb || a.position - b.position || a.name.localeCompare(b.name);
+      }),
+    [cams, store],
+  );
   const names = useMemo(() => Object.fromEntries(cams.map((c) => [c.id, c.name])), [cams]);
+  const statuses = useMemo(() => Object.fromEntries(cams.map((c) => [c.id, c.status])), [cams]);
   const perPage = gridCells(n);
   const pages = pageCount(cams.length, perPage);
-  const auto = useMemo(() => autoFill(cams.map((c) => c.id), page, perPage), [cams, page, perPage]);
+  // Avto-to'ldirish FAQAT onlayn kameralar bilan: oflaynni ochib bo'lmaydi
+  // (409) va katakda xato holati ko'rinadi; ular ro'yxatda qoladi va
+  // istalganda qo'l bilan (drag) qo'yish mumkin.
+  const auto = useMemo(
+    () => autoFill(sorted.filter((c) => c.status === "online").map((c) => c.id), page, perPage),
+    [sorted, page, perPage],
+  );
   const slots: Slot[] = manual ?? auto;
 
   // Joy/client/sahifa o'zgarsa — qo'yilgan tartib bekor qilinadi va eski
@@ -77,79 +97,99 @@ export function MonitorPage() {
   }, [pages]);
 
   return (
-    <>
-      <Sidebar store={store} site={site} onSite={setSite} selectedClient={client} onSelectClient={setClient} />
-      <main className="main">
-        <div className="toolbar">
+    <main>
+      <div className="screen-head">
+        <h1>{t("monitor.title")}</h1>
+        <div className="actions">
           {GRIDS.map((g) => (
-            <button key={g} className={g === n ? "chip on" : "chip"} onClick={() => setN(g)}>
+            <button key={g} className={"chip" + (g === n ? " on" : "")} onClick={() => setN(g)}>
               {g}×{g}
             </button>
           ))}
-          <span className="muted">
-            {page + 1}/{pages}
+          <span className="chip">
+            <span className="chip-k">{t("monitor.page")}</span>
+            <span className="mono">{page + 1}/{pages}</span>
           </span>
-          <button onClick={() => setPage((p) => Math.max(0, p - 1))}>←</button>
-          <button onClick={() => setPage((p) => Math.min(pages - 1, p + 1))}>→</button>
-          <span className="spacer" />
+          <button className="btn" onClick={() => setPage((p) => Math.max(0, p - 1))}>←</button>
+          <button className="btn" onClick={() => setPage((p) => Math.min(pages - 1, p + 1))}>→</button>
           <LayoutBar grid={n} slots={slots} onApply={applyLayout} />
-          <span className="muted">{t("kbd.help")}</span>
-          <span className="badge">
-            {t("admin.sessions")}: {store.active}
-          </span>
-          <span className={"dot " + (store.connected ? "on" : "off")} />
         </div>
+      </div>
 
-        <CameraList
-          store={store}
-          cameras={cams}
-          onAdd={addFirstEmpty}
-          onHover={(cam, inside) =>
-            inside ? scheduler.hover(cam.id, slots.includes(cam.id)) : scheduler.leave()
-          }
-        />
-        {previewCam && (
-          <div className="preview-bar">
-            <span className="muted">preview</span>
-            <Cell
-              index={-1}
-              kind="preview"
-              cameraId={previewCam}
-              cameraName={names[previewCam]}
-              visible={docVisible}
-              onAssign={() => undefined}
-              onSwap={() => undefined}
-              onClear={() => scheduler.cancel()}
-              onFullscreen={() => undefined}
-            />
-          </div>
-        )}
-        <VideoGrid
-          n={n}
-          active={docVisible}
-          slots={slots}
-          names={names}
-          tcSet={{}}
-          onAssign={assign}
-          onSwap={swap}
-          onClear={clear}
-          onFullscreen={setFull}
-        />
-        {full !== null && slots[full] && (
-          <div className="fullscreen" onClick={() => setFull(null)}>
-            <Cell
-              index={full}
-              cameraId={slots[full]}
-              cameraName={names[slots[full] as string]}
-              visible={docVisible}
-              onAssign={() => undefined}
-              onSwap={() => undefined}
-              onClear={() => setFull(null)}
-              onFullscreen={() => setFull(null)}
-            />
-          </div>
-        )}
-      </main>
-    </>
+      <div className="cards">
+        <div className={"card" + (store.active ? " ok" : "")}>
+          <b>{store.active}</b>
+          <span>{t("admin.sessions")}</span>
+        </div>
+        <div className="card">
+          <b>{cams.filter((c) => c.status === "online").length}/{cams.length}</b>
+          <span>{t("side.cameras")}</span>
+        </div>
+        <div className="card">
+          <b>{store.clients.filter((c) => c.status === "online").length}/{store.clients.length}</b>
+          <span>{t("side.clients")}</span>
+        </div>
+        <div className={"card" + (store.connected ? " ok" : " warn")}>
+          <b>{store.connected ? "ON" : "OFF"}</b>
+          <span>push kanali</span>
+        </div>
+      </div>
+
+      <div className="monitor">
+        <Sidebar store={store} site={site} onSite={setSite} selectedClient={client} onSelectClient={setClient} />
+        <div className="panel-main">
+          <CameraList
+            store={store}
+            cameras={cams}
+            onAdd={addFirstEmpty}
+            onHover={(cam, inside) => (inside ? scheduler.hover(cam.id, slots.includes(cam.id)) : scheduler.leave())}
+          />
+          <VideoGrid
+            n={n}
+            active={docVisible}
+            slots={slots}
+            names={names}
+            statuses={statuses}
+            tcSet={{}}
+            onAssign={assign}
+            onSwap={swap}
+            onClear={clear}
+            onFullscreen={setFull}
+          />
+        </div>
+      </div>
+
+      {previewCam && (
+        <div className="preview-bar">
+          <span className="chip-k">preview</span>
+          <Cell
+            index={-1}
+            kind="preview"
+            cameraId={previewCam}
+            cameraName={names[previewCam]}
+            visible={docVisible}
+            onAssign={() => undefined}
+            onSwap={() => undefined}
+            onClear={() => scheduler.cancel()}
+            onFullscreen={() => setFull(null)}
+          />
+        </div>
+      )}
+
+      {full !== null && slots[full] && (
+        <div className="fullscreen" onClick={() => setFull(null)}>
+          <Cell
+            index={full}
+            cameraId={slots[full]}
+            cameraName={names[slots[full] as string]}
+            visible={docVisible}
+            onAssign={() => undefined}
+            onSwap={() => undefined}
+            onClear={() => setFull(null)}
+            onFullscreen={() => setFull(null)}
+          />
+        </div>
+      )}
+    </main>
   );
 }

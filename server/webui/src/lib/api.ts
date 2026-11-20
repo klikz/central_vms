@@ -65,10 +65,11 @@ export interface SessionRow {
   id: string;
   camera_id: string;
   user_id: number;
-  profile: string;
-  kind: string;
+  profile: "main" | "sub";
+  kind: "play" | "preview";
   state: string;
   expires_at: string;
+  publish_id?: string;
 }
 
 export class ApiError extends Error {
@@ -96,8 +97,15 @@ export function browserCaps() {
 let accessToken = "";
 export const setAccess = (t: string) => {
   accessToken = t;
+  window.__accessToken = t;
 };
 export const getAccess = () => accessToken;
+// pagehide'dagi keepalive DELETE uchun (fetch header'lari qo'lda kerak).
+declare global {
+  interface Window {
+    __accessToken?: string;
+  }
+}
 export const hasAccess = () => accessToken !== "";
 
 async function raw(method: string, path: string, body?: unknown): Promise<Response> {
@@ -143,7 +151,7 @@ export async function tryRefresh(): Promise<boolean> {
   try {
     const j = await parse(await fetch("/api/auth/refresh", { method: "POST", credentials: "include" }));
     if (j?.access) {
-      accessToken = j.access;
+      setAccess(j.access);
       return true;
     }
   } catch {
@@ -155,7 +163,7 @@ export async function tryRefresh(): Promise<boolean> {
 export const api = {
   login: async (username: string, password: string) => {
     const j = await parse(await raw("POST", "/api/auth/login", { username, password }));
-    accessToken = j.access;
+    setAccess(j.access);
     return j.user as User;
   },
   logout: () => req("POST", "/api/auth/logout"),
