@@ -72,7 +72,7 @@ func enrollAgent(t *testing.T, srv *httptest.Server, adminTok, camName string) (
 }
 
 func TestPlayRefreshStopFlow(t *testing.T) {
-	srv, _, _, agentF, mtxF := newServer(t)
+	srv, _, _, agentF, mtxF, _ := newServer(t)
 	adminTok := login(t, srv, "admin1")
 	_, _, cams := enrollAgent(t, srv, adminTok, "kirish")
 	if len(cams) != 1 {
@@ -147,7 +147,7 @@ func TestPlayRefreshStopFlow(t *testing.T) {
 }
 
 func TestPlayErrors(t *testing.T) {
-	srv, reg, _, _, _ := newServer(t)
+	srv, reg, _, _, _, _ := newServer(t)
 	adminTok := login(t, srv, "admin1")
 	_, _, cams := enrollAgent(t, srv, adminTok, "holirda")
 	camID := cams[0].ID
@@ -173,7 +173,7 @@ func TestPlayErrors(t *testing.T) {
 }
 
 func TestPreviewLimit(t *testing.T) {
-	srv, reg, _, _, _ := newServer(t)
+	srv, reg, _, _, _, _ := newServer(t)
 	adminTok := login(t, srv, "admin1")
 	// 3 ta kamera.
 	code, m, _ := do(t, http.MethodPost, srv.URL+"/api/admin/enrollments", `{}`, adminTok)
@@ -228,7 +228,7 @@ func TestPreviewLimit(t *testing.T) {
 }
 
 func TestAuthHookMounted(t *testing.T) {
-	srv, _, _, _, _ := newServer(t)
+	srv, _, _, _, _, _ := newServer(t)
 	// /internal/auth API mux'da mavjud va noto'g'ri token 403 qaytaradi.
 	code, m, _ := do(t, http.MethodPost, srv.URL+"/internal/auth",
 		`{"action":"read","path":"cam/ag_x/c1","query":"token=soxta"}`, "")

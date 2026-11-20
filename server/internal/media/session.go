@@ -17,6 +17,17 @@ import (
 	"central-vms/server/internal/registry"
 )
 
+// UIBroadcaster — UI'ga push (wsui.Hub; interfeys orqali — sikl yo'q).
+type UIBroadcaster interface {
+	Broadcast(typ string, data any)
+}
+
+// UI event nomlari (wsui bilan kelishilgan).
+const (
+	EvSessionState = "session_state"
+	EvSessionCount = "session_count"
+)
+
 // LimitError — qaysi limit to'lgani (handler 429 + detail beradi; api.md).
 type LimitError struct{ Kind string } // user_limit|global_limit|preview_limit
 
@@ -77,11 +88,12 @@ type Deps struct {
 	Tokens     *Tokens
 	Clock      Clock
 	Lg         *slog.Logger
-	GPU        gpu.Caps    // S2.1 aniqlangan imkoniyatlar
-	Transcode  *Transcoder // S2.7 (nil bo'lsa server_tc'ga tushmaymiz)
-	PublicHost string      // agent/UI MediaMTX'ga qaysi IP orqali boradi
-	WHEPPort   int         // 8889 (config.mediamtx.webrtc_port)
-	RTSPPort   int         // 8554
+	GPU        gpu.Caps      // S2.1 aniqlangan imkoniyatlar
+	Transcode  *Transcoder   // S2.7 (nil bo'lsa server_tc'ga tushmaymiz)
+	UI         UIBroadcaster // S3: session_state/session_count push
+	PublicHost string        // agent/UI MediaMTX'ga qaysi IP orqali boradi
+	WHEPPort   int           // 8889 (config.mediamtx.webrtc_port)
+	RTSPPort   int           // 8554
 }
 
 // Manager — sessiyalar va publish'larning yagona egasi.

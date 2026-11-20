@@ -17,6 +17,7 @@ import (
 	"central-vms/server/internal/proto"
 	"central-vms/server/internal/registry"
 	"central-vms/server/internal/wsagent"
+	"central-vms/server/internal/wsui"
 )
 
 // Deps — handler'larning bog'liqliklari (global o'zgaruvchi yo'q, TASKS §0.3).
@@ -31,6 +32,7 @@ type Deps struct {
 	Agent   *wsagent.Hub
 	Media   *media.Manager // S2: sessiya menejeri (nil bo'lsa 503)
 	MTXHook http.Handler   // /internal/auth (MediaMTX → vmsd)
+	UI      *wsui.Hub      // S3: UI push kanali (/api/ui/ws)
 	Lg      *slog.Logger
 
 	// Mux — Routes() tomonidan o'rnatiladi (handler'larning ichki routeri).
@@ -50,6 +52,11 @@ func Routes(d *Deps) http.Handler {
 	mux.HandleFunc("/api/agent/ws", func(w http.ResponseWriter, r *http.Request) {
 		d.Agent.ServeHTTP(w, r)
 	})
+
+	// UI push kanali (S3.0).
+	if d.UI != nil {
+		mux.Handle("/api/ui/ws", d.UI)
+	}
 
 	// MediaMTX auth-hook (protocol.md §15; MediaMTX 127.0.0.1:8189'ga yuboradi).
 	if d.MTXHook != nil {

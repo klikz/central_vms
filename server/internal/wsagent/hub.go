@@ -33,6 +33,18 @@ type Config struct {
 	DeadTO        time.Duration // 90 s — javobsizlikda yopish (4004); IdleTO'dan katta
 }
 
+// UIBroadcaster — UI'ga holat yuborish (wsui.Hub; import siklini oldini
+// olish uchun interfeys orqali).
+type UIBroadcaster interface {
+	Broadcast(typ string, data any)
+}
+
+// UI event nomlari (wsui bilan kelishilgan).
+const (
+	EvClientStatus = "client_status"
+	EvCamStatus    = "cam_status"
+)
+
 // MediaSink — media_ready/stopped/stats xabarlarini qabul qiluvchi
 // (S2 session manager; hub uni o'z navbatiga yo'naltiradi).
 type MediaSink interface {
@@ -55,6 +67,20 @@ type Hub struct {
 	syncApplied map[string]int // chunk'lar bo'yicha applied yig'indisi
 	clock       clock          // testlarda fake (idle/ping kuzatuvi)
 	sink        MediaSink      // S2: media xabarlari session manager'ga
+	ui          UIBroadcaster  // S3: UI'ga push
+}
+
+// SetUI — UI push kanalin o'rnatish (S3.0).
+func (h *Hub) SetUI(b UIBroadcaster) { h.mu.Lock(); h.ui = b; h.mu.Unlock() }
+
+// uiEvent — UI'ga hodisa (ui nil bo'lsa jim).
+func (h *Hub) uiEvent(typ string, data any) {
+	h.mu.Lock()
+	u := h.ui
+	h.mu.Unlock()
+	if u != nil {
+		u.Broadcast(typ, data)
+	}
 }
 
 // SetSink — media xabarlari qabul qiluvchini o'rnatish (S2.4).

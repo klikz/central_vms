@@ -12,6 +12,30 @@ import (
 	"central-vms/server/internal/registry"
 )
 
+// uiEvent — UI'ga hodisa (UI nil bo'lsa jim). Faqat loop goroutine'sidan
+// chaqiriladi — bloklovchi emas (wsui o'zi sekin mijozni yopadi).
+func (m *Manager) uiEvent(typ string, data any) {
+	if m.deps.UI != nil {
+		m.deps.UI.Broadcast(typ, data)
+	}
+}
+
+func (m *Manager) sessionEvent(st *loopState, s *session, state, reason string) {
+	m.uiEvent(EvSessionState, map[string]any{
+		"session_id": s.id, "camera_id": s.cameraID, "user_id": s.userID,
+		"state": state, "reason": reason, "transcoded": s.transcoded, "backend": s.backend,
+	})
+	var active int
+	for _, x := range st.sessions {
+		if x.state == "pending" || x.state == "publishing" || x.state == "playing" {
+			active++
+		}
+	}
+	m.uiEvent(EvSessionCount, map[string]any{
+		"active": active, "user_max": m.cfg.UserMax, "global_max": m.cfg.GlobalMax,
+	})
+}
+
 func (m *Manager) handle(st *loopState, c *cmd) {
 	switch c.op {
 	case "start":
@@ -170,6 +194,7 @@ func (m *Manager) start(st *loopState, c *cmd) (*StartResult, error) {
 	}
 	sess.state = "publishing"
 	_ = m.deps.Store.SetSessionState(sess.id, "publishing")
+	m.sessionEvent(st, sess, "publishing", "user_start")
 
 	codec := "h264" // transcode natijasi doim H.264 (browser/hamsodalik)
 	if !sess.transcoded {
@@ -263,6 +288,7 @@ func (m *Manager) mediaReady(st *loopState, c *cmd) {
 			continue
 		}
 		s.state = "playing"
+		m.sessionEvent(st, s, "playing", "")
 		if c.ready.Path != "" && !s.transcoded {
 			s.readerPath = c.ready.Path
 		}
@@ -427,6 +453,7 @@ func (m *Manager) endSessionLocked(st *loopState, s *session, reason string, dbS
 	s.state = final
 	if dbState {
 		_ = m.deps.Store.SetSessionState(s.id, final)
+		m.sessionEvent(st, s, final, reason)
 	}
 	delete(st.sessions, s.id) // xotiradan (DB tarixi qoladi)
 	// Publish ro'yxatidan ham olib tashlash + refcount kamaytirish —

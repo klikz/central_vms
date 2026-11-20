@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -90,5 +91,26 @@ func TestRefreshHasJTI(t *testing.T) {
 func TestSecretEqual(t *testing.T) {
 	if !SecretEqual("abc", "abc") || SecretEqual("abc", "abd") {
 		t.Fatal("SecretEqual xato")
+	}
+}
+
+// JWT RFC 7519: base64url (bo'shliqqa aylantiriladigan '+' va URL'da
+// buziladigan '/' bo'lmasligi kerak — UI WS query param orqali ulanadi).
+func TestJWT_Base64URL(t *testing.T) {
+	tk, err := NewTokens("test-secret-0123456789abcdef0123456789", time.Minute, time.Hour, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 200; i++ {
+		acc, _, err := tk.IssueAccess(int64(i), "user", "viewer")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.ContainsAny(acc, "+/=") {
+			t.Fatalf("token URL uchun xavfli belgi: %q", acc)
+		}
+		if _, err := tk.Verify(acc, "access"); err != nil {
+			t.Fatalf("verify: %v", err)
+		}
 	}
 }

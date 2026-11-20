@@ -74,7 +74,7 @@ func (t *Tokens) IssueRefresh(userID int64, username, role string) (string, time
 		return "", time.Time{}, fmt.Errorf("auth: jti: %w", err)
 	}
 	return t.issue(Claims{Sub: userID, User: username, Role: role, Typ: "refresh",
-		JTI: base64.RawStdEncoding.EncodeToString(jti)}, t.refreshTTL)
+		JTI: base64.RawURLEncoding.EncodeToString(jti)}, t.refreshTTL)
 }
 
 func (t *Tokens) issue(c Claims, ttl time.Duration) (string, time.Time, error) {
@@ -85,7 +85,7 @@ func (t *Tokens) issue(c Claims, ttl time.Duration) (string, time.Time, error) {
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	payload := base64.RawStdEncoding.EncodeToString(hb)
+	payload := base64.RawURLEncoding.EncodeToString(hb)
 	signing := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9." + payload // {"alg":"HS256","typ":"JWT"}
 	sig := t.sign(signing)
 	return signing + "." + sig, time.Unix(c.Expire, 0).UTC(), nil
@@ -100,7 +100,7 @@ func (t *Tokens) Verify(token, wantTyp string) (*Claims, error) {
 	if !hmac.Equal([]byte(t.sign(parts[0]+"."+parts[1])), []byte(parts[2])) {
 		return nil, ErrTokenBad
 	}
-	b, err := base64.RawStdEncoding.DecodeString(parts[1])
+	b, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
 		return nil, ErrTokenBad
 	}
@@ -120,7 +120,7 @@ func (t *Tokens) Verify(token, wantTyp string) (*Claims, error) {
 func (t *Tokens) sign(data string) string {
 	m := hmac.New(sha256.New, t.key)
 	m.Write([]byte(data))
-	return base64.RawStdEncoding.EncodeToString(m.Sum(nil))
+	return base64.RawURLEncoding.EncodeToString(m.Sum(nil))
 }
 
 // SecretEqual — vaqtiga bog'liq bo'lmagan taqqoslash (agent_secret uchun).

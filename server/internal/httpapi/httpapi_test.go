@@ -28,6 +28,7 @@ import (
 	"central-vms/server/internal/registry"
 	"central-vms/server/internal/store"
 	"central-vms/server/internal/wsagent"
+	"central-vms/server/internal/wsui"
 	"go.uber.org/goleak"
 )
 
@@ -79,7 +80,7 @@ func (f *fakeAgent) Send(_, typ string, _ any) error {
 }
 func (f *fakeAgent) Online(string) bool { return true }
 
-func newServer(t *testing.T) (*httptest.Server, *registry.Registry, *wsagent.Hub, *fakeAgent, *fakeMTX) {
+func newServer(t *testing.T) (*httptest.Server, *registry.Registry, *wsagent.Hub, *fakeAgent, *fakeMTX, *wsui.Hub) {
 	t.Helper()
 	db, err := store.Open(filepath.Join(t.TempDir(), "api.db"))
 	if err != nil {
@@ -113,16 +114,18 @@ func newServer(t *testing.T) (*httptest.Server, *registry.Registry, *wsagent.Hub
 		lg = slog.New(slog.NewTextHandler(os.Stderr, nil))
 	}
 	hub := wsagent.NewHub(wsagent.Config{ServerVersion: "t", MinProto: 1, MaxProto: 1, HandshakeTO: time.Second, IdleTO: time.Second, DeadTO: 2 * time.Second}, reg, lg)
+	uiHub := wsui.NewHub(tokens, lg, wsui.Config{})
+	hub.SetUI(uiHub) // agent hodisalari UI'ga chiqadi (S3.0)
 	agentF := &fakeAgent{}
 	mtxF := &fakeMTX{paths: map[string]bool{}, alive: true, readers: 1}
 	mgr := media.NewManager(media.MgrConfig{IdleStop: 10 * time.Millisecond, Tick: 10 * time.Millisecond}, media.Deps{
 		Reg: reg, Store: reg, Agent: agentF, MTX: mtxF,
 		Tokens: media.NewTokens(db, nil), Lg: lg, PublicHost: "10.0.0.5", WHEPPort: 8889, RTSPPort: 8554,
-		GPU: gpu.Caps{Backend: gpu.BackendNone}, // transcode yo'q mashina simulyatsiyasi
+		UI: uiHub, GPU: gpu.Caps{Backend: gpu.BackendNone}, // transcode yo'q mashina simulyatsiyasi
 	})
 	t.Cleanup(mgr.Close)
 	d := &Deps{
-		Cfg: config.Default(), Reg: reg, Tokens: tokens, Media: mgr, MTXHook: media.NewHook(media.NewTokens(db, nil), lg),
+		Cfg: config.Default(), Reg: reg, Tokens: tokens, Media: mgr, UI: uiHub, MTXHook: media.NewHook(media.NewTokens(db, nil), lg),
 		Login:  auth.NewRate(5, 5*time.Minute, nil),
 		Enroll: auth.NewRate(5, 5*time.Minute, nil),
 		Audit:  audit.New(db),
@@ -132,7 +135,7 @@ func newServer(t *testing.T) (*httptest.Server, *registry.Registry, *wsagent.Hub
 	d.Mux = Routes(d)
 	srv := httptest.NewServer(d.Mux)
 	t.Cleanup(srv.Close)
-	return srv, reg, hub, agentF, mtxF
+	return srv, reg, hub, agentF, mtxF, uiHub
 }
 
 func do(t *testing.T, method, url, body string, token string) (int, map[string]any, string) {
@@ -171,7 +174,7 @@ func login(t *testing.T, srv *httptest.Server, user string) string {
 }
 
 func TestLoginMeRefreshAudit(t *testing.T) {
-	srv, _, _, _, _ := newServer(t)
+	srv, _, _, _, _, _ := newServer(t)
 
 	if code, _, _ := do(t, http.MethodPost, srv.URL+"/api/auth/login", `{"username":"admin1","password":"x"}`, ""); code != 401 {
 		t.Fatalf("noto'g'ri parol: %d", code)
@@ -222,7 +225,7 @@ func TestLoginMeRefreshAudit(t *testing.T) {
 }
 
 func TestLoginRateLimit(t *testing.T) {
-	srv, _, _, _, _ := newServer(t)
+	srv, _, _, _, _, _ := newServer(t)
 	for i := range 5 {
 		if code, _, _ := do(t, http.MethodPost, srv.URL+"/api/auth/login", `{"username":"admin1","password":"yomoq"}`, ""); code != 401 {
 			t.Fatalf("urinish %d: %d", i+1, code)
@@ -235,7 +238,7 @@ func TestLoginRateLimit(t *testing.T) {
 }
 
 func TestViewerIsolation(t *testing.T) {
-	srv, _, _, _, _ := newServer(t)
+	srv, _, _, _, _, _ := newServer(t)
 	view := login(t, srv, "view1")
 	if code, _, _ := do(t, http.MethodGet, srv.URL+"/api/admin/users", "", view); code != 403 {
 		t.Fatalf("viewer admin endpoint'da: %d", code)
@@ -248,7 +251,7 @@ func TestViewerIsolation(t *testing.T) {
 // TestEnrollToCamerasFlow — S1 qabul mezonining yadrosi:
 // admin kod yaratadi → agent enroll → WS cams_sync → API'da kameralar.
 func TestEnrollToCamerasFlow(t *testing.T) {
-	srv, reg, hub, _, _ := newServer(t)
+	srv, reg, hub, _, _, _ := newServer(t)
 	adminTok := login(t, srv, "admin1")
 
 	code, m, raw := do(t, http.MethodPost, srv.URL+"/api/admin/enrollments", `{"site_name":""}`, adminTok)

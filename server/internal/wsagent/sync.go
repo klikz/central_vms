@@ -19,6 +19,8 @@ func (h *Hub) runConn(c *Conn) {
 	go c.pingLoop(c.done)
 
 	h.lg.Info("agent ulandi", "agent_id", c.agentID, "client_id", c.clientID)
+	h.uiEvent(EvClientStatus, map[string]any{
+		"client_id": c.clientID, "agent_id": c.agentID, "status": "online"})
 	// Pong (bizning ping'ga javob) — faollik belgisi: o'quvchi sikl
 	// deadline'ini uzaytiramiz (kontrol frame ReadJSON'ni qaytarmaydi).
 	c.ws.SetPongHandler(func(string) error {
@@ -36,6 +38,8 @@ func (h *Hub) runConn(c *Conn) {
 	if err := h.registry.MarkClientOffline(c.clientID); err != nil {
 		h.lg.Warn("offline belgilash", "agent_id", c.agentID, "err", err)
 	}
+	h.uiEvent(EvClientStatus, map[string]any{
+		"client_id": c.clientID, "agent_id": c.agentID, "status": "offline"})
 	var ce *websocket.CloseError
 	if errors.As(err, &ce) && ce.Code == CloseIdle {
 		h.lg.Warn("agent uzildi: 30 s javobsiz", "agent_id", c.agentID)
@@ -125,7 +129,14 @@ func (c *Conn) dispatch(env proto.Envelope) error {
 		if err := json.Unmarshal(env.Data, &st); err != nil {
 			return err
 		}
-		return c.hub.registry.SetCameraStatus(st.CameraID, st.Status, st.Error, st.RTTMs)
+		if err := c.hub.registry.SetCameraStatus(st.CameraID, st.Status, st.Error, st.RTTMs); err != nil {
+			return err
+		}
+		c.hub.uiEvent(EvCamStatus, map[string]any{
+			"camera_id": st.CameraID, "client_id": c.clientID,
+			"status": st.Status, "error": st.Error, "rtt_ms": st.RTTMs,
+		})
+		return nil
 	case proto.MsgCodecProbe:
 		var cp proto.CodecProbe
 		if err := json.Unmarshal(env.Data, &cp); err != nil {

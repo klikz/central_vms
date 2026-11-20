@@ -27,6 +27,7 @@ import (
 	"central-vms/server/internal/store"
 	"central-vms/server/internal/version"
 	"central-vms/server/internal/wsagent"
+	"central-vms/server/internal/wsui"
 )
 
 func main() {
@@ -171,7 +172,10 @@ func run() error {
 		GlobalMax:    cfg.Limits.GlobalMaxSessions,
 		PreviewMax:   cfg.Limits.PreviewMax,
 	}
+	uiHub := wsui.NewHub(tokens, lg, wsui.Config{})
+	hub.SetUI(uiHub)
 	mgr := media.NewManager(mediaCfg, media.Deps{
+		UI:  uiHub,
 		Reg: reg, Store: reg, Agent: hub, MTX: mclient, Tokens: mtokens,
 		Lg: lg, GPU: caps, Transcode: tr, PublicHost: cfg.MediaMTX.PublicHost,
 		WHEPPort: cfg.MediaMTX.WebRTCPort, RTSPPort: cfg.MediaMTX.RTSPPort,
@@ -181,6 +185,7 @@ func run() error {
 	hub.SetSink(mgr)
 	deps.Media = mgr
 	deps.MTXHook = media.NewHook(mtokens, lg)
+	deps.UI = uiHub
 
 	deps.Mux = httpapi.Routes(deps)
 
