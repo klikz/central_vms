@@ -80,6 +80,11 @@ func (c *Client) Readers(path string) (int, error) {
 	return out.Readers, nil
 }
 
+// URLs — WHEP/RTSP asos manzillari (portlar config'dan; §7.1 URL namunasi).
+func (c *Client) URLs(host string, whepPort, rtspPort int) (whepBase, rtspBase string) {
+	return fmt.Sprintf("http://%s:%d", host, whepPort), fmt.Sprintf("rtsp://%s:%d", host, rtspPort)
+}
+
 // Alive — MediaMTX jonlimi (healthz/ready; S2.4 watchdog shu orqali
 // media_offline holatini aniqlaydi).
 func (c *Client) Alive() bool {

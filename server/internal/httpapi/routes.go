@@ -13,6 +13,7 @@ import (
 	"central-vms/server/internal/audit"
 	"central-vms/server/internal/auth"
 	"central-vms/server/internal/config"
+	"central-vms/server/internal/media"
 	"central-vms/server/internal/proto"
 	"central-vms/server/internal/registry"
 	"central-vms/server/internal/wsagent"
@@ -20,15 +21,17 @@ import (
 
 // Deps — handler'larning bog'liqliklari (global o'zgaruvchi yo'q, TASKS §0.3).
 type Deps struct {
-	Cfg    config.Config
-	Reg    *registry.Registry
-	Tokens *auth.Tokens
-	Login  *auth.Rate // 5/5 min (root §9)
-	Enroll *auth.Rate // /api/agent/enroll rate-limit
-	Audit  *audit.Log
-	Enr    *wsagent.Enrollment
-	Agent  *wsagent.Hub
-	Lg     *slog.Logger
+	Cfg     config.Config
+	Reg     *registry.Registry
+	Tokens  *auth.Tokens
+	Login   *auth.Rate // 5/5 min (root §9)
+	Enroll  *auth.Rate // /api/agent/enroll rate-limit
+	Audit   *audit.Log
+	Enr     *wsagent.Enrollment
+	Agent   *wsagent.Hub
+	Media   *media.Manager // S2: sessiya menejeri (nil bo'lsa 503)
+	MTXHook http.Handler   // /internal/auth (MediaMTX → vmsd)
+	Lg      *slog.Logger
 
 	// Mux — Routes() tomonidan o'rnatiladi (handler'larning ichki routeri).
 	Mux http.Handler
@@ -48,12 +51,28 @@ func Routes(d *Deps) http.Handler {
 		d.Agent.ServeHTTP(w, r)
 	})
 
+	// MediaMTX auth-hook (protocol.md §15; MediaMTX 127.0.0.1:8189'ga yuboradi).
+	if d.MTXHook != nil {
+		mux.Handle("/internal/auth", d.MTXHook)
+	}
+
 	authMW := d.Tokens.Middleware
 	mux.Handle("GET /api/me", authMW(http.HandlerFunc(d.handleMe)))
 	mux.Handle("GET /api/sites", authMW(http.HandlerFunc(d.handleSites)))
 	mux.Handle("GET /api/clients", authMW(http.HandlerFunc(d.handleClients)))
 	mux.Handle("GET /api/clients/{id}/cameras", authMW(http.HandlerFunc(d.handleClientCameras)))
 	mux.Handle("GET /api/cameras/{id}", authMW(http.HandlerFunc(d.handleCamera)))
+
+	// Sessiyalar (S2.6).
+	mux.Handle("POST /api/cameras/{id}/play", authMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		d.handleCameraPlay(w, r, "play")
+	})))
+	mux.Handle("POST /api/cameras/{id}/preview", authMW(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		d.handleCameraPlay(w, r, "preview")
+	})))
+	mux.Handle("POST /api/sessions/refresh", authMW(http.HandlerFunc(d.handleSessionRefresh)))
+	mux.Handle("DELETE /api/sessions/{id}", authMW(http.HandlerFunc(d.handleSessionStop)))
+	mux.Handle("GET /api/sessions", authMW(http.HandlerFunc(d.handleSessions)))
 
 	// S1'da favorites/layouts o'qish/yozish (UI S3'da ulanadi).
 	mux.Handle("GET /api/favorites", authMW(http.HandlerFunc(d.handleFavorites)))

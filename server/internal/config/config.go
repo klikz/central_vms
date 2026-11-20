@@ -52,6 +52,7 @@ type Config struct {
 		PublishTTLS     int    `yaml:"publish_ttl_s"`         // 60 (media_start.ttl_s)
 		ReadTokenTTLS   int    `yaml:"read_token_ttl_s"`      // 30
 		MaxTranscodes   int    `yaml:"server_max_transcodes"` // 5 boshlang'ich; probe yangilaydi
+		ReadyTOs        int    `yaml:"ready_timeout_s"`       // 5 — media_ready kutiladi
 		FFmpegPath      string `yaml:"ffmpeg_path"`           // default "ffmpeg"
 	} `yaml:"media"`
 

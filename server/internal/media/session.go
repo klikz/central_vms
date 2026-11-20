@@ -32,6 +32,8 @@ type MediaAPI interface {
 	DeletePath(name string) error
 	Readers(path string) (int, error)
 	Alive() bool
+	// URLs — host/port'lardan WHEP/RTSP asoslarini quradi (sozlanuvchan).
+	URLs(host string, whepPort, rtspPort int) (whepBase, rtspBase string)
 }
 
 // Store — sessions CRUD (registry.Registry shuni qanoatlantiradi).
@@ -51,6 +53,7 @@ type MgrConfig struct {
 	IdleStop     time.Duration // 10 s: readers=0 → upload to'xtatish
 	UserMax      int           // 16
 	GlobalMax    int           // 48
+	PreviewMax   int           // 8 — bir vaqtdagi preview sessiyalari
 	Tick         time.Duration // default 1 s
 }
 
@@ -65,6 +68,8 @@ type Deps struct {
 	Lg         *slog.Logger
 	GPU        gpu.Caps // S2.1 aniqlangan imkoniyatlar
 	PublicHost string   // agent/UI MediaMTX'ga qaysi IP orqali boradi
+	WHEPPort   int      // 8889 (config.mediamtx.webrtc_port)
+	RTSPPort   int      // 8554
 }
 
 // Manager — sessiyalar va publish'larning yagona egasi.

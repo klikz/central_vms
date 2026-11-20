@@ -18,8 +18,10 @@ import (
 	"central-vms/server/internal/audit"
 	"central-vms/server/internal/auth"
 	"central-vms/server/internal/config"
+	"central-vms/server/internal/gpu"
 	"central-vms/server/internal/httpapi"
 	"central-vms/server/internal/logx"
+	"central-vms/server/internal/media"
 	"central-vms/server/internal/ports"
 	"central-vms/server/internal/registry"
 	"central-vms/server/internal/store"
@@ -131,6 +133,39 @@ func run() error {
 		Agent: hub,
 		Lg:    lg,
 	}
+	// --- S2 media bog'lamalari ---
+	caps, gerr := gpu.Detect(cfg.Media.FFmpegPath)
+	if gerr != nil {
+		lg.Warn("GPU/ffmpeg aniqlanmadi — transcode o'chiriladi", "err", gerr)
+	} else {
+		lg.Info("media backend", "backend", caps.Backend, "encoder", caps.Encoder, "gpu", caps.GPUName)
+	}
+	mtokens := media.NewTokens(db, nil)
+	mclient := media.NewClient(cfg.MediaMTX.ControlURL)
+	sessRows, _ := reg.ListActiveSessions()
+	for _, sr := range sessRows { // restart: jarayon yo'qoldi — DB'da failed
+		_ = reg.SetSessionState(sr.ID, "failed")
+	}
+	mediaCfg := media.MgrConfig{
+		MediaReadyTO: time.Duration(cfg.Media.ReadyTOs) * time.Second,
+		SessionTTL:   time.Duration(cfg.Media.SessionTTLMin) * time.Minute,
+		RefreshExt:   time.Duration(cfg.Media.SessionRenewMin) * time.Minute,
+		PublishTTL:   time.Duration(cfg.Media.PublishTTLS) * time.Second,
+		IdleStop:     time.Duration(cfg.Media.IdleStopS) * time.Second,
+		UserMax:      cfg.Limits.UserMaxSessions,
+		GlobalMax:    cfg.Limits.GlobalMaxSessions,
+		PreviewMax:   cfg.Limits.PreviewMax,
+	}
+	mgr := media.NewManager(mediaCfg, media.Deps{
+		Reg: reg, Store: reg, Agent: hub, MTX: mclient, Tokens: mtokens,
+		Lg: lg, GPU: caps, PublicHost: cfg.MediaMTX.PublicHost,
+		WHEPPort: cfg.MediaMTX.WebRTCPort, RTSPPort: cfg.MediaMTX.RTSPPort,
+	})
+	defer mgr.Close()
+	hub.SetSink(mgr)
+	deps.Media = mgr
+	deps.MTXHook = media.NewHook(mtokens, lg)
+
 	deps.Mux = httpapi.Routes(deps)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

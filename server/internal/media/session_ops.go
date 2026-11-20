@@ -85,6 +85,17 @@ func (m *Manager) start(st *loopState, c *cmd) (*StartResult, error) {
 	if m.cfg.UserMax > 0 && mine >= m.cfg.UserMax {
 		return nil, ErrFull
 	}
+	if c.kind == "preview" && m.cfg.PreviewMax > 0 {
+		var pv int
+		for _, s := range st.sessions {
+			if s.kind == "preview" && (s.state == "pending" || s.state == "publishing" || s.state == "playing") {
+				pv++
+			}
+		}
+		if pv >= m.cfg.PreviewMax {
+			return nil, ErrFull
+		}
+	}
 
 	profile := c.profile
 	if profile == "" {
@@ -375,18 +386,31 @@ func (m *Manager) host() string {
 	return "127.0.0.1"
 }
 
+func (m *Manager) urls() (whepBase, rtspBase string) {
+	wp, rp := m.deps.WHEPPort, m.deps.RTSPPort
+	if wp == 0 {
+		wp = 8889
+	}
+	if rp == 0 {
+		rp = 8554
+	}
+	return m.deps.MTX.URLs(m.host(), wp, rp)
+}
+
 func (m *Manager) whepURL(path string) string {
-	return fmt.Sprintf("http://%s:8888/%s/whep", m.host(), path)
+	wb, _ := m.urls()
+	return wb + "/" + path + "/whep"
 }
 
 func (m *Manager) rtspURL(path string) string {
-	return fmt.Sprintf("rtsp://%s:8554/%s", m.host(), path)
+	_, rb := m.urls()
+	return rb + "/" + path
 }
 
 func (m *Manager) publishURLs(path, ingest string) proto.PublishURLs {
-	u := proto.PublishURLs{RTSP: fmt.Sprintf("rtsp://%s:8554/%s", m.host(), path)}
-	u.WHIP = fmt.Sprintf("http://%s:8888/%s/whep", m.host(), path)
-	return u
+	wb, rb := m.urls()
+	// WHIP — WHEP o'rniga whip (agent publish uchun).
+	return proto.PublishURLs{WHIP: wb + "/" + path + "/whip", RTSP: rb + "/" + path}
 }
 
 func randHex(n int) string {

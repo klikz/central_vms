@@ -195,3 +195,30 @@ func b2i(b bool) int {
 	}
 	return 0
 }
+
+// ListCamerasByAgent — agent_id bo'yicha kameralar (testlar va S2.7 uchun).
+func (r *Registry) ListCamerasByAgent(agentID string) ([]Camera, error) {
+	rows, err := r.db.Query(
+		`SELECT k.id, k.client_id, k.name, k.rtsp_masked, k.codec_main, k.codec_sub,
+		        k.bframe_main, k.bframe_sub, k.play_profile, k.transcode_mode, k.enabled,
+		        k.position, k.status, COALESCE(k.last_check_at,''), COALESCE(k.codec_probe_at,''),
+		        COALESCE(k.onvif_xaddr,'')
+		 FROM cameras k JOIN clients c ON c.id = k.client_id WHERE c.agent_id=? ORDER BY k.position`, agentID)
+	if err != nil {
+		return nil, wrap(err, "kameralar (agent)")
+	}
+	defer rows.Close()
+	var out []Camera
+	for rows.Next() {
+		var c Camera
+		var en, bm, bs int
+		if err := rows.Scan(&c.ID, &c.ClientID, &c.Name, &c.RTSPMasked, &c.CodecMain, &c.CodecSub,
+			&bm, &bs, &c.PlayProfile, &c.TranscodeMode, &en,
+			&c.Position, &c.Status, &c.LastCheckAt, &c.CodecProbeAt, &c.OnvifXaddr); err != nil {
+			return nil, wrap(err, "kameralar scan")
+		}
+		c.Enabled, c.BFrameMain, c.BFrameSub = en != 0, bm != 0, bs != 0
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}

@@ -4,6 +4,7 @@ package media
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"path/filepath"
@@ -88,6 +89,9 @@ func (f *fakeMTX) Readers(string) (int, error) {
 	defer f.mu.Unlock()
 	return f.readers, nil
 }
+func (f *fakeMTX) URLs(host string, whepPort, rtspPort int) (string, string) {
+	return fmt.Sprintf("http://%s:%d", host, whepPort), fmt.Sprintf("rtsp://%s:%d", host, rtspPort)
+}
 func (f *fakeMTX) Alive() bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -153,7 +157,7 @@ func newMTest(t *testing.T, cfg MgrConfig, caps gpu.Caps) *mtest {
 	cfg.Tick = 10 * time.Millisecond
 	m := NewManager(cfg, Deps{
 		Reg: reg, Store: reg, Agent: fs, MTX: mtx, Tokens: tk, Clock: fc, Lg: lg,
-		GPU: caps, PublicHost: "192.168.1.50",
+		GPU: caps, PublicHost: "192.168.1.50", WHEPPort: 8889, RTSPPort: 8554,
 	})
 	t.Cleanup(m.Close)
 	cam, err := reg.GetCamera("cam-uuid-1")
@@ -182,7 +186,7 @@ func TestHappyPathDirect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	if res.PlayURL != "http://192.168.1.50:8888/cam/ag_1/cam-uuid-1/whep" {
+	if res.PlayURL != "http://192.168.1.50:8889/cam/ag_1/cam-uuid-1/whep" {
 		t.Fatalf("play url: %s", res.PlayURL)
 	}
 	if mt.fs.count(proto.MsgMediaStart) != 1 {
@@ -417,7 +421,7 @@ func TestServerTCUsesMainSource(t *testing.T) {
 	if ms.Transcode.By != "server" || ms.Transcode.Backend != "nvenc" {
 		t.Fatalf("transcode spec: %+v", ms.Transcode)
 	}
-	if res.PlayURL != "http://192.168.1.50:8888/tc/ag_1/cam-uuid-1/whep" {
+	if res.PlayURL != "http://192.168.1.50:8889/tc/ag_1/cam-uuid-1/whep" {
 		t.Fatalf("play url tc bo'lishi kerak: %s", res.PlayURL)
 	}
 	if !res.Transcoded || res.Backend != "nvenc" {
