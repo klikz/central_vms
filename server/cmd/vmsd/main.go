@@ -13,12 +13,18 @@ import (
 	"os/signal"
 	"strconv"
 	"syscall"
+	"time"
 
+	"central-vms/server/internal/audit"
+	"central-vms/server/internal/auth"
 	"central-vms/server/internal/config"
+	"central-vms/server/internal/httpapi"
 	"central-vms/server/internal/logx"
 	"central-vms/server/internal/ports"
+	"central-vms/server/internal/registry"
 	"central-vms/server/internal/store"
 	"central-vms/server/internal/version"
+	"central-vms/server/internal/wsagent"
 )
 
 func main() {
@@ -35,6 +41,8 @@ func run() error {
 		webDir   = flag.String("web", "", "UI statikasi papkasi (bo'sh → config.web_dir)")
 		probe    = flag.Bool("probe", false, "server quvvatini o'lchab chiqish (make probe)")
 		migrateO = flag.Bool("migrate-only", false, "faqat migratsiyani bajarib chiqish")
+		migrate  = flag.String("migrate", "", "migratsiya amali: up|down|status (make migrate-*)")
+		seedAdm  = flag.String("seed-admin", "", "admin yaratish/yangilash: username:parol (make admin)")
 		showVer  = flag.Bool("version", false, "versiyani chiqarish")
 	)
 	flag.Parse()
@@ -63,12 +71,17 @@ func run() error {
 		return runProbe(lg, cfg)
 	}
 
+	if *migrate != "" {
+		return runMigrate(lg, cfg, *migrate)
+	}
+
 	// Port tekshiruvi (REJA §2.1/1): band bo'lsa aniq xato, tashqi xizmatni
 	// o'zi to'xtatmaydi. API bind porti 0 bo'lsa (testlar) tekshirilmaydi.
+	// UDP: MediaMTX RTP/RTCP (8000/8001) va WebRTC ICE (8189).
 	if apiPort := portOf(cfg.Bind); apiPort != 0 {
 		if err := ports.Check(
 			[]int{apiPort, cfg.MediaMTX.RTSPPort, cfg.MediaMTX.HLSPort, cfg.MediaMTX.WebRTCPort},
-			[]int{9997, cfg.MediaMTX.WebRTCPort},
+			[]int{8000, 8001, 8189},
 		); err != nil {
 			return err
 		}
@@ -90,11 +103,40 @@ func run() error {
 		lg.Info("migrate-only: tayyor")
 		return nil
 	}
+	if *seedAdm != "" {
+		return runSeedAdmin(lg, db, *seedAdm)
+	}
+
+	// --- S1 bog'lamalari (root §3: bitta binary ichida) ---
+	reg := registry.New(db)
+	tokens, err := auth.NewTokens(cfg.Auth.JWTSecret,
+		time.Duration(cfg.Auth.AccessTTLMin)*time.Minute,
+		time.Duration(cfg.Auth.RefreshTTLD)*24*time.Hour, nil)
+	if err != nil {
+		return err
+	}
+	hub := wsagent.NewHub(wsagent.Config{
+		ServerVersion: version.Version, MinProto: protoVersion, MaxProto: protoVersion,
+	}, reg, lg)
+	deps := &httpapi.Deps{
+		Cfg:    cfg,
+		Reg:    reg,
+		Tokens: tokens,
+		Login:  auth.NewRate(5, 5*time.Minute, nil),
+		Enroll: auth.NewRate(cfg.Enrollment.RatePer5m, 5*time.Minute, nil),
+		Audit:  audit.New(db),
+		Enr: wsagent.NewEnrollment(db, reg,
+			time.Duration(cfg.Enrollment.TTLH)*time.Hour,
+			cfg.Enrollment.RatePer5m, 5*time.Minute, nil),
+		Agent: hub,
+		Lg:    lg,
+	}
+	deps.Mux = httpapi.Routes(deps)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	srv := newHTTPServer(cfg, lg)
+	srv := newHTTPServer(cfg, lg, deps)
 	return serveUntilSignal(ctx, lg, cfg, srv)
 }
 

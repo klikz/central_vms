@@ -41,7 +41,7 @@ func testLogger() *slog.Logger {
 
 func TestHealthz(t *testing.T) {
 	cfg := testCfg(t)
-	servers := newHTTPServer(cfg, testLogger())
+	servers := newHTTPServer(cfg, testLogger(), nil)
 	ln, err := listenFirst(servers)
 	if err != nil {
 		t.Fatalf("listen: %v", err)
@@ -77,7 +77,7 @@ func TestStaticHandler_Missing(t *testing.T) {
 
 func TestServeUntilSignal_Graceful(t *testing.T) {
 	cfg := testCfg(t)
-	servers := newHTTPServer(cfg, testLogger())
+	servers := newHTTPServer(cfg, testLogger(), nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- serveUntilSignal(ctx, testLogger(), cfg, servers) }()

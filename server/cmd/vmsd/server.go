@@ -13,13 +13,14 @@ import (
 	"time"
 
 	"central-vms/server/internal/config"
+	"central-vms/server/internal/httpapi"
 	"central-vms/server/internal/version"
 )
 
 // newHTTPServer — bitta binary ichida: API/WS porti (cfg.Bind) va ichki
 // auth-hook porti (MediaMTX → vmsd, protocol.md §15). S0'da faqat /healthz,
 // statika va hook skeleti (501) mavjud.
-func newHTTPServer(cfg config.Config, lg *slog.Logger) []*http.Server {
+func newHTTPServer(cfg config.Config, lg *slog.Logger, deps *httpapi.Deps) []*http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -30,6 +31,10 @@ func newHTTPServer(cfg config.Config, lg *slog.Logger) []*http.Server {
 		})
 	})
 	mux.Handle("/", staticHandler(cfg.WebDir, lg))
+	if deps != nil && deps.Mux != nil {
+		// API yo'llari statikadan oldin ulanadi (mux pattern'lari aniqroq).
+		mux.Handle("/api/", deps.Mux)
+	}
 
 	hookMux := http.NewServeMux()
 	hookMux.HandleFunc("/internal/auth", func(w http.ResponseWriter, _ *http.Request) {
