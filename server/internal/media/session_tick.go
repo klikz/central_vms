@@ -44,6 +44,15 @@ func (m *Manager) tick(st *loopState) {
 			m.dropPubLocked(st, p)
 			continue
 		}
+		// Transcode'ni o'quvchi qolmasa to'xtatish: rejim aralash
+		// (direct + tc) publish'da tc sessiyalari ketgach FFmpeg
+		// keraksiz yurib qolmasin (CPU/GPU tejaladi).
+		if p.mode == "server_tc" && p.tcStarted && !m.anyTcSession(st, p) {
+			m.deps.Transcode.Stop(p.cameraID, "no_tc_readers")
+			p.tcStarted = false
+			p.mode = "direct"
+			m.deps.Lg.Info("transcode to'xtatildi: tc o'quvchi qolmadi", "camera", p.cameraID)
+		}
 		// Transcode qayta urinishi (manba kechikishi) — 3 marta, keyin
 		// o'quvchi direct (cam) path'ga qaytadi.
 		if p.mode == "server_tc" && !p.tcStarted && p.ready && m.deps.Transcode != nil {
@@ -135,6 +144,16 @@ func snapshotSessions(st *loopState) []*session {
 		out = append(out, s)
 	}
 	return out
+}
+
+// anyTcSession — publish'da transcode'langan o'quvchi sessiyasi bormi.
+func (m *Manager) anyTcSession(st *loopState, p *publish) bool {
+	for _, sid := range p.sessions {
+		if s := st.sessions[sid]; s != nil && s.transcoded && s.state != "ended" {
+			return true
+		}
+	}
+	return false
 }
 
 func snapshotPubs(st *loopState) []*publish {

@@ -377,3 +377,101 @@ Qolgan bo'sh joylar (hujjatlashtirilgan, keyingi yurish):
 ## Keyingi bosqich (P6, rejalashtirilgan, hozir ISHLAMAYMIZ)
 
 TLS (Caddy), `user_site_grants`, Telegram alert, snapshot preview (`PreviewProvider` abstraksiyasi S3'da tayyor bo'ladi), arxiv playback.
+
+## 2026-11-21 — server (vmsd) auditi: topilgan muammolar va holati
+
+Uch mustaqil audit (media+wsagent, httpapi+auth, registry+store+wsui) va
+o'zim tekshiruvim. Tasdiqlanganlar tuzatildi, testlar qo'shildi.
+
+- [x] **Jarayon halokati (eng og'ir):** yopilgan WS kanaliga yozish.
+      `wsagent/sync.go` (`shutdown` → `close(c.out)`) va `wsui/conn.go`
+      (:68) kanalni yopardi, yuboruvchi esa (`hub.Send` / `Broadcast`)
+      qulf tashqarisida `c.out <- env` qiladi → `send on closed channel`
+      panic'i → BUTUN vmsd qulaydi, barcha agentlar uziladi.
+      Ochilish: agent qayta ulangsa/Kick qilinsa yoki UI mijoz uzilsa,
+      ayni paytda hodisa yuborilsa. Yechim: kanal yopilmaydi, yozuvchi
+      sikl `done` bilan chiqadi. Test: `TestWsui_BroadcastDuringDisconnectNoPanic`
+      (40 mijoz uzilishi + parallel Broadcast, `-race`).
+- [x] **Transcode o'lsa tiklanmas edi:** FFmpeg jarayoni uzilsa (kamera
+      oqimi, encoder xatosi) `tc/...` path yo'qolib, publish tirik
+      qolsa ham o'quvchilar abadiy 404 olardi. Endi `SetOnEnd` orqali
+      menejer xabar oladi: uzoq yashagan jarayon qayta ko'tariladi
+      (urish byudjeti to'ldiriladi), tez-tez o'lsa sessiya yopiladi.
+      Testlar: `TestSession_TranscodeDiesIsRestarted`, `TestTCRestartDecision`.
+- [x] **Aralash `browser.hevc` so'rovlari:** publish kalitida rejim ham
+      bo'lgani uchun (camera|profile|mode) ikkinchi so'rov ikkinchi
+      publish ochardi; agent uni dedup qilib refcount'ni o'stiradi,
+      `media_ready` esa BITTA marta keladi → ikkinchi sessiya
+      "publishing"da qotib 5 s'dan keyin o'lar, transcode boshlanmas edi.
+      Kalit endi `camera|profile`; tayyor publish'ga sessiya qo'shilsa
+      darhol `playing`; kerak bo'lsa rejim ko'tariladi (upgrade).
+      HEVC'li brauzer original oqimda qoladi (majburan transcode
+      qilinmaydi); tc o'quvchi qolmasa FFmpeg to'xtatiladi.
+      Test: `TestSession_MixedHevcSharesPublish`.
+      Jonli tekshiruv: `tc/...` 3 s ichida ready, chiqish `h264 1280`.
+- [x] **IDOR:** `DELETE /api/sessions/{id}` va `/api/sessions/refresh`
+      egalikni tekshirmas edi — sessiya ID'si WS'da tarqalgani uchun
+      istalgan foydalanuvchi begga oqimini to'xtatardi/yozib qo'yardi.
+      Endi `StopAs/Refresh(userID)` + `403 session_not_yours`.
+      Test: `TestSession_OwnerEnforced`.
+- [x] **`extend_s` cheklanmagan edi** (`31536000000` → sessiya va
+      MediaMTX read token'i "mangaga", upload/transcode sloti abadiy
+      band, int64 overflow). Endi ≤120 s, aks holda `400 bad_extend`.
+- [x] **cross-tenant kamera amallari:** cams_sync/cam_status/codec
+      so'rovlari `client_id` bo'yicha cheklanmagan (faqat upsert
+      tekshirardi) — bitta agent boshqa mijoz kamerasini o'chirishi,
+      holat/kodekini buzishi mumkin edi. Endi `*ForClient` variantlari
+      (`WHERE id=? AND client_id=?` mantig'i; begona ID "topilmadi").
+      Test: `TestCamsSync_CrossTenantDeleteIgnored`.
+- [x] **§4.2 `full:true` umuman o'qilmas edi:** to'liq sync'da
+      ko'rinmagan kameralar serverda abadiy qolardi (UI'da "o'lik
+      kamera", layout slotlari band). Endi chunk'lar bo'yicha
+      to'planib, oxirgi chunk'da pruning bajariladi.
+      Test: `TestCamsSync_FullPrunesMissing`.
+- [x] **`cams_ack.applied` shishirilardi:** birinchi xatodan keyingi
+      muvaffaqiyatsiz amallar ham sanalib `ok:true` ketardi.
+- [x] **O'qish limiti yo'q edi** (§2: xabar ≤1 MiB) — bitta ulanish
+      ulkan JSON bilan xotira DoS qila olardi. `SetReadLimit(1 MiB)`.
+- [x] **Handshake:** (a) compat javobi write deadline'siz yozilardi;
+      (b) welcome xatosida ro'yxatga olingan conn tozalanmasdi —
+      `Online()` abadiy `true`, fd/kanal sizib chiqardi.
+- [x] **Kamera upsert egalik race'i:** tekshiruv va yozuv atomik emasdi
+      — B agenti A kamerasining nom/kodek/holatini jim bosib yozardi.
+      `ON CONFLICT ... WHERE cameras.client_id=excluded.client_id` +
+      RowsAffected tekshiruvi. Test: `TestUpsertCamera_OwnershipRaceSafe`.
+- [x] **Preauth 200 yozuv bilan cheklangan ro'yxatga qarab moslash
+      qilardi** — 200+ yozuvda eng eski IP/CIDR jim ishlamasdi.
+      Test: `TestMatchPreauth_BeyondListLimit`.
+- [x] **Migratsiya idempotentligi:** journal yozuvi skriptdan ALHIDA edi
+      — orasida crash bo'lsa keyingi start "table already exists"/
+      "duplicate column" bilan server umuman boshlanmasdi. Endi bitta
+      tranzaksiyada. 200+ operatorli fayl endi xato beradi (avval jim
+      qisman migratsiya).
+- [x] **Retention indekslari** (`0004_retention_indexes.sql`):
+      `sessions(started_at)`, `media_tokens(session_id)` (FK CASCADE),
+      `sessions(user_id)`, `join_requests(client_id)`,
+      `preauth_ips(created_at)`. Avval tozalash to'liq skan qilardi va
+      `MaxOpenConns(1)` bilan barcha yozuvchilarni qotirardi.
+- [x] **HTTP qattiqlik:** umumiy `BodyLimit` (64 KiB — ulkan `password`
+      argon2id'ga tushib CPU DoS qilmasligi uchun), `ReadTimeout` 30 s,
+      `IdleTimeout` 120 s (slow-loris); rate-limit map'ida kalitlar
+      umuman tozalanmas edi (RSS o'sishi) — sweep qo'shildi.
+
+**Ochiq qoldi (keyingi yurish, ataylab qoldirildi):**
+- [ ] Token bekor qilish (revocation): logout/rol pasaytirish/parol
+      almashtirishdan keyin ham access token 15 daqiqa ishlaydi; eski
+      refresh cookie 7 kun yaroqli. Yechim: `refresh_tokens(jti)` +
+      `users.token_epoch`.
+- [ ] Registry PATCH'larida transaction yo'q (users/sites/cameras/
+      layouts) va `RowsAffected()==0` tekshirilmaydi — qisman yozuv +
+      mavjud bo'lmagan id'ga 200 OK.
+- [ ] `regErr` xato tasnifida `strings.Contains` ishlatiladi; ichki
+      xato matni mijozga chiqadi; `api.md`'da hujjatlangan
+      `DELETE /api/admin/users`, `/api/admin/media/state`, `/metrics`
+      umulqon yo'q.
+- [ ] `/api/ui/ws` token'ni query'dan oladi (proksi loglariga tushadi)
+      va `CheckOrigin: true` — bir martalik `ws_ticket` kerak.
+- [ ] Retention purge'ni bo'laklarga bo'lish (`LIMIT 500` sikli).
+- [ ] `cams_sync` ack'larini `seq` bo'yicha deduplash (takroriy chunk
+      qayta bajariladi); `epochs/lastSeq/syncApplied` mijoz o'chirilganda
+      tozalanmaydi.

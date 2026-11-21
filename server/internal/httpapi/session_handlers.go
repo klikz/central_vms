@@ -12,6 +12,10 @@ import (
 	"central-vms/server/internal/registry"
 )
 
+// maxExtendS — POST /api/sessions/refresh uchun eng katta uzaytirish
+// (api.md: 2 daqiqa).
+const maxExtendS = 120
+
 func (d *Deps) handleCameraPlay(w http.ResponseWriter, r *http.Request, kind string) {
 	if d.Media == nil {
 		writeErr(w, http.StatusServiceUnavailable, "media_offline", "media menejeri yo'q")
@@ -41,7 +45,7 @@ func (d *Deps) handleCameraPlay(w http.ResponseWriter, r *http.Request, kind str
 	// yopish (api.md).
 	if kind == "preview" && in.On != nil && !*in.On {
 		for _, sid := range d.Media.SessionsFor(cl.Sub, cam.ID, "preview") {
-			_ = d.Media.Stop(sid, "user")
+			_ = d.Media.StopAs(sid, cl.Sub, "user")
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 		return
@@ -71,6 +75,7 @@ func (d *Deps) handleSessionRefresh(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusServiceUnavailable, "media_offline", "")
 		return
 	}
+	cl, _ := auth.ClaimsFrom(r)
 	var in struct {
 		SessionID string `json:"session_id"`
 		ExtendS   int    `json:"extend_s"`
@@ -79,7 +84,18 @@ func (d *Deps) handleSessionRefresh(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_json", "")
 		return
 	}
-	if err := d.Media.Refresh(in.SessionID, in.ExtendS); err != nil {
+	// §api.md: TTL uzatish 2 daqiqa. Cheklanmasa mijoz `extend_s`ni
+	// qadamsiz qilib sessiyani "mangaga" chiqarardi — upload/transcode
+	// slotlari abadiy band qolardi (2026-11-21 auditi).
+	if in.ExtendS < 0 || in.ExtendS > maxExtendS {
+		writeErr(w, http.StatusBadRequest, "bad_extend", "")
+		return
+	}
+	if err := d.Media.Refresh(in.SessionID, cl.Sub, in.ExtendS); err != nil {
+		if errors.Is(err, media.ErrNotOwner) {
+			writeErr(w, http.StatusForbidden, "session_not_yours", "")
+			return
+		}
 		writeErr(w, http.StatusNotFound, "session_gone", err.Error())
 		return
 	}
@@ -91,11 +107,15 @@ func (d *Deps) handleSessionStop(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusServiceUnavailable, "media_offline", "")
 		return
 	}
-	if err := d.Media.Stop(r.PathValue("id"), "user"); err != nil {
+	cl, _ := auth.ClaimsFrom(r)
+	if err := d.Media.StopAs(r.PathValue("id"), cl.Sub, "user"); err != nil {
+		if errors.Is(err, media.ErrNotOwner) {
+			writeErr(w, http.StatusForbidden, "session_not_yours", "")
+			return
+		}
 		writeErr(w, http.StatusNotFound, "session_gone", err.Error())
 		return
 	}
-	cl, _ := auth.ClaimsFrom(r)
 	_ = d.Audit.Add(cl.Sub, "stop", r.PathValue("id"))
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

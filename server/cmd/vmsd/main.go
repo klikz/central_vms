@@ -200,6 +200,7 @@ func run() error {
 	})
 	defer mgr.Close()
 	tr.SetOnFailure(mgr.OnTranscodeFailure)
+	tr.SetOnEnd(mgr.OnTranscodeEnd)
 	hub.SetSink(mgr)
 	deps.Media = mgr
 	deps.MTXHook = media.NewHook(mtokens, lg)

@@ -17,6 +17,7 @@ func (c *Conn) handleCamsSync(cs proto.CamsSync) error {
 	stored := h.epochs[c.agentID]
 	if cs.SeqNo <= 1 || cs.Epoch != stored {
 		h.syncApplied[c.agentID] = 0 // yangi sinxron boshlandi
+		h.syncSeen[c.agentID] = map[string]bool{}
 	}
 	h.mu.Unlock()
 
@@ -28,6 +29,12 @@ func (c *Conn) handleCamsSync(cs proto.CamsSync) error {
 
 	applied := 0
 	var firstErr error
+	seen := make(map[string]bool, len(cs.Cameras))
+	if h.syncSeen[c.agentID] == nil {
+		h.mu.Lock()
+		h.syncSeen[c.agentID] = map[string]bool{}
+		h.mu.Unlock()
+	}
 	for _, cam := range cs.Cameras {
 		var err error
 		switch cam.Op {
@@ -49,8 +56,19 @@ func (c *Conn) handleCamsSync(cs proto.CamsSync) error {
 				Status: cam.Status,
 			})
 		}
-		if err != nil && firstErr == nil && !isNotFound(err) {
-			firstErr = err
+		if err == nil && cam.Op != "delete" {
+			seen[cam.ID] = true
+			h.mu.Lock()
+			h.syncSeen[c.agentID][cam.ID] = true
+			h.mu.Unlock()
+		}
+		// ESKISI: `err != nil && firstErr == nil` — birinchi xatodan
+		// keyingi muvaffaqiyatsiz amallar `applied++` bilan sanalib,
+		// cams_ack'dagi `applied` shishirilgan holda `ok:true` ketardi (§4.3).
+		if err != nil && !isNotFound(err) {
+			if firstErr == nil {
+				firstErr = err
+			}
 			h.lg.Warn("cams_sync amali", "agent_id", c.agentID, "cam", cam.ID, "op", cam.Op, "err", err)
 			continue
 		}
@@ -66,10 +84,23 @@ func (c *Conn) handleCamsSync(cs proto.CamsSync) error {
 	if cs.Done {
 		h.syncApplied[c.agentID] = 0
 	}
+	if cs.Done {
+		defer delete(h.syncSeen, c.agentID)
+	}
 	h.mu.Unlock()
 
 	if !cs.Done {
 		return nil // orasidagi chunk — ack tugashida
+	}
+	// §4.2: `full:true` to'liq ro'yxat degani — bu sync'da ko'rinmagan
+	// kameralar agentda yo'q, serverda esa qolgan. Bu pruning umuman
+	// bajarilmagani uchun agentda o'chirilgan kamera serverda abadiy
+	// "o'lik kamera" bo'lib turardi (UI ro'yxati, layout slotlari band).
+	if cs.Full && firstErr == nil {
+		if n := c.pruneMissingCams(c.accumulatedSeen()); n > 0 {
+			h.lg.Info("cams_sync: ko'rinmagan kameralar o'chirildi",
+				"agent_id", c.agentID, "soni", n)
+		}
 	}
 	// Ro'yxat o'zgardi — UI'ga signal (Monitor sahifasi qayta o'qiydi):
 	// avval qo'shilgan kamera refresh qilingandagina ko'rinardi (2026-11-20).
@@ -84,11 +115,46 @@ func (c *Conn) handleCamsSync(cs proto.CamsSync) error {
 	return c.sendEnvelope(proto.MsgCamsAck, ack)
 }
 
+// accumulatedSeen — chunk'lar bo'yicha to'plangan ko'rish to'plami.
+// ESKISI: pruning har chunk'ning o'z ID'lariga qarab edi — oxirgi
+// chunk'da faqat shu chunk kameralari "ko'rilgan" bo'lib, qolganlari
+// o'chib ketardi (test: 3 kamera 1 ga qisqardi).
+func (c *Conn) accumulatedSeen() map[string]bool {
+	c.hub.mu.Lock()
+	defer c.hub.mu.Unlock()
+	out := make(map[string]bool, len(c.hub.syncSeen[c.agentID]))
+	for id, v := range c.hub.syncSeen[c.agentID] {
+		out[id] = v
+	}
+	return out
+}
+
+// pruneMissingCams — to'liq sync'da kelmay qolgan kameralarni o'chirish.
+func (c *Conn) pruneMissingCams(seen map[string]bool) int {
+	list, err := c.hub.registry.ListCamerasByClient(c.clientID)
+	if err != nil {
+		c.hub.lg.Warn("cams_sync pruning ro'yxat", "agent_id", c.agentID, "err", err)
+		return 0
+	}
+	n := 0
+	for _, cam := range list {
+		if seen[cam.ID] {
+			continue
+		}
+		if err := c.deleteCamera(cam.ID); err != nil {
+			c.hub.lg.Warn("cams_sync pruning", "cam", cam.ID, "err", err)
+			continue
+		}
+		n++
+	}
+	return n
+}
+
 // deleteCamera — kamera o'chirish + layout slotlarini bo'shatish.
 // (favorites — FK cascade, avtomatik; kamera yo'q bo'lsa OK hisoblaymiz:
 // idempotent sync.)
 func (c *Conn) deleteCamera(cameraID string) error {
-	err := c.hub.registry.DeleteCamera(cameraID)
+	err := c.hub.registry.DeleteCameraForClient(c.clientID, cameraID)
 	if err != nil && isNotFound(err) {
 		return nil
 	}

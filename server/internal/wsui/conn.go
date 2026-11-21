@@ -9,11 +9,21 @@ import (
 )
 
 func (c *conn) writeLoop() {
-	for raw := range c.out {
-		_ = c.ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
-		if err := c.ws.WriteMessage(websocket.TextMessage, raw); err != nil {
-			c.close()
+	// `out` HECH QACHON yopilmaydi: Broadcast conns nusxasini qulf
+	// ostida oladi, trySend'ni esa qulf TASHQARISIDA qiladi (hub.go).
+	// shutdown'da channel yopilsa, parallel trySend "send on closed
+	// channel" panic qiladi va butun vmsd qulaydi (2026-11-21 auditi).
+	// Chiqish `done` orqali belgilanadi.
+	for {
+		select {
+		case <-c.done:
 			return
+		case raw := <-c.out:
+			_ = c.ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := c.ws.WriteMessage(websocket.TextMessage, raw); err != nil {
+				c.close()
+				return
+			}
 		}
 	}
 }
@@ -65,7 +75,7 @@ func (c *conn) close() {
 
 func (c *conn) shutdown() {
 	c.once.Do(func() {
-		close(c.out)
+		// ESKISI: close(c.out) — yuqoridagi panic sababi.
 		close(c.done)
 		_ = c.ws.Close()
 	})

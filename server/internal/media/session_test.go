@@ -3,6 +3,7 @@
 package media
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -232,7 +233,7 @@ func TestHappyPathDirect(t *testing.T) {
 	}, "playing bo'lmadi")
 
 	// refresh → TTL uzayadi, token hali yashaydi.
-	if err := mt.m.Refresh(res.SessionID, 120); err != nil {
+	if err := mt.m.Refresh(res.SessionID, 1, 120); err != nil {
 		t.Fatalf("refresh: %v", err)
 	}
 	// stop → media_stop + path o'chirilishi (readers=1 bo'lsa ham refcount=0
@@ -691,5 +692,155 @@ func TestEnsurePathSkippedForPatternedPaths(t *testing.T) {
 	}
 	if mt2.mtx.ensure == 0 {
 		t.Fatal("qoplanmagan yo'l uchun EnsurePath chaqirilishi kerak edi")
+	}
+}
+
+// FFmpeg jarayoni uzilsa (kamera oqimi uzilishi, encoder xatosi) transcode
+// qayta ko'tarilishi kerak: aks holda publish tirik qilsa ham tc/... path'
+// yo'qolib, o'quvchilar abadiy 404 olardi (2026-11-21 server auditi).
+func TestSession_TranscodeDiesIsRestarted(t *testing.T) {
+	mt := newMTest(t, MgrConfig{IdleStop: 10 * time.Millisecond},
+		gpu.Caps{Backend: gpu.BackendSoft, Encoder: "libx264"})
+	mode := "auto"
+	if err := mt.reg.PatchCameraPolicy("cam-uuid-1", nil, &mode, nil); err != nil {
+		t.Fatal(err)
+	}
+	mt.cam.TranscodeMode = "auto"
+	counts := filepath.Join(t.TempDir(), "starts.txt")
+	t.Setenv("FAKEFFMPEG_COUNT", counts)
+	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+	tr := NewTranscoder(fixturePath("fakeffmpeg_exit.sh"), 5, lg)
+	tr.SetOnEnd(mt.m.OnTranscodeEnd)
+	tr.SetOnFailure(mt.m.OnTranscodeFailure)
+	t.Cleanup(tr.StopAll)
+	mt.m.deps.Transcode = tr
+
+	res, err := mt.m.Start(mt.cam, 1, "main", "play", BrowserCaps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mt.m.OnMediaReady("ag_1", proto.MediaReady{SessionID: res.SessionID, PublishID: "p1",
+		Path: "cam/ag_1/cam-uuid-1"})
+	starts := func() int {
+		b, err := os.ReadFile(counts)
+		if err != nil {
+			return 0
+		}
+		return bytes.Count(b, []byte("start"))
+	}
+	waitFor(t, func() bool { return starts() >= 1 }, "transcode boshlanmadi")
+	// Sun'iy soat: qayta urinish oralig'i (1 s) shu soat bilan o'lchanadi.
+	waitFor(t, func() bool {
+		mt.fc.advance(2 * time.Second)
+		return starts() >= 2
+	}, "transcode qayta ko'tarilmadi")
+	st, _ := mt.reg.ListActiveSessions()
+	if len(st) != 1 || st[0].State == "ended" {
+		t.Fatalf("sessiya yashab turishi kerak edi: %+v", st)
+	}
+}
+
+// Sof qaror funksiyasi: uzoq yashagan transcode uzilsa urish byudjeti
+// qayta to'ldiriladi, tez-tez o'lsa — yo'q.
+func TestTCRestartDecision(t *testing.T) {
+	if ok, _, reset := tcRestartDecision(2*time.Minute, true); !ok || !reset {
+		t.Fatal("uzoq yashagan uzilishda byudjet to'ldirilishi kerak")
+	}
+	if ok, _, reset := tcRestartDecision(time.Second, true); !ok || reset {
+		t.Fatal("tez uzilishda byudjet to'ldirilmasligi kerak")
+	}
+	if ok, _, _ := tcRestartDecision(time.Minute, false); ok {
+		t.Fatal("o'quvchi qolmagan publish'da qayta ko'tarilmasligi kerak")
+	}
+}
+
+// Aralash brauzer imkoniyatlari: bir kameraga avval HEVC'ni o'ynaydigan
+// (direct), keyin o'ynamaydigan (server_tc) brauzer kelsa — ikkinchi
+// sessiya ham ishlashi kerak. Avval publish kalitida rejim ham bo'lgani
+// uchun ikkinchi sessiya media_ready kutib qotib, 5 s'dan keyin o'lar,
+// transcode umuman boshlanmas edi (2026-11-21 server auditi).
+func TestSession_MixedHevcSharesPublish(t *testing.T) {
+	mt := newMTest(t, MgrConfig{IdleStop: 10 * time.Millisecond},
+		gpu.Caps{Backend: gpu.BackendSoft, Encoder: "libx264"})
+	mode := "auto"
+	if err := mt.reg.PatchCameraPolicy("cam-uuid-1", nil, &mode, nil); err != nil {
+		t.Fatal(err)
+	}
+	mt.cam.TranscodeMode = "auto"
+
+	r1, err := mt.m.Start(mt.cam, 1, "main", "play", BrowserCaps{HEVC: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r1.Transcoded {
+		t.Fatalf("HEVC'li brauzer direct olishi kerak edi: %+v", r1)
+	}
+	mt.m.OnMediaReady("ag_1", proto.MediaReady{SessionID: r1.SessionID, PublishID: "p1",
+		Path: "cam/ag_1/cam-uuid-1"})
+	waitFor(t, func() bool {
+		st, _ := mt.reg.ListActiveSessions()
+		return len(st) == 1 && st[0].State == "playing"
+	}, "birinchi sessiya playing")
+
+	r2, err := mt.m.Start(mt.cam, 2, "main", "play", BrowserCaps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !r2.Transcoded {
+		t.Fatalf("HEVC'ni o'ynamaydigan brauzer transcode olishi kerak: %+v", r2)
+	}
+	if !strings.Contains(r2.RTSPURL, "/tc/") {
+		t.Fatalf("o'quvchi tc/ path olishi kerak: %s", r2.RTSPURL)
+	}
+	// media_ready IKKINCHI marta kelmaydi (agent publish uchun bir marta
+	// yuboradi) — sessiya shunga qaramay playing bo'lishi kerak.
+	waitFor(t, func() bool {
+		st, _ := mt.reg.ListActiveSessions()
+		if len(st) != 2 {
+			return false
+		}
+		for _, x := range st {
+			if x.State != "playing" {
+				return false
+			}
+		}
+		return true
+	}, "ikkinchi sessiya playing (media_ready'siz)")
+	// Transcode shu paygacha boshlanmagan bo'lishi kerak edi (tick),
+	// endi esa yurishi kerak.
+	waitFor(t, func() bool { return mt.m.deps.Transcode.Count() == 1 }, "transcode boshlanmadi")
+
+	// tc o'quvchi ketgach FFmpeg to'xtaydi, direct sessiya esa yashaydi.
+	if err := mt.m.Stop(r2.SessionID, "user"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return mt.m.deps.Transcode.Count() == 0 }, "transcode to'xtamadi")
+	st, _ := mt.reg.ListActiveSessions()
+	if len(st) != 1 || st[0].ID != r1.SessionID {
+		t.Fatalf("direct sessiya yashab turishi kerak edi: %+v", st)
+	}
+}
+
+// IDOR: sessiya ID'si wsui Broadcast'ida tarqaladi — uni bilgan boshqa
+// foydalanuvchi begga sessiyasini to'xtata/yozib qo'ya olmasligi kerak
+// (2026-11-21 server auditi).
+func TestSession_OwnerEnforced(t *testing.T) {
+	mt := newMTest(t, MgrConfig{IdleStop: 10 * time.Millisecond}, gpu.Caps{Backend: gpu.BackendNone})
+	r, err := mt.m.Start(mt.cam, 1, "main", "play", BrowserCaps{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mt.m.StopAs(r.SessionID, 2, "user"); !errors.Is(err, ErrNotOwner) {
+		t.Fatalf("begga stop: %v", err)
+	}
+	if err := mt.m.Refresh(r.SessionID, 2, 60); !errors.Is(err, ErrNotOwner) {
+		t.Fatalf("begga refresh: %v", err)
+	}
+	st, _ := mt.reg.ListActiveSessions()
+	if len(st) != 1 {
+		t.Fatalf("sessiya yashab turishi kerak edi: %+v", st)
+	}
+	if err := mt.m.StopAs(r.SessionID, 1, "user"); err != nil {
+		t.Fatalf("o'z sessiyasi: %v", err)
 	}
 }

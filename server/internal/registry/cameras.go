@@ -2,6 +2,7 @@ package registry
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -67,7 +68,7 @@ func (r *Registry) UpsertCamera(clientID int64, c SyncCamera) error {
 	case owner != clientID:
 		return fmt.Errorf("camera upsert: id %s boshqa clientga (%d) tegishli: %w", c.ID, owner, ErrExists)
 	}
-	_, err = r.db.Exec(
+	res, err := r.db.Exec(
 		`INSERT INTO cameras (id, client_id, name, rtsp_masked, codec_main, codec_sub,
 		    bframe_main, bframe_sub, onvif_xaddr, status, position)
 		 VALUES (?,?,?,?,?,?,?,?,?,?,?)
@@ -75,10 +76,60 @@ func (r *Registry) UpsertCamera(clientID int64, c SyncCamera) error {
 		    name=excluded.name, rtsp_masked=excluded.rtsp_masked,
 		    codec_main=excluded.codec_main, codec_sub=excluded.codec_sub,
 		    bframe_main=excluded.bframe_main, bframe_sub=excluded.bframe_sub,
-		    onvif_xaddr=excluded.onvif_xaddr, status=excluded.status, position=excluded.position`,
+		    onvif_xaddr=excluded.onvif_xaddr, status=excluded.status, position=excluded.position
+		 WHERE cameras.client_id=excluded.client_id`,
 		c.ID, clientID, c.Name, c.RTSPMasked, def(c.CodecMain, "unknown"), def(c.CodecSub, "unknown"),
 		b2i(c.BFrameMain), b2i(c.BFrameSub), c.OnvifXaddr, def(def(c.Status, curStatus), "offline"), c.Position)
-	return wrap(err, "camera upsert")
+	if err != nil {
+		return wrap(err, "camera upsert")
+	}
+	// Yuqoridagi tekshiruv bilan bu yozuv orasida boshqa client qatorni
+	// egallab olgan bo'lishi mumkin (race): DO UPDATE'dagi WHERE sharti
+	// tufayli hech narsa o'zgarmaydi va biz xato qaytaramiz. Avval
+	// tekshiruv+yozuv atomik emas edi — B agenti A kamerasining
+	// nom/kodek/holatini jim bosib yozardi (2026-11-21 auditi, probe).
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("camera upsert: id %s boshqa clientga tegishli: %w", c.ID, ErrExists)
+	}
+	return nil
+}
+
+// cameraOwnedBy — agent o'z kamerasidan tashqarisiga teg olmasligi
+// uchun tekshiruv (2026-11-21 server auditi: cams_sync/cam_status
+// so'rovlari `client_id` bo'yicha cheklanmagan edi — bitta kompromatsiyalangan
+// agent boshqa mijozning kamerasini o'chirishi yoki holatini buzishi
+// mumkin edi). Begona kamera "topilmadi" deb qaytariladi: mavjudlik
+// sizib chiqmaydi.
+func (r *Registry) cameraOwnedBy(clientID int64, cameraID string) error {
+	var owner int64
+	err := r.db.QueryRow("SELECT client_id FROM cameras WHERE id=?", cameraID).Scan(&owner)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && owner != clientID) {
+		return fmt.Errorf("kamera o'qish: %w", ErrNotFound)
+	}
+	return wrap(err, "kamera o'qish")
+}
+
+// DeleteCameraForClient / SetCameraStatusForClient / SaveCodecProbeForClient
+// — agent kelgan so'rovlar shu variantlar orqali o'tadi (§4.2/§5.4).
+func (r *Registry) DeleteCameraForClient(clientID int64, cameraID string) error {
+	if err := r.cameraOwnedBy(clientID, cameraID); err != nil {
+		return err
+	}
+	return r.DeleteCamera(cameraID)
+}
+
+func (r *Registry) SetCameraStatusForClient(clientID int64, cameraID, status, errMsg string, rttMs int64) error {
+	if err := r.cameraOwnedBy(clientID, cameraID); err != nil {
+		return err
+	}
+	return r.SetCameraStatus(cameraID, status, errMsg, rttMs)
+}
+
+func (r *Registry) SaveCodecProbeForClient(clientID int64, cameraID, codecMain, codecSub string, bMain, bSub bool) error {
+	if err := r.cameraOwnedBy(clientID, cameraID); err != nil {
+		return err
+	}
+	return r.SaveCodecProbe(cameraID, codecMain, codecSub, bMain, bSub)
 }
 
 // DeleteCamera — cams_sync(op:delete). Cascade: favorites (FK) va sessiyalar

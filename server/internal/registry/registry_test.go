@@ -3,6 +3,7 @@ package registry
 import (
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -424,5 +425,49 @@ func TestUpsertCameraKeepsStatusWhenEmpty(t *testing.T) {
 	}
 	if cam, err = r.GetCamera("st-cam"); err != nil || cam.Status != "offline" {
 		t.Fatalf("aniq status qo'llanilmadi: %+v %v", cam, err)
+	}
+}
+
+// Ikki agent bir xil kamera UUID'ini yuborsa: ikkinchisi birinchining
+// qatorini bosib yozmasligi kerak (tekshiruv+yozuv race'i, 2026-11-21
+// auditi: oldin egalik tekshiruvi atomik emas edi).
+func TestUpsertCamera_OwnershipRaceSafe(t *testing.T) {
+	r := testReg(t)
+	a := mustClient(t, r, "agent-a")
+	b := mustClient(t, r, "agent-b")
+	if err := r.UpsertCamera(a, SyncCamera{ID: "uuid-x", Name: "A-nomi"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.UpsertCamera(b, SyncCamera{ID: "uuid-x", Name: "B-nomi"}); err == nil {
+		t.Fatal("B agenti A kamerasini egallab oldi")
+	}
+	c, err := r.GetCamera("uuid-x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Name != "A-nomi" || c.ClientID != a {
+		t.Fatalf("qator buzildi: %+v", c)
+	}
+}
+
+// 200+ preauth yozuvida eng eski IP/CIDR ham mos kelishi kerak
+// (avval MatchPreauth LIMIT 200 ro'yxatiga qarab tekshirardi).
+func TestMatchPreauth_BeyondListLimit(t *testing.T) {
+	r := testReg(t)
+	uid := mustUser(t, r, "admin-pre", "admin")
+	for i := 0; i < 205; i++ {
+		if _, err := r.AddPreauth("10.7."+strconv.Itoa(i/256)+"."+strconv.Itoa(i%256), "", "", uid); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := r.AddPreauth("192.168.77.0/24", "eski-tarmoq", "", uid); err != nil {
+		t.Fatal(err)
+	}
+	m, err := r.MatchPreauth("192.168.77.42")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m == nil {
+		t.Fatal("200+ yozuvda eski CIDR mos kelmadi (jim bekor bo'ldi)")
 	}
 }

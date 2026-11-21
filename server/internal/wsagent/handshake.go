@@ -103,12 +103,20 @@ func (h *Hub) handshake(ws *websocket.Conn, agentID string) (*Conn, error) {
 		// §1: avval welcome{compat.ok:false}, keyin 5 s ichida 4001.
 		w := h.buildWelcome(conn, hello, compat)
 		if raw, err := json.Marshal(proto.Envelope{Type: proto.MsgWelcome, TS: time.Now().UTC(), Data: mustRaw(w)}); err == nil {
+			// Write deadline'siz yozuv: mijoz o'qimasa goroutine cheksiz
+			// bloklanib qolardi.
+			_ = ws.SetWriteDeadline(time.Now().Add(5 * time.Second))
 			_ = ws.WriteMessage(websocket.TextMessage, raw)
+			_ = ws.SetWriteDeadline(time.Time{})
 		}
 		_ = ws.WriteControl(websocket.CloseMessage, closeFrame(CloseIncompat, "compat"), time.Now().Add(2*time.Second))
 		_ = ws.Close()
 		return nil, fmt.Errorf("protocol %d oralikda emas (%d..%d)", hello.ProtocolVersion, h.cfg.MinProto, h.cfg.MaxProto)
 	}
+
+	// §2: bitta xabar ≤1 MiB. Limit qo'yilmasa bitta (hatto auth'siz)
+	// ulanish ulkan JSON bilan vmsd xotirasini yey olardi (DoS).
+	ws.SetReadLimit(maxAgentFrame)
 
 	// Bir agent — bitta ulanish: eski conn'ni mayin yopamiz (4005).
 	h.mu.Lock()
@@ -137,6 +145,15 @@ func (h *Hub) handshake(ws *websocket.Conn, agentID string) (*Conn, error) {
 	// welcome — handshake bosqichida writeLoop hali yo'q: to'g'ridan-to'g'ri yozamiz.
 	w := h.buildWelcome(conn, hello, proto.Compat{OK: true})
 	if err := conn.sendDirect(proto.MsgWelcome, w); err != nil {
+		// Ro'yxatga OLINGAN conn: xatoda tozalanmasa `Online()` abadiy
+		// true qolardi (UI'da yo'q sessiya "online", MarkClientOffline
+		// hech qachon chaqirilmaydi) va fd/out kanali sizib chiqardi.
+		h.mu.Lock()
+		if h.conns[agentID] == conn {
+			delete(h.conns, agentID)
+		}
+		h.mu.Unlock()
+		conn.shutdown()
 		return nil, err
 	}
 	return conn, nil

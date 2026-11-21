@@ -43,8 +43,8 @@ so'rov yubormaydi, sahifa yangilanmaydi:
 |---|---|---|
 | POST | `/api/cameras/{id}/play` | `{profile:"sub"|"main", browser:{hevc:bool}}` → `{session_id, whep_url, token, ttl, codec, transcoded}` |
 | POST | `/api/cameras/{id}/preview` | `{on:true|false}` → preview sessiya (kind=preview, profile=sub) |
-| DELETE | `/api/sessions/{id}` | sessiyani mayin to'xtatish (idempotent) |
-| POST | `/api/sessions/refresh` | `{session_id, extend_s}` → TTL uzatish (2 min) |
+| DELETE | `/api/sessions/{id}` | sessiyani mayin to'xtatish (idempotent). Faqat sessiya egasi — begga ID `403 session_not_yours` |
+| POST | `/api/sessions/refresh` | `{session_id, extend_s}` → TTL uzatish. `extend_s` 0..120 s (0 — default); katta qiymat `400 bad_extend`. Faqat sessiya egasi: begga ID `403 session_not_yours` (sessiya ID'lari WS'da tarqaladi — 2026-11-21 auditi) |
 | GET | `/api/sessions` | faol oqimlar (admin: barchasi, viewer: o'ziniki) |
 
   Javob (`GET /api/sessions`): massivi, har biri

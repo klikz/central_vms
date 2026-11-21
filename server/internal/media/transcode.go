@@ -60,10 +60,21 @@ type Transcoder struct {
 	procs     map[string]*transcodeProc
 	bad       map[gpu.Backend]bool // ishlamagan backendlar (drayver/xato)
 	onFailure func(cameraID string, backend gpu.Backend)
+	// onEnd — HAR qanday jarayon tugaganda chaqiriladi (exit kodi
+	// muhim emas). Menejer shu orqali tirik publish'da transcode'ni
+	// qayta ko'taradi (2026-11-21 server auditidagi asosiy xato).
+	onEnd func(cameraID string, elapsed time.Duration, failed bool)
 }
 
 // SetOnFailure — jarayon darhol (5 s ichida) yiqilsa chaqiriladi
 // ( menejer boshqa backend bilan qayta urinishi uchun).
+// SetOnEnd — jarayon tugash habari (elapsed = yashagan vaqt).
+func (t *Transcoder) SetOnEnd(f func(cameraID string, elapsed time.Duration, failed bool)) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.onEnd = f
+}
+
 func (t *Transcoder) SetOnFailure(f func(cameraID string, backend gpu.Backend)) {
 	t.mu.Lock()
 	t.onFailure = f
@@ -217,7 +228,11 @@ func (t *Transcoder) watch(cameraID string, p *transcodeProc, stderr *bytes.Buff
 		delete(t.procs, cameraID)
 	}
 	fb := t.onFailure
+	end := t.onEnd
 	t.mu.Unlock()
+	if end != nil {
+		end(cameraID, elapsed, err != nil)
+	}
 	if err != nil {
 		msg := strings.TrimSpace(stderr.String())
 		t.lg.Warn("transcode tugadi", "camera", cameraID, "err", err, "stderr", msg)

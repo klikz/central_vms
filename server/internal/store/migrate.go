@@ -56,11 +56,16 @@ func MigrateUp(db *sql.DB, dir string) ([]int, error) {
 		if err != nil {
 			return done, fmt.Errorf("migrate %04d: o'qish: %w", u.ver, err)
 		}
-		if err := execTx(db, string(b)); err != nil {
+		// Journal yozuvi skript BILAN BIR tranzaksiyada: avval ular
+		// alohida edi — orasida crash bo'lsa migratsiya qayta bajarilib
+		// "table already exists"/"duplicate column" bilan server umuman
+		// boshlanmas edi (2026-11-21 auditi).
+		ver := u.ver
+		if err := execTxWith(db, string(b), func(tx *sql.Tx) error {
+			_, err := tx.Exec("INSERT INTO schema_migrations (version) VALUES (?)", ver)
+			return err
+		}); err != nil {
 			return done, fmt.Errorf("migrate %04d (%s): %w", u.ver, filepath.Base(u.name), err)
-		}
-		if _, err := db.Exec("INSERT INTO schema_migrations (version) VALUES (?)", u.ver); err != nil {
-			return done, fmt.Errorf("migrate %04d: journal: %w", u.ver, err)
 		}
 		done = append(done, u.ver)
 	}
@@ -91,11 +96,12 @@ func MigrateDown(db *sql.DB, dir string) (int, error) {
 	if err != nil {
 		return last, fmt.Errorf("migrate down %04d: o'qish: %w", last, err)
 	}
-	if err := execTx(db, string(b)); err != nil {
+	ver := last
+	if err := execTxWith(db, string(b), func(tx *sql.Tx) error {
+		_, err := tx.Exec("DELETE FROM schema_migrations WHERE version = ?", ver)
+		return err
+	}); err != nil {
 		return last, fmt.Errorf("migrate down %04d: %w", last, err)
-	}
-	if _, err := db.Exec("DELETE FROM schema_migrations WHERE version = ?", last); err != nil {
-		return last, fmt.Errorf("migrate down %04d: journal: %w", last, err)
 	}
 	return last, nil
 }
@@ -157,15 +163,27 @@ func appliedVersions(db *sql.DB) (map[int]bool, error) {
 
 // execTx — bitta migratsiya faylini bitta tranzaksiyada bajaradi
 // (SQLite DDL tranzaksiyada qaytarilishi mumkin — atomik migratsiya).
-func execTx(db *sql.DB, script string) error {
+func execTx(db *sql.DB, script string) error { return execTxWith(db, script, nil) }
+
+// execTxWith — skript + (ixtiyoriy) qo'shimcha yozuv BITTA tranzaksiyada.
+func execTxWith(db *sql.DB, script string, inTx func(*sql.Tx) error) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	for _, stmt := range splitStmts(script) {
+	stmts, err := splitStmts(script)
+	if err != nil {
+		return err
+	}
+	for _, stmt := range stmts {
 		if _, err := tx.Exec(stmt); err != nil {
 			return fmt.Errorf("%w (stmt: %.80q)", err, stmt)
+		}
+	}
+	if inTx != nil {
+		if err := inTx(tx); err != nil {
+			return err
 		}
 	}
 	return tx.Commit()
@@ -173,7 +191,7 @@ func execTx(db *sql.DB, script string) error {
 
 // splitStmts — `;` bo'yicha ajratish; string/comment/trigger ichidagi `;`
 // hisobga olinmaydi. Oddiy, "aqlli" parser yo'q (TASKS §0.3).
-func splitStmts(s string) []string {
+func splitStmts(s string) ([]string, error) {
 	var out []string
 	var cur strings.Builder
 	inStr, inLineC, inBlockC := false, false, false
@@ -227,11 +245,14 @@ func splitStmts(s string) []string {
 			cur.WriteByte(ch)
 		}
 		if len(out) > maxStmtSplit {
-			return out // himoyaviy: fayl g'arib bo'lsa cheksiz loop bo'lmasin
+			// ESKISI: `return out` — qolgan operatorlar JIM tashlab
+			// yuborilardi, migratsiya baribir "muvaffaqiyatli" hisoblanar
+			// edi (qisman sxema!). Endi xato qaytaramiz.
+			return nil, fmt.Errorf("migratsiya fayli %d+ operatorli — fayl buzilgan yoki juda katta", maxStmtSplit)
 		}
 	}
 	if t := strings.TrimSpace(cur.String()); t != "" {
 		out = append(out, t)
 	}
-	return out
+	return out, nil
 }

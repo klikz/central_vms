@@ -276,6 +276,25 @@ func (r *Registry) ListPreauth() ([]PreauthIP, error) {
 	return out, wrap(rows.Err(), "preauth yakuni")
 }
 
+// allPreauth — LIMIT'siz ro'yxat (moslik tekshiruvi uchun).
+func (r *Registry) allPreauth() ([]PreauthIP, error) {
+	rows, err := r.db.Query(`SELECT id, ip, COALESCE(name,''), COALESCE(note,''), created_at
+		FROM preauth_ips ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, wrap(err, "preauth ro'yxati")
+	}
+	defer rows.Close()
+	var out []PreauthIP
+	for rows.Next() {
+		var it PreauthIP
+		if err := rows.Scan(&it.ID, &it.IP, &it.Name, &it.Note, &it.CreatedAt); err != nil {
+			return nil, wrap(err, "preauth qatori")
+		}
+		out = append(out, it)
+	}
+	return out, wrap(rows.Err(), "preauth yakuni")
+}
+
 // DeletePreauth — oldindan ruxsatni olib tashlash.
 func (r *Registry) DeletePreauth(id int64) error {
 	res, err := r.db.Exec(`DELETE FROM preauth_ips WHERE id=?`, id)
@@ -291,7 +310,10 @@ func (r *Registry) DeletePreauth(id int64) error {
 // MatchPreauth — kelgan IP preauth ro'yxatidagi biror manzil/CIDRga
 // mos keladimi. Mos yozuv qaytariladi (nomi mijoz nomi sifatida ishlatiladi).
 func (r *Registry) MatchPreauth(ip string) (*PreauthIP, error) {
-	all, err := r.ListPreauth()
+	// ESKISI: ListPreauth() — u `LIMIT 200` bilan ishlaydi. 200+ preauth
+	// yozuvida ENG ESQI manzillar kesilib, avtomatik tasdiq jim bekor
+	// bo'lardi (agent abadiy "pending" qolardi; 2026-11-21 auditi).
+	all, err := r.allPreauth()
 	if err != nil {
 		return nil, err
 	}

@@ -164,3 +164,16 @@ func pushLimits(c registry.Client) proto.Limits {
 }
 
 func protoSettings() proto.Settings { return proto.Settings{} }
+
+// BodyLimit — so'rov tanasini qattiq cheklash. Barcha API so'rovlari
+// kichik JSON (login, sessiya, admin CRUD); limit bo'lmasa ulkan
+// `password` maydoni argon2id'ga (64 MB × 3) tushib CPU DoS bo'lardi
+// va sekin body ulanishni abadiy ushlab turardi (2026-11-21 auditi).
+func BodyLimit(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+		}
+		next.ServeHTTP(w, r)
+	})
+}

@@ -155,7 +155,10 @@ func TestSplitStmts(t *testing.T) {
 		{"   ;;  ;", 0},
 	}
 	for i, c := range cases {
-		got := splitStmts(c.in)
+		got, err := splitStmts(c.in)
+		if err != nil {
+			t.Fatalf("case %d %q: %v", i, c.in, err)
+		}
 		if len(got) != c.want {
 			t.Errorf("case %d %q: %d stmt, kerak %d (%q)", i, c.in, len(got), c.want, got)
 		}

@@ -49,10 +49,17 @@ func newHTTPServer(cfg config.Config, lg *slog.Logger, deps *httpapi.Deps) []*ht
 		})
 	}
 
+	// ReadTimeout/IdleTimeout: sekin body (slow-loris) ulanishni abadiy
+	// ushlab turmasligi uchun (2026-11-21 auditi). WS endpoint'lari
+	// hijack'dan keyin o'z deadline'larini o'zi boshqaradi (wsagent/
+	// wsui readLoop'larida SetReadDeadline bor), shuning uchun 30 s
+	// ularga ta'sir qilmaydi.
 	srv := &http.Server{
 		Addr:              cfg.Bind,
-		Handler:           mux,
+		Handler:           httpapi.BodyLimit(mux),
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 	hook := &http.Server{
 		Addr:              cfg.MediaMTX.AuthHookBind,

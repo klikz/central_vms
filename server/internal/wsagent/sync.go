@@ -86,10 +86,19 @@ func (c *Conn) pingLoop(done chan struct{}) {
 func (c *Conn) writeLoop(done chan struct{}) {
 	// done'ni shutdown() yopadi (writeLoop chiqishda emas — ikki marta
 	// close panic bo'lardi).
-	for raw := range c.out {
-		_ = c.ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
-		if err := c.ws.WriteMessage(websocket.TextMessage, raw); err != nil {
+	// `out` HECH QACHON yopilmaydi: yopilsa, qulf tashqarisidagi
+	// `c.out <- env` (hub.Send) parallel paytda panic qiladi va butun
+	// vmsd qulaydi (2026-11-21 auditi: qayta ulanish/Kick paytida).
+	// Chiqish `done` orqali belgilanadi.
+	for {
+		select {
+		case <-done:
 			return
+		case raw := <-c.out:
+			_ = c.ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := c.ws.WriteMessage(websocket.TextMessage, raw); err != nil {
+				return
+			}
 		}
 	}
 }
@@ -144,7 +153,7 @@ func (c *Conn) dispatch(env proto.Envelope) error {
 		if err := json.Unmarshal(env.Data, &st); err != nil {
 			return err
 		}
-		if err := c.hub.registry.SetCameraStatus(st.CameraID, st.Status, st.Error, st.RTTMs); err != nil {
+		if err := c.hub.registry.SetCameraStatusForClient(c.clientID, st.CameraID, st.Status, st.Error, st.RTTMs); err != nil {
 			return err
 		}
 		c.hub.uiEvent(EvCamStatus, map[string]any{
@@ -157,7 +166,7 @@ func (c *Conn) dispatch(env proto.Envelope) error {
 		if err := json.Unmarshal(env.Data, &cp); err != nil {
 			return err
 		}
-		return c.hub.registry.SaveCodecProbe(cp.CameraID, cp.Codecs.Main, cp.Codecs.Sub,
+		return c.hub.registry.SaveCodecProbeForClient(c.clientID, cp.CameraID, cp.Codecs.Main, cp.Codecs.Sub,
 			cp.BFrame.Main, cp.BFrame.Sub)
 	case proto.MsgHB, proto.MsgPong, proto.MsgSecretRotated, proto.MsgCodecFixDone,
 		proto.MsgDiscoveryDone, proto.MsgSelftestDone:
@@ -222,7 +231,7 @@ func (c *Conn) closeWith(code int, reason string) {
 
 func (c *Conn) shutdown() {
 	c.closeOnce.Do(func() {
-		close(c.out)
+		// ESKISI: close(c.out) — yuqoridagi panic sababi.
 		close(c.done)
 		// O'quvchi sikl `done`ni sezmaydi — socketni yopish shart,
 		// aks holda Kick/offline belgisi DeadTO tugagunicha kechikadi

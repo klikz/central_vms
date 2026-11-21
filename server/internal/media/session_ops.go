@@ -4,6 +4,7 @@ package media
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -37,13 +38,33 @@ func (m *Manager) sessionEvent(st *loopState, s *session, state, reason string) 
 	})
 }
 
+// ErrNotOwner — sessiya boshqa foydalanuvchiniki (IDOR himoyasi,
+// 2026-11-21 server auditi: sessiya ID'lari wsui Broadcast'ida
+// filtrsiz tarqaladi, shuning uchun ID'ni bilgan har qanday foydalanuvchi
+// begga sessiyasini to'xtatib/yozib qo'ya olmasligi kerak).
+var ErrNotOwner = errors.New("sessiya sizniki emas")
+
+// ownsSession — sessiya egasi so'rov egasi bilan bir xilmi.
+func (m *Manager) ownsSession(st *loopState, c *cmd) bool {
+	s := st.sessions[c.sessionID]
+	return s != nil && s.userID == c.userID
+}
+
 func (m *Manager) handle(st *loopState, c *cmd) {
 	switch c.op {
 	case "start":
 		c.res, c.err = m.start(st, c)
 	case "refresh":
+		if c.checkOwner && !m.ownsSession(st, c) {
+			c.err = ErrNotOwner
+			break
+		}
 		c.err = m.refresh(st, c)
 	case "stop":
+		if c.checkOwner && !m.ownsSession(st, c) {
+			c.err = ErrNotOwner
+			break
+		}
 		c.err = m.stopSession(st, c.sessionID, c.reason)
 	case "ready":
 		m.mediaReady(st, c)
@@ -55,6 +76,8 @@ func (m *Manager) handle(st *loopState, c *cmd) {
 		c.ids = m.listSessions(st, c)
 	case "tcfailed":
 		m.transcodeFailed(st, c)
+	case "tcend":
+		m.transcodeEnded(st, c)
 	case "stats":
 		// stats allaqachon muhofaza qilingan; tick bilan bir xil ish
 	}
@@ -153,7 +176,7 @@ func (m *Manager) start(st *loopState, c *cmd) (*StartResult, error) {
 	now := m.deps.Clock.Now()
 	sess := &session{
 		id: randHex(8), cameraID: cam.ID, agentID: cl.AgentID, userID: c.userID,
-		profile: profile, kind: c.kind, state: "pending",
+		profile: profile, kind: c.kind, state: "pending", browserHEVC: c.browserHEVC,
 		expiresAt: now.Add(m.cfg.SessionTTL), backend: backend,
 		transcoded: pubMode == "server_tc",
 	}
@@ -204,6 +227,15 @@ func (m *Manager) start(st *loopState, c *cmd) (*StartResult, error) {
 	sess.state = "publishing"
 	_ = m.deps.Store.SetSessionState(sess.id, "publishing")
 	m.sessionEvent(st, sess, "publishing", "user_start")
+	// Publish ALLAQACHON ko'tarilgan (boshqa sessiya ochib ketgan):
+	// agent media_ready'ni publish uchun BITTA marta yuboradi, shuning
+	// uchun bu sessiyani o'zimiz playing qilamiz — aks holdu 5 s
+	// media_ready taymautida o'lar edi.
+	if pub.ready {
+		sess.state = "playing"
+		_ = m.deps.Store.SetSessionState(sess.id, "playing")
+		m.sessionEvent(st, sess, "playing", "")
+	}
 
 	codec := "h264" // transcode natijasi doim H.264 (browser/hamsodalik)
 	if !sess.transcoded {
@@ -223,10 +255,16 @@ func (m *Manager) start(st *loopState, c *cmd) (*StartResult, error) {
 }
 
 func (m *Manager) getOrCreatePub(st *loopState, cam registry.Camera, agentID, profile, pubMode, ingest string, now time.Time) *publish {
-	key := pubKey(cam.ID, profile, pubMode)
+	key := pubKey(cam.ID, profile)
 	if id, ok := st.byKey[key]; ok {
 		p := st.pubs[id]
 		p.idleOn = false // oldingi idle hisob bekor bo'ldi
+		// Rejim ko'tarilishi: direct publish'da o'tirgan oqimga
+		// transcode talab qilingan sessiya qo'shilsa — shu oqimning
+		// ustida FFmpeg qo'shiladi (agentga qayta media_start shart emas).
+		if pubMode == "server_tc" && p.mode != "server_tc" {
+			m.upgradePubToTC(p, now)
+		}
 		return p
 	}
 	// Agent HAR DOIM originalni cam/... ga yuboradi; server_tc'da FFmpeg
@@ -306,6 +344,35 @@ func (m *Manager) mediaReady(st *loopState, c *cmd) {
 	}
 }
 
+// upgradePubToTC — tirik direct publish'ni transcode rejimiga ko'tarish:
+// tc path tokenlari + MediaMTX path + transcode navbati.
+func (m *Manager) upgradePubToTC(p *publish, now time.Time) {
+	if m.deps.Transcode == nil {
+		return
+	}
+	p.mode, p.caps = "server_tc", m.deps.GPU
+	p.tcPath = "tc/" + p.agentID + "/" + p.cameraID
+	p.tcTries, p.tcStarted = 0, false
+	p.tcNextTry = now
+	if p.tcPubTok == "" {
+		if tok, _, err := m.deps.Tokens.Mint("", p.tcPath, "publish", 24*time.Hour); err != nil {
+			m.deps.Lg.Warn("tc publish token", "err", err)
+		} else {
+			p.tcPubTok = tok
+		}
+	}
+	if p.srcReadTok == "" {
+		if tok, _, err := m.deps.Tokens.Mint("", p.path, "read", 24*time.Hour); err != nil {
+			m.deps.Lg.Warn("src read token", "err", err)
+		} else {
+			p.srcReadTok = tok
+		}
+	}
+	m.ensureMTXPath(p.tcPath, "ensure tc path")
+	m.deps.Lg.Info("publish transcode rejimiga ko'tarildi", "camera", p.cameraID,
+		"path", p.tcPath, "ready", p.ready)
+}
+
 // startTranscode — FFmpeg'ni ishga tushirish (muvaffaqiyatsiz bo'lsa
 // qayta urinish vaqti belgilanadi).
 func (m *Manager) startTranscode(st *loopState, p *publish) {
@@ -323,12 +390,58 @@ func (m *Manager) startTranscode(st *loopState, p *publish) {
 			"try", p.tcTries, "err", err)
 		return
 	}
-	// Transcode tayyor bo'lsa o'quvchi tc/ path'ga o'tadi.
+	// Transcode tayyor bo'lsa o'quvchi tc/ path'ga o'tadi — lekin FAQAT
+	// H.265'ni o'ynay olmaydigan sessiyalar: HEVC'li brauzer original
+	// (cam/) oqimda qoladi, sifat buzilmaydi.
 	for _, sid := range p.sessions {
-		if s := st.sessions[sid]; s != nil {
-			s.transcoded, s.readerPath = true, p.tcPath
+		s := st.sessions[sid]
+		if s == nil || s.browserHEVC {
+			continue
 		}
+		s.transcoded, s.readerPath = true, p.tcPath
 	}
+}
+
+// tcHealthy — transcode shuncha vaqt yashasa, uzilishni vaqtinchalik
+// deb hisoblaymiz: urish byudjeti qayta to'ldiriladi.
+const tcHealthy = 10 * time.Second
+
+// tcRestartDecision — sof qaror: uzilgan transcode'ni qayta ko'tarish,
+// qachon va urish hisobini tozalash.
+func tcRestartDecision(elapsed time.Duration, hasSessions bool) (restart bool, delay time.Duration, resetTries bool) {
+	if !hasSessions {
+		return false, 0, false // publish'da o'quvchi qolmagan — idle logic yopadi
+	}
+	return true, time.Second, elapsed >= tcHealthy
+}
+
+// transcodeEnded — FFmpeg jarayoni tugadi (exit kodi qanday bo'lishidan
+// qat'iy nazar). Avval bu xabar yo'q edi: publish tirik qolganda
+// transcode o'lsa tc/... path' yo'qolib, o'quvchilar 404 olardi va
+// preview biror marta uzilsa butunlay tiklanmas edi (2026-11-21 audit).
+func (m *Manager) transcodeEnded(st *loopState, c *cmd) {
+	for _, p := range st.pubs {
+		if p.cameraID != c.cameraID || p.mode != "server_tc" {
+			continue
+		}
+		p.tcStarted = false
+		restart, delay, reset := tcRestartDecision(c.elapsed, len(p.sessions) > 0)
+		if !restart {
+			continue
+		}
+		if reset {
+			p.tcTries = 0
+		}
+		p.tcNextTry = m.deps.Clock.Now().Add(delay)
+		m.deps.Lg.Info("transcode uzildi — qayta ko'tariladi", "camera", p.cameraID,
+			"yashadi", c.elapsed.Round(time.Second).String(), "exit_xato", c.failed,
+			"try", p.tcTries)
+	}
+}
+
+// OnTranscodeEnd — Transcoder jarayon tugash habari (bloklamaydi).
+func (m *Manager) OnTranscodeEnd(cameraID string, elapsed time.Duration, failed bool) {
+	m.dropCmd(&cmd{op: "tcend", cameraID: cameraID, elapsed: elapsed, failed: failed})
 }
 
 // transcodeFailed — Transcoder xabar berdi: bu backend ishlamadi.
@@ -505,7 +618,7 @@ func (m *Manager) dropPubLocked(st *loopState, p *publish) {
 		delete(st.sessions, sid)
 	}
 	delete(st.pubs, p.id)
-	delete(st.byKey, pubKey(p.cameraID, p.profile, p.mode))
+	delete(st.byKey, pubKey(p.cameraID, p.profile))
 	if p.tcPath != "" {
 		_ = m.deps.MTX.DeletePath(p.tcPath)
 	}
@@ -549,7 +662,16 @@ func (p *publish) stopTargets() []string {
 	return out
 }
 
-func pubKey(cameraID, profile, mode string) string { return cameraID + "|" + profile + "|" + mode }
+// pubKey — publish dedup kaliti. REJA/§9.1: agent kamera+profil bo'yicha
+// BITTA original oqim ochadi (ingest bir xil), shuning uchun kalitda
+// transcode rejimi BO'LMASLIGI kerak. Avval mode ham kalitda edi:
+// avval hevc=true (direct), keyin hevc=false (server_tc) so'rovi kelganda
+// server ikkinchi publish ochib, ikkinchi media_start yuborardi — agent
+// esa uni dedup qilib refcount'ni o'stirdi-xolos, media_ready esa BITTA
+// marta keladi. Natijada ikkinchi sessiya "publishing"da qotib, 5 s'dan
+// keyin media_ready_timeout bilan o'lar, transcode umuman boshlanmas edi
+// (2026-11-21 server auditining asosiy topilmasi).
+func pubKey(cameraID, profile string) string { return cameraID + "|" + profile }
 
 // camCodecFor — o'quvchiga xabar qilinadigan kodek (profil bo'yicha).
 func camCodecFor(cam registry.Camera, profile string) string {

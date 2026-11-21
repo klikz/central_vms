@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -179,4 +180,40 @@ func TestIdleNoResponseCloses(t *testing.T) {
 		time.Sleep(30 * time.Millisecond)
 	}
 	t.Fatal("javobsiz UI yopilmadi")
+}
+
+// Mijoz uzilayotgan paytda Broadcast ishlasa panic bo'lmasligi kerak:
+// avval shutdown() `out` kanalini yopardi, Broadcast esa trySend'ni
+// qulf tashqarisida qiladi → "send on closed channel" bilan BUTUN vmsd
+// qulardi (2026-11-21 server auditi; race detektori ham shuni ko'rsatdi).
+func TestWsui_BroadcastDuringDisconnectNoPanic(t *testing.T) {
+	srv, h, acc := newTestHub(t, Config{PingTO: 20 * time.Millisecond, DeadTO: 200 * time.Millisecond})
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			h.Broadcast("session_state", map[string]any{"i": i})
+			time.Sleep(500 * time.Microsecond)
+		}
+	}()
+	for i := 0; i < 40; i++ {
+		ws := dial(t, srv, "?access="+acc)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer ws.Close()
+			_ = ws.SetReadDeadline(time.Now().Add(120 * time.Millisecond))
+			_, _, _ = ws.ReadMessage() // kimdir o'qiydi, kimdir uziladi
+		}()
+	}
+	time.Sleep(400 * time.Millisecond)
+	close(stop)
+	wg.Wait()
 }

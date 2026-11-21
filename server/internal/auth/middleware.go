@@ -33,6 +33,16 @@ func (r *Rate) Allow(key string) (ok bool, retryAfterS int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	now := r.clock.Now()
+	// Kalitlar (IP) umuman tozalanmas edi: har noyob IP uchun abadiy
+	// element qolardi va uzoq ishlagan vmsd'da RSS o'sib borardi
+	// (2026-11-21 auditi).
+	if len(r.hits) > 4096 {
+		for k, v := range r.hits {
+			if len(v) == 0 || now.Sub(v[len(v)-1]) >= r.window {
+				delete(r.hits, k)
+			}
+		}
+	}
 	orig := r.hits[key]
 	kept := make([]time.Time, 0, len(orig)+1)
 	for _, t := range orig {

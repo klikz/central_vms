@@ -67,10 +67,13 @@ type Hub struct {
 	conns       map[string]*Conn
 	epochs      map[string]int64 // cams_epoch (xotira; DB'ga S2'da yoziladi)
 	lastSeq     map[string]int64
-	syncApplied map[string]int // chunk'lar bo'yicha applied yig'indisi
-	clock       clock          // testlarda fake (idle/ping kuzatuvi)
-	sink        MediaSink      // S2: media xabarlari session manager'ga
-	ui          UIBroadcaster  // S3: UI'ga push
+	syncApplied map[string]int
+	// syncSeen — to'liq cams_sync'da KO'RINGAN kamera ID'lari (chunk'lar
+	// bo'yicha to'planadi; §4.2 pruning shu to'plamga qarab qilinadi).
+	syncSeen map[string]map[string]bool // chunk'lar bo'yicha applied yig'indisi
+	clock    clock                      // testlarda fake (idle/ping kuzatuvi)
+	sink     MediaSink                  // S2: media xabarlari session manager'ga
+	ui       UIBroadcaster              // S3: UI'ga push
 }
 
 // SetUI — UI push kanalin o'rnatish (S3.0).
@@ -113,6 +116,7 @@ func NewHub(cfg Config, reg *registry.Registry, lg *slog.Logger) *Hub {
 		cfg: cfg, registry: reg, lg: lg, clock: realNow{},
 		conns: map[string]*Conn{}, epochs: map[string]int64{}, lastSeq: map[string]int64{},
 		syncApplied: map[string]int{},
+		syncSeen:    map[string]map[string]bool{},
 	}
 }
 
@@ -150,6 +154,9 @@ func (h *Hub) Kick(agentID string, code int, reason string) bool {
 }
 
 // Send — agentga server xabari (yozuvchi goroutine'ga channel orqali).
+// maxAgentFrame — §2: bitta WS xabari ≤1 MiB (chunk'lar ≤900 KiB).
+const maxAgentFrame = 1 << 20
+
 func (h *Hub) Send(agentID, typ string, data any) error {
 	raw, err := json.Marshal(data)
 	if err != nil {

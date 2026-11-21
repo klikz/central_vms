@@ -611,3 +611,85 @@ func TestCamsSyncCarriesStatus(t *testing.T) {
 		t.Fatalf("status yo'qoldi: %+v", kam[0])
 	}
 }
+
+// cross-tenant: bitta agent boshqa mijozning kamerasini o'chira olmasligi
+// kerak (cams_sync `client_id` bo'yicha cheklanmagan edi; 2026-11-21 auditi).
+func TestCamsSync_CrossTenantDeleteIgnored(t *testing.T) {
+	e := newTestEnv(t)
+	agentA, secretA := e.enroll(t)
+	wsA, _ := dialHandshake(t, e, agentA, secretA, 1)
+	startHB(t, wsA)
+	sendA := func(typ string, data any) {
+		raw, _ := json.Marshal(data)
+		_ = wsA.WriteJSON(proto.Envelope{Type: typ, Seq: 2, TS: time.Now().UTC(), Data: raw})
+	}
+	sendA(proto.MsgCamsSync, proto.CamsSync{Epoch: 100, Full: true, SeqNo: 1, ChunkCount: 1, Done: true,
+		Cameras: []proto.CameraEntry{{Op: "upsert", ID: "k-shared", Name: "A-nomi", Status: "online"}}})
+	waitAck(t, wsA)
+
+	agentB, secretB := e.enroll(t)
+	wsB, _ := dialHandshake(t, e, agentB, secretB, 1)
+	startHB(t, wsB)
+	raw, _ := json.Marshal(proto.CamsSync{Epoch: 100, Full: true, SeqNo: 1, ChunkCount: 1, Done: true,
+		Cameras: []proto.CameraEntry{{Op: "delete", ID: "k-shared"}}})
+	_ = wsB.WriteJSON(proto.Envelope{Type: proto.MsgCamsSync, Seq: 2, TS: time.Now().UTC(), Data: raw})
+	waitAck(t, wsB)
+
+	c, err := e.reg.GetCamera("k-shared")
+	if err != nil {
+		t.Fatalf("begona kamera o'chirib yuborildi: %v", err)
+	}
+	if c.Name != "A-nomi" {
+		t.Fatalf("kamera buzildi: %+v", c)
+	}
+}
+
+// §4.2: `full:true` to'liq ro'yxat — agentda o'chirilgan kamera serverda
+// ham o'chirilishi kerak (avval `full` umuman o'qilmas edi, serverda
+// "o'lik kamera" abadiy qolardi).
+func TestCamsSync_FullPrunesMissing(t *testing.T) {
+	e := newTestEnv(t)
+	agentID, secret := e.enroll(t)
+	ws, _ := dialHandshake(t, e, agentID, secret, 1)
+	startHB(t, ws)
+	send := func(cs proto.CamsSync) {
+		raw, _ := json.Marshal(cs)
+		_ = ws.WriteJSON(proto.Envelope{Type: proto.MsgCamsSync, Seq: 2, TS: time.Now().UTC(), Data: raw})
+		waitAck(t, ws)
+	}
+	up := func(id string) proto.CameraEntry {
+		return proto.CameraEntry{Op: "upsert", ID: id, Name: id, Status: "online"}
+	}
+	send(proto.CamsSync{Epoch: 100, Full: true, SeqNo: 1, ChunkCount: 1, Done: true,
+		Cameras: []proto.CameraEntry{up("k1"), up("k2")}})
+	c, err := e.reg.GetClientByAgentID(agentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list, _ := e.reg.ListCamerasByClient(c.ID); len(list) != 2 {
+		t.Fatalf("boshida 2 kamera: %d", len(list))
+	}
+	// Keyingi to'liq sync'da k2 yo'q — u agentda o'chirilgan.
+	send(proto.CamsSync{Epoch: 101, Full: true, SeqNo: 1, ChunkCount: 1, Done: true,
+		Cameras: []proto.CameraEntry{up("k1")}})
+	list, _ := e.reg.ListCamerasByClient(c.ID)
+	if len(list) != 1 || list[0].ID != "k1" {
+		t.Fatalf("pruning ishlamadi: %+v", list)
+	}
+}
+
+func waitAck(t *testing.T, ws *websocket.Conn) {
+	t.Helper()
+	for i := 0; i < 20; i++ {
+		env := readEnv(t, ws)
+		if env.Type == proto.MsgCamsAck {
+			var ack proto.CamsAck
+			_ = json.Unmarshal(env.Data, &ack)
+			if !ack.OK {
+				t.Fatalf("cams_ack ok=false: %+v", ack)
+			}
+			return
+		}
+	}
+	t.Fatal("cams_ack kelmadi")
+}

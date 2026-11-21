@@ -187,13 +187,25 @@ func (m *Manager) Start(cam registry.Camera, userID int64, profile, kind string,
 }
 
 // Refresh — TTL uzaytirish (media_refresh + token extend).
-func (m *Manager) Refresh(sessionID string, extendS int) error {
-	return m.submit(&cmd{op: "refresh", sessionID: sessionID, extendS: extendS}).err
+// Refresh — sessiya TTL'ini uzaytirish. userID — so'rov egasi; u
+// sessiya egasi bilan bir xil bo'lishi shart (IDOR, 2026-11-21 auditi:
+// sessiya ID'lari wsui Broadcast'ida tarqaladi).
+func (m *Manager) Refresh(sessionID string, userID int64, extendS int) error {
+	return m.submit(&cmd{op: "refresh", sessionID: sessionID, userID: userID,
+		extendS: extendS, checkOwner: true}).err
 }
 
 // Stop — sessiyani yopish (user/close/ttl reason'lari).
+// Stop — sessiyani yopish. checkOwner bilan chaqirilsa, sessiya
+// egasidan boshqasiga 403 (ErrNotOwner) qaytadi.
 func (m *Manager) Stop(sessionID, reason string) error {
 	return m.submit(&cmd{op: "stop", sessionID: sessionID, reason: reason}).err
+}
+
+// StopAs — foydalanuvchi tomonidan: faqat o'z sessiyasini yopadi.
+func (m *Manager) StopAs(sessionID string, userID int64, reason string) error {
+	return m.submit(&cmd{op: "stop", sessionID: sessionID, userID: userID,
+		reason: reason, checkOwner: true}).err
 }
 
 // SessionsFor — filtr bo'yicha sessiya ID'lari (userID=0 — barchasi,
@@ -246,6 +258,9 @@ type cmd struct {
 	browserHEVC bool
 	ready       *proto.MediaReady
 	stopped     *proto.MediaStopped
+	checkOwner  bool          // sessiya egaligini tekshirish (IDOR)
+	elapsed     time.Duration // transcode yashagan vaqti (tcend)
+	failed      bool          // transcode xato bilan tugadimi (tcend)
 	res         *StartResult
 	ids         []string
 	err         error
@@ -311,6 +326,11 @@ type session struct {
 	expiresAt  time.Time
 	transcoded bool
 	backend    string
+	// browserHEVC — so'rov egasi H.265'ni o'ynay oladimi (§16.4).
+	// Transcode boshlanganda ham SHU sessiya original (cam/) oqimda
+	// qoladi: bitta kamerada HEVC'li va HEVC'siz tomoshabilar bo'lsa,
+	// HEVC'lini majburan o'girilgan oqimga o'tkazish sifatni buzadi.
+	browserHEVC bool
 }
 
 type loopState struct {
