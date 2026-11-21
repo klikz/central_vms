@@ -47,8 +47,9 @@ type Syncer struct {
 
 	ackCh chan proto.CamsAck // OnCamsAck orqali to'ldiriladi
 
-	mu  sync.Mutex
-	gen int64 // "restart" hisoblagichi: eski sync natijasi e'tiborga olinmaydi
+	mu     sync.Mutex
+	pushMu sync.Mutex // chunk'lar ketma-ketligi uchun
+	gen    int64      // "restart" hisoblagichi: eski sync natijasi e'tiborga olinmaydi
 }
 
 // NewSyncer — syncer quradi (clk nil → Real, log nil → Discard).
@@ -101,11 +102,13 @@ func (s *Syncer) currentGen() int64 {
 // Push — to'liq sync yuboradi (full=true): server `done: true` dan keyin
 // ro'yxatda bo'lmagan kameralarni o'chiradi (§4.2).
 func (s *Syncer) Push(epoch int64) error {
-	entries := make([]proto.CameraEntry, 0, len(s.st.Cameras)+len(s.st.PendingDeletes))
-	for _, c := range s.st.Cameras {
+	camsList := s.st.SnapshotCameras()
+	pending := s.st.SnapshotPending()
+	entries := make([]proto.CameraEntry, 0, len(camsList)+len(pending))
+	for _, c := range camsList {
 		entries = append(entries, entryFromCamera(c))
 	}
-	for _, id := range s.st.PendingDeletes {
+	for _, id := range pending {
 		entries = append(entries, proto.CameraEntry{Op: "delete", ID: id})
 	}
 	return s.push(epoch, true, entries)
@@ -117,20 +120,30 @@ func (s *Syncer) PushDelta(epoch int64, ids []string) error {
 	for _, id := range ids {
 		want[id] = true
 	}
-	entries := make([]proto.CameraEntry, 0, len(ids)+len(s.st.PendingDeletes))
-	for _, c := range s.st.Cameras {
+	camsList := s.st.SnapshotCameras()
+	pending := s.st.SnapshotPending()
+	entries := make([]proto.CameraEntry, 0, len(ids)+len(pending))
+	for _, c := range camsList {
 		if want[c.ID] {
 			entries = append(entries, entryFromCamera(c))
 		}
 	}
-	for _, id := range s.st.PendingDeletes {
+	for _, id := range pending {
 		entries = append(entries, proto.CameraEntry{Op: "delete", ID: id})
 	}
 	return s.push(epoch, false, entries)
 }
 
+// pushMu — chunk'lar ketma-ket yuborilishi uchun (audit, 2026-11-21):
+// ikki parallel sync o'zaro bir-birining ack'ini "yeyishi", ack kutish
+// keshi (drainAcks) aralashishi va pending_deletes erta tozalanishi
+// mumkin edi.
+func (s *Syncer) pushMuLock() { s.pushMu.Lock() }
+
 // push — chunk'larga bo'lib, har biridan keyin ack kutadi.
 func (s *Syncer) push(epoch int64, full bool, entries []proto.CameraEntry) error {
+	s.pushMu.Lock()
+	defer s.pushMu.Unlock()
 	gen := s.currentGen()
 	chunks := chunkEntries(entries)
 	if len(chunks) == 0 && !full {
@@ -150,7 +163,7 @@ func (s *Syncer) push(epoch int64, full bool, entries []proto.CameraEntry) error
 		}
 	}
 	// Barcha chunk'lar tasdiqlandi → delete navbati tozalanadi (§4.3)
-	s.st.ClearPendingDeletes()
+	s.st.Mutate(func() { s.st.ClearPendingDeletes() })
 	if err := s.st.Save(); err != nil {
 		s.log.Warn("pending_deletes tozalash saqlanmadi", "err", err.Error())
 	}

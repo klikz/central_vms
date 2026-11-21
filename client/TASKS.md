@@ -439,3 +439,58 @@ Qolgan bo'sh joylar:
 - [x] Kamera RTSP foydalanuvchisi modelga qo'shildi (`cams.Camera.User`,
       standart `admin`), UI maydoni endi haqiqatan ishlatiladi; pull va
       probe shu nom bilan kiradi. Test: `TestCamUserField` (2026-11-21).
+
+## 2026-11-21 — mijoz (agent) auditi: topilgan muammolar va holati
+
+Auditda 8 tasdiqlangan muammo topildi — barchasi tuzatildi (testlar bilan).
+
+- [x] **1. Probe faol oqim paytida kameraga ikkinchi RTSP sessiyasi ochardi**
+      (`preview.go` targets + `cams/watcher.go`). Hikvision sessiya
+      limitlari tuzaytir: probe asossiz `offline` ko'rsatardi yoki
+      publish sessiyasini uzardi. Yechim: `cams.Gate` — pull oqimi
+      kamerani bandlaydi, probe/preview rasm band kamerada
+      **o'tkazib yuboriladi**, natija `unknown` (holat buzilmaydi).
+      Testlar: `TestGatePublishBlocksProbe`, `TestGateMultiplePublishes`,
+      `TestProbeBusyCameraKeepsUnknown`. Jonli: preview ochiq paytda
+      `probe sikli tugadi cams=0`, kamera `online` holda qoldi.
+- [x] **2. Qayta ulanish kutishi sog'lom sessiyadan keyin ham o'sib
+      borardi** (`agent/run.go` — `Backoff.Reset()` chaqirilmas edi).
+      Endi sessiya ≥60 s yashasa hisob bazaga qaytadi.
+      Test: `TestResetBackoff_AfterHealthySession`.
+- [x] **3. Transport race/sizib chiqishi** (`media/manager.go`: `s.tr`
+      registry goroutine'ida lock'siz o'qilardi; ochilayotgan transport
+      yopilmay qolardi). Endi qulf ostida + kech ochilgan transport
+      darhol yopiladi. Test: `TestMediaMgr_LateTransportIsClosed`.
+- [x] **4. `sub` profili MAIN oqimini tortardi** (`CamRTSPURL` profilni
+      bilmas edi). Endi `SubPath` ishlatiladi. **Jonli foyda:** sub
+      preview oqimi 2688x1520 o'rniga **640x360** (ffprobe bilan
+      o'lchandi) — kamera sessiyasi, agent CPU'si va tarmoq tejaladi.
+- [x] **5. Parallel `cams_sync` chunk/ack aralashuvi** (`agent/sync.go`
+      `pushMu` + runtime'da `runSync` debounce: `syncing/syncAgain`).
+      Test: `TestSync_ConcurrentPushSerialized`.
+- [x] **6. Parol eksporti himoyasiz edi** (`localui/cams.go`):
+      `with_secrets=1` endi bir martalik nonce talab qiladi
+      (`POST /api/ui/cams/export-nonce`, 60 s), eksport loglanadi;
+      `ui_bind` localhost bo'lmasa ishga tushishda ogohlantirish
+      (main.go'da bu ogohlantirish umuman yo'q edi).
+      Test: `TestCamsExportSecretsNeedsNonce`.
+- [x] **7. Agent o'zi WS ping yubormas edi** — server eski versiyada
+      (ping envelope'isiz) 60 s flap qaytardi. Endi agent har 20 s'da
+      ping yuboradi, pong kelganda o'qish muddati uzatiladi
+      (`ReadTO`/`PingEvery` sozlanadi).
+      Testlar: `TestServe_AgentPingKeepsConnection`,
+      `TestServe_ReadTimeoutWithoutPing`.
+- [x] **8. Kuzatuvchanlik**: buzilgan RTP paketlari sanaladi va
+      davomiy holda loglanadi; pull loglarida `session/camera_id/profile`
+      maydonlari; `hb`da `rtp_discarded`/`au_forwarded` (§4.10).
+- [x] **Qo'shimcha topilgan race (test davomida ochildi):** `state.State`
+      maydonlariga qulf ostida tegiladi — `Mutate/MutateEpoch/
+      SnapshotCameras/SnapshotPending` qoidalari; camsvc CRUD shu
+      qoidaga keltirildi; `SetCodec` epoch'ni faqat o'zgarish bo'lsa
+      o'stiradi; `SetCameras` ichida `BumpEpoch` qayta qulf olishi
+      (deadlock) tuzatildi. Test: `TestConcurrentMutateSnapshotSave`.
+
+**Qolgan (keyingi yurish):** `internal/media`da main+sub bir vaqtda
+tortilganda kamera sessiya limiti (gate hisoblagichi 2 ga ruxsat beradi —
+prod'da `limits.max_uploads` orqali cheklash tavsiya etiladi);
+`naldump` kabi diagnostika vositalarini `make` targetlariga ulash.

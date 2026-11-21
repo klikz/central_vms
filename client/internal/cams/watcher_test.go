@@ -331,3 +331,18 @@ func TestProbeOnceCodec(t *testing.T) {
 		t.Errorf("wantCodec=false bo'lsa kodek o'qilmasligi kerak edi: %+v", r2)
 	}
 }
+
+// Kamera band bo'lsa probe natijasi "unknown" — ya'ni oldingi holat
+// buzilmaydi va serverga "offline" ketmaydi (2026-11-21 audit topilmasi).
+func TestProbeBusyCameraKeepsUnknown(t *testing.T) {
+	dial := func(ctx context.Context, url string) (Prober, func() error, error) {
+		return nil, nil, ErrCameraBusy
+	}
+	r := ProbeOnce(context.Background(), dial, "rtsp://x", 0)
+	if r.Status != StatusUnknown {
+		t.Fatalf("status: %q, unknown kutilardi", r.Status)
+	}
+	if r.Method != "gate" {
+		t.Fatalf("method: %q", r.Method)
+	}
+}

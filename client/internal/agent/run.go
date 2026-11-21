@@ -44,6 +44,8 @@ func profileForError(err error) Profile {
 // Yopinish/xato bo'lsa ConnError yoki boshqa xato qaytadi.
 func (s *Session) serve(ctx context.Context, conn *websocket.Conn) error {
 	sendCh := make(chan proto.Envelope, 64)
+	pingTick := s.cfg.Clock.NewTicker(s.cfg.PingEvery)
+	defer pingTick.Stop()
 	errCh := make(chan error, 2)
 	s.setSendCh(sendCh)
 	s.setConn(conn)
@@ -56,9 +58,15 @@ func (s *Session) serve(ctx context.Context, conn *websocket.Conn) error {
 	// daqiqada qayta ulanar edi). Default pong handler overwrite
 	// qilingani uchun pong o'zimiz yuboriladi.
 	conn.SetPingHandler(func(appData string) error {
-		_ = conn.SetReadDeadline(s.cfg.Clock.Now().Add(readTimeout))
+		_ = conn.SetReadDeadline(s.cfg.Clock.Now().Add(s.cfg.ReadTO))
 		return conn.WriteControl(websocket.PongMessage, []byte(appData),
 			s.cfg.Clock.Now().Add(writeTimeout))
+	})
+	// Bizning ping'imizga pong ham faollik belgisi (kontrol frame ReadJSON'ni
+	// qaytarmaydi — deadline'ni shu yerda uzaytiramiz).
+	conn.SetPongHandler(func(string) error {
+		_ = conn.SetReadDeadline(s.cfg.Clock.Now().Add(s.cfg.ReadTO))
+		return nil
 	})
 
 	// Yagona yozuvchi goroutine (TASKS §0.3: murakkab mutex'lar yo'q)
@@ -76,7 +84,7 @@ func (s *Session) serve(ctx context.Context, conn *websocket.Conn) error {
 	// C1.14/C2 da ishlatiladi — hozircha noma'lum turlar jimgina o'tkaziladi (§1).
 	go func() {
 		for {
-			_ = conn.SetReadDeadline(s.cfg.Clock.Now().Add(readTimeout))
+			_ = conn.SetReadDeadline(s.cfg.Clock.Now().Add(s.cfg.ReadTO))
 			var env proto.Envelope
 			if err := conn.ReadJSON(&env); err != nil {
 				var ce *websocket.CloseError
@@ -108,6 +116,14 @@ func (s *Session) serve(ctx context.Context, conn *websocket.Conn) error {
 		case err := <-errCh:
 			s.closeSendCh(sendCh)
 			return err
+		case <-pingTick.C():
+			// Agent ham WS ping yuboradi: server eski bo'lsa yoki TCP
+			// yarim-ochiq bo'lsa, ulanishning o'lganini erta bilamiz.
+			if err := conn.WriteControl(websocket.PingMessage, []byte("agent"),
+				s.cfg.Clock.Now().Add(writeTimeout)); err != nil {
+				s.closeSendCh(sendCh)
+				return err
+			}
 		case <-tick.C():
 			now := s.cfg.Clock.Now()
 			data := map[string]any{"uptime_s": int64(now.Sub(s.cfg.StartedAt).Seconds())}
@@ -140,7 +156,13 @@ func (s *Session) Run(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return nil
 		}
+		start := s.cfg.Clock.Now()
 		err := s.connectAndServe(ctx)
+		// Sog'lom sessiya bo'lgan bo'lsa kutish bazasini qaytamiz —
+		// aks holda hisob kunlar davomida o'sib boradi va 5 sekundlik
+		// tarmoq uzilishidan keyin agent 60 s (ba'zan 300 s) kutadi
+		// (2026-11-21 audit topilmasi).
+		resetBackoff(bo, s.cfg.Clock.Now().Sub(start))
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return nil
 		}
@@ -211,4 +233,12 @@ func fmtDialErr(err error) error {
 		return &ConnError{Code: 0, Reason: "WS upgrade rad etildi (server /api/agent/ws yo'q yoki boshqa javob berdi)"}
 	}
 	return err
+}
+
+// resetBackoff — sessiya davomiyligi bo'yicha urinishlar hisobini
+// tiklash qarori (deterministik test uchun ajratilgan).
+func resetBackoff(bo *Backoff, dur time.Duration) {
+	if dur >= healthySession {
+		bo.Reset()
+	}
 }

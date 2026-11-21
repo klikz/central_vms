@@ -1,10 +1,13 @@
 package localui
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"time"
 
 	"central-vms/client/internal/cams"
 	"central-vms/client/internal/camsvc"
@@ -34,6 +37,7 @@ func (s *Server) camRoutes() {
 	s.mux.HandleFunc("DELETE /api/ui/cams", s.handleCamsDelete)
 	s.mux.HandleFunc("POST /api/ui/cams/import", s.handleCamsImport)
 	s.mux.HandleFunc("GET /api/ui/cams/export", s.handleCamsExport)
+	s.mux.HandleFunc("POST /api/ui/cams/export-nonce", s.handleExportNonce)
 }
 
 // camsReady — xizmat ulanmagan bo'lsa 501 (§17.1).
@@ -44,6 +48,9 @@ func (s *Server) camsReady(w http.ResponseWriter) bool {
 	}
 	return true
 }
+
+// nonceTTL — parol eksporti tasdiq nonce'ining yashash muddati.
+const nonceTTL = 60 * time.Second
 
 func (s *Server) handleCamsList(w http.ResponseWriter, r *http.Request) {
 	if !s.camsReady(w) {
@@ -133,11 +140,66 @@ func (s *Server) handleCamsImport(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rep)
 }
 
+// handleExportNonce — parol eksporti uchun bir martalik tasdiq oladi.
+// UI/operator avval shu so'rovni yuboradi, keyin eksportda `nonce`
+// bilan keladi. Bu qadam parollarni tasodifiy/avtomatik so'rov bilan
+// chiqib ketishini oldini oladi (§10.2).
+func (s *Server) handleExportNonce(w http.ResponseWriter, r *http.Request) {
+	if !s.camsReady(w) {
+		return
+	}
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "nonce_xato"})
+		return
+	}
+	n := hex.EncodeToString(buf)
+	s.nonceMu.Lock()
+	if s.nonces == nil {
+		s.nonces = map[string]time.Time{}
+	}
+	for k, at := range s.nonces { // eskirganlarni tozalash
+		if time.Since(at) > nonceTTL {
+			delete(s.nonces, k)
+		}
+	}
+	s.nonces[n] = time.Now()
+	s.nonceMu.Unlock()
+	writeJSON(w, http.StatusOK, map[string]any{"nonce": n, "ttl_s": int(nonceTTL.Seconds())})
+}
+
+// consumeNonce — nonce'ni bir marta ishlatish uchun olish.
+func (s *Server) consumeNonce(v string) bool {
+	if v == "" {
+		return false
+	}
+	s.nonceMu.Lock()
+	defer s.nonceMu.Unlock()
+	at, ok := s.nonces[v]
+	if !ok {
+		return false
+	}
+	delete(s.nonces, v)
+	return time.Since(at) <= nonceTTL
+}
+
 func (s *Server) handleCamsExport(w http.ResponseWriter, r *http.Request) {
 	if !s.camsReady(w) {
 		return
 	}
 	withSecrets := r.URL.Query().Get("with_secrets") == "1"
+	if withSecrets && !s.consumeNonce(r.URL.Query().Get("nonce")) {
+		s.log.Warn("parol eksporti rad etildi: tasdiq nonce kerak",
+			"maslahat", "avval POST /api/ui/cams/export-nonce so'rang")
+		writeJSON(w, http.StatusForbidden, map[string]string{
+			"error":  "nonce_kerak",
+			"detail": "parollarni eksport qilish uchun avval POST /api/ui/cams/export-nonce orqali bir martalik tasdiq oling",
+		})
+		return
+	}
+	if withSecrets {
+		s.log.Warn("EKSPORT: barcha kamera parollari chiqarildi (with_secrets=1)")
+	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="cameras.csv"`)
 	if err := s.cams.ExportCSV(w, withSecrets); err != nil {

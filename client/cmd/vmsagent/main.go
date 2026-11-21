@@ -3,12 +3,14 @@
 package main
 
 import (
+	"central-vms/client/internal/cams"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -169,8 +171,12 @@ func run(ctx context.Context, log *slog.Logger, cfgPath string,
 	rt := &runtime{cfg: cfg, cfgPath: cfgPath, log: log, ring: ring, reloadCh: make(chan bool, 1)}
 	rt.selftest = rt.newSelftest() // C4.6 paneli (deps'lar lazy o'qiydi)
 	// C3.20: registry + media boshqaruvchisi (hodisalar o'zaro bog'langan).
+	// gate — kamera qurilmasiga RTSP murojaatlari: pull oqimi faol
+	// paytida probe/preview rasm o'tkazib yuboriladi (§12.1/§8.3b).
+	rt.gate = cams.NewGate()
 	rt.media = media.New(media.Config{
 		Log:          rt.log,
+		Gate:         rt.gate,
 		LookupCamera: rt.lookupCamera,
 		LookupSecret: func(ref string) (string, bool) { return rt.ks.Get(ref) },
 		Send: func(typ string, data any) error {
@@ -207,6 +213,7 @@ func run(ctx context.Context, log *slog.Logger, cfgPath string,
 	cs.OnChanged = rt.onCamsChanged
 	rt.cs = cs // §6.5: qo'shish/o'chirish darhol sync
 	pv := newPreviewSvc(cs, rt.ks, rt.previews, rt.snap, rt.log, rt.reportCamStatus)
+	pv.SetGate(rt.gate)
 	rt.pv = pv
 	go pv.Run(ctx)
 	ui, err := localui.NewServer(cfg, log, version, localui.Deps{
@@ -228,6 +235,14 @@ func run(ctx context.Context, log *slog.Logger, cfgPath string,
 		return fmt.Errorf("lokal UI: %w", err)
 	}
 	uiErr := make(chan error, 1)
+	// ui_bind localhost bo'lmasa — ogohlantirish (1.0-draft.10: LAN bind
+	// taqiqlanmaydi, lekin xavf ko'rinib turishi kerak). Parol eksporti
+	// endi bir martalik nonce talab qiladi (§10.2 audit, 2026-11-21).
+	if h, _, err := net.SplitHostPort(cfg.UIBind); err == nil &&
+		h != "127.0.0.1" && h != "localhost" && h != "::1" && h != "" {
+		log.Warn("lokal UI tarmoqda ochiq", "ui_bind", cfg.UIBind,
+			"izoh", "bu manzildagi har qanday PC kamera qo'sha/tahrirlay oladi; parol eksporti nonce talab qiladi")
+	}
 	go func() { uiErr <- ui.Run(ctx, cfg.UIBind) }()
 	log.Info("lokal UI ishga tushdi", "addr", "http://"+cfg.UIBind)
 

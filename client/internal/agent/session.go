@@ -25,6 +25,10 @@ const (
 	hbInterval      = 30 * time.Second // idle heartbeat (§2)
 	writeTimeout    = 10 * time.Second
 	maxMessageBytes = 1 << 20 // 1 MiB (§2)
+	// healthySession — sessiya shu davrdan uzoq yashasa "sog'lom" hisob:
+	// qayta ulanish kutishi bazaga qaytariladi (backoff hisobi
+	// kunlar davomida o'sib ketmasligi uchun).
+	healthySession = 60 * time.Second
 )
 
 // ConnError — server yopish kodi (§1, §3.3: 4001/4002/4003/4004).
@@ -61,6 +65,13 @@ type SessionConfig struct {
 	Log   *slog.Logger // nil → Discard
 	// HbInterval — idle heartbeat davri (§2 default 30 s; testlarda qisqartiriladi).
 	HbInterval time.Duration
+	// ReadTO — o'quvchi taymauti (0 → 60 s). Uning ichida kamida bitta
+	// frame kelishi kerak (server ping yoki agentning o'z ping'iga pong).
+	ReadTO time.Duration
+	// PingEvery — agentning o'zi yuboradigan WS ping davri (0 → 20 s).
+	// Server ping yubormasa ham (eski versiya) ulanish tirikligini
+	// bilish va o'qish muddatini uzatish uchun kerak (audit, 2026-11-21).
+	PingEvery time.Duration
 	// OnDisconnect — ulanish uzilganda chaqiriladi (UI status chizig'i uchun, §17).
 	OnDisconnect func(error)
 	// OnMessage — serverdan kelgan har bir xabar (dispatch uchun).
@@ -84,6 +95,12 @@ func (c *SessionConfig) withDefaults() {
 	}
 	if c.StartedAt.IsZero() {
 		c.StartedAt = c.Clock.Now()
+	}
+	if c.ReadTO <= 0 {
+		c.ReadTO = readTimeout
+	}
+	if c.PingEvery <= 0 {
+		c.PingEvery = 20 * time.Second
 	}
 	if c.HbInterval <= 0 {
 		c.HbInterval = hbInterval

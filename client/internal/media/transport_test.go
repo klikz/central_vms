@@ -40,7 +40,7 @@ func TestAnnounceSDP(t *testing.T) {
 }
 
 func TestCamRTSPURLDefaults(t *testing.T) {
-	c := CamRTSPURL(cams.Camera{Host: "10.0.0.7"})
+	c := CamRTSPURL(cams.Camera{Host: "10.0.0.7"}, "main")
 	if c != "rtsp://10.0.0.7:554/" {
 		t.Errorf("got %q", c)
 	}

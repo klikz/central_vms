@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"central-vms/client/internal/cams"
@@ -49,6 +50,10 @@ type Manager struct {
 
 	mu   sync.Mutex
 	sess map[publish.Key]*sess
+
+	// Yig'ma hisoblagichlar (§17 kuzatuvchanlik; hb Stats'ida chiqadi).
+	discardedTotal atomic.Int64 // buzilgan RTP paketlari
+	auTotal        atomic.Int64 // o'tkazib berilgan access unitlar
 }
 
 // Config — boshqaruvchining tashqi bog'lanishlari (WS send, qidiruvlar).
@@ -62,6 +67,9 @@ type Config struct {
 	// OpenFn/PullFn — injeksiya (testlarda fake); nil → real transportlar.
 	OpenFn func(ctx context.Context, plan publish.StartPlan, cam cams.Camera, pass string) (Transport, error)
 	PullFn func(ctx context.Context, o cams.PullOptions, sink func(cams.AU) error) error
+	// Gate — kameraga RTSP murojaatlarini hisoblash (§12.1/§8.3b).
+	// nil → nazorat yo'q (testlar uchun).
+	Gate *cams.Gate
 }
 
 // SetRegistry — registry keyinchalik bog'lanadi (o'zaro havola uchun).
@@ -120,6 +128,10 @@ func (m *Manager) OnStart(ms proto.MediaStart) {
 
 // run — transport ochish + kamera oqimini uni ustiga yozish (§8, §9.3).
 func (m *Manager) run(ctx context.Context, s *sess, cam cams.Camera) {
+	if m.cfg.Gate != nil {
+		m.cfg.Gate.AcquirePublish(cam.ID)
+		defer m.cfg.Gate.ReleasePublish(cam.ID)
+	}
 	pass := ""
 	if cam.SecretRef != "" && m.cfg.LookupSecret != nil {
 		if b, ok := m.cfg.LookupSecret(cam.SecretRef); ok {
@@ -138,14 +150,33 @@ func (m *Manager) run(ctx context.Context, s *sess, cam cams.Camera) {
 	}
 	m.mu.Lock()
 	s.tr = tr
+	dead := ctx.Err() != nil || m.sess[s.key] != s
 	m.mu.Unlock()
+	if dead {
+		// Sessiya transport ochilayotganda yopilgan — transportni o'zi
+		// yopamiz, aks holda socket/goroutine sizib chiqadi (audit, 2026-11-21).
+		m.mu.Lock()
+		if s.tr == tr {
+			s.tr = nil
+		}
+		m.mu.Unlock()
+		_ = tr.Close()
+		return
+	}
 
 	first := true
 	user := cam.User
 	if user == "" {
 		user = "admin" // eski konfiglar/agentlar uchun standart (§10.2)
 	}
-	o := cams.PullOptions{URL: CamRTSPURL(cam), User: user, Pass: pass, Log: m.cfg.Log}
+	ps := &cams.PullStats{}
+	defer func() {
+		m.discardedTotal.Add(ps.Discards.Load())
+		m.auTotal.Add(ps.AUs.Load())
+	}()
+	o := cams.PullOptions{URL: CamRTSPURL(cam, s.key.Profile), User: user, Pass: pass, Log: m.cfg.Log,
+		Stats: ps,
+		Label: "session=" + s.sessionID + " camera_id=" + cam.ID + " profile=" + s.key.Profile}
 	perr := m.pullFn(ctx, o, func(au cams.AU) error {
 		if err := tr.WriteAU(au.Nals, au.Timestamp); err != nil {
 			return err
@@ -214,13 +245,26 @@ func (m *Manager) closeSess(k publish.Key) {
 	m.mu.Lock()
 	s := m.sess[k]
 	delete(m.sess, k)
+	var tr Transport
+	if s != nil {
+		tr = s.tr // lock ostida o'qiladi: run() ham shu maydonni yozadi
+		s.tr = nil
+	}
 	m.mu.Unlock()
 	if s == nil {
 		return
 	}
 	s.cancel()
-	if s.tr != nil {
-		_ = s.tr.Close()
+	if tr != nil {
+		_ = tr.Close()
+	}
+}
+
+// Stats — yig'ma oqim hisoblagichlari (§4.10 hb maydonlari uchun).
+func (m *Manager) Stats() map[string]any {
+	return map[string]any{
+		"rtp_discarded": m.discardedTotal.Load(),
+		"au_forwarded":  m.auTotal.Load(),
 	}
 }
 

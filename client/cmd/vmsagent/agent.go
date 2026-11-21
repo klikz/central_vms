@@ -55,11 +55,14 @@ type runtime struct {
 	selftest  *selftest.Runner  // C4.6 paneli
 
 	cs       *camsvc.Service   // kamera modeli (kodek/probe natijalari)
+	gate     *cams.Gate        // kameraga RTSP murojaatlari navbati (§12.1)
 	pv       *previewSvc       // §12.2 probe sikli + preview snapshotlari
 	previews *preview.Store    // <state_dir>/previews/<camID>.jpg
 	snap     *preview.Capturer // ffmpeg orqali 1 kadr
 
 	mu              sync.Mutex
+	syncing         bool // runSync — bitta oqimda yurayapti
+	syncAgain       bool // sikl tugagach yana kerak (debounce)
 	online          bool
 	rep             *agent.StatusReporter // §4.4/4.5 holat yuboruvchi (sessiya bilan almashtiriladi)
 	authRejected    bool                  // §3.6: server secret'ni rad etdi (4003/4004)
@@ -504,7 +507,13 @@ func (r *runtime) newSession() *agent.Session {
 				pub = len(r.publishes.List())
 			}
 			r.mu.Unlock()
-			return map[string]any{"mem_mb": int64(ms.Alloc / (1024 * 1024)), "publishes": int64(pub)}
+			out := map[string]any{"mem_mb": int64(ms.Alloc / (1024 * 1024)), "publishes": int64(pub)}
+			if r.media != nil { // §17: buzilgan paketlar/o'tkazilgan AU'lar
+				for k, v := range r.media.Stats() {
+					out[k] = v
+				}
+			}
+			return out
 		},
 	}
 	sess := agent.NewSession(cfg)
@@ -611,7 +620,37 @@ func (r *runtime) reportAllCamStatus() {
 }
 
 // runSync — sync'ni goroutine'da bajaradi; xato UI statusida ko'rinadi (§4.3).
+// runSync — cams_sync'ni bitta oqimda yurgizadi. Bir necha manba
+// (welcome, kamera o'zgarishi, kodek aniqlashi) bir vaqtda chaqirsa,
+// ikkinchisi navbatga qo'yilmaydi: "keyin ham kerak" belgisi qo'yiladi
+// va joriy sikl tugagach BIR marta qayta tekshiriladi (debounce).
+// Parallel sync'lar chunk/ack ketma-ketligini buzardi (audit, 2026-11-21).
 func (r *runtime) runSync() {
+	r.mu.Lock()
+	if r.syncing {
+		r.syncAgain = true
+		r.mu.Unlock()
+		return
+	}
+	r.syncing = true
+	r.mu.Unlock()
+	for {
+		r.syncOnce()
+		r.mu.Lock()
+		again := r.syncAgain
+		r.syncAgain = false
+		done := !again
+		if done {
+			r.syncing = false
+		}
+		r.mu.Unlock()
+		if done {
+			return
+		}
+	}
+}
+
+func (r *runtime) syncOnce() {
 	r.mu.Lock()
 	w, sy := r.welcome, r.syncer
 	r.mu.Unlock()

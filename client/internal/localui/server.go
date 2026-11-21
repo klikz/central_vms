@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"central-vms/client/internal/cams"
@@ -129,6 +130,13 @@ type Server struct {
 	discovery     DiscoveryService
 	snap          SnapshotSource
 	mux           *http.ServeMux
+
+	// nonces — parol eksporti uchun bir martalik tasdiq (60 s).
+	// Lokal UI'da PIN yo'q (§10.3 bekor qilindi), shuning uchun
+	// barcha kamera parollarini chiqarish alohida tasdiq talab qiladi
+	// (2026-11-21 audit: `with_secrets=1` himoyasiz edi).
+	nonceMu sync.Mutex
+	nonces  map[string]time.Time
 }
 
 // NewServer — UI serverini quradi. Deps maydonlari nil bo'lsa bo'sh natija qaytariladi.

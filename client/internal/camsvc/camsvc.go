@@ -46,15 +46,14 @@ func New(st *statestore.State, ks *keystore.Store) *Service {
 
 // List — barcha kameralar (position bo'yicha tartiblangan).
 func (s *Service) List() []cams.Camera {
-	out := make([]cams.Camera, len(s.St.Cameras))
-	copy(out, s.St.Cameras)
+	out := s.St.SnapshotCameras()
 	sortByPosition(out)
 	return out
 }
 
 // Get — id bo'yicha.
 func (s *Service) Get(id string) (cams.Camera, bool) {
-	for _, c := range s.St.Cameras {
+	for _, c := range s.St.SnapshotCameras() {
 		if c.ID == id {
 			return c, true
 		}
@@ -70,21 +69,31 @@ func (s *Service) Create(c cams.Camera, secret string) (cams.Camera, error) {
 	if c.ID == "" {
 		c.ID = cams.NewID()
 	}
-	if _, exists := s.Get(c.ID); exists {
-		return cams.Camera{}, fmt.Errorf("camera %s already exists", c.ID)
-	}
 	if err := c.Valid(); err != nil {
 		return cams.Camera{}, err
-	}
-	if c.Position == 0 {
-		c.Position = len(s.St.Cameras) + 1
 	}
 	if secret != "" {
 		c.SecretRef = cams.SecretRefFor(c.ID, "main")
 		s.KS.Put(c.SecretRef, secret)
 	}
-	s.St.Cameras = append(s.St.Cameras, c)
-	s.St.BumpEpoch()
+	// Qulf ichida tekshirish + qo'shish: parallel CRUD yoki sync
+	// o'qishi bilan race bo'lmasin (statestore.Mutate qoidasi).
+	added := false
+	s.St.MutateEpoch(func() {
+		for _, ex := range s.St.Cameras {
+			if ex.ID == c.ID {
+				return
+			}
+		}
+		if c.Position == 0 {
+			c.Position = len(s.St.Cameras) + 1
+		}
+		s.St.Cameras = append(s.St.Cameras, c)
+		added = true
+	})
+	if !added {
+		return cams.Camera{}, fmt.Errorf("camera %s already exists", c.ID)
+	}
 	if err := s.commit(); err != nil {
 		return cams.Camera{}, err
 	}
@@ -95,7 +104,7 @@ func (s *Service) Create(c cams.Camera, secret string) (cams.Camera, error) {
 // Update — maydonlarni almashtirish (id o'zgarmaydi, §5).
 // secret==nil → parol tegilmaydi; secret=="" → o'chiriladi; aks holda yangilanadi.
 func (s *Service) Update(id string, patch cams.Camera, secret *string) (cams.Camera, error) {
-	for i, c := range s.St.Cameras {
+	for i, c := range s.St.SnapshotCameras() {
 		if c.ID != id {
 			continue
 		}
@@ -125,8 +134,9 @@ func (s *Service) Update(id string, patch cams.Camera, secret *string) (cams.Cam
 		if patch.User == "" {
 			patch.User = c.User // tahrirda maydon bo'sh kelsa saqlanadi
 		}
-		s.St.Cameras[i] = patch
-		s.St.BumpEpoch()
+		s.St.MutateEpoch(func() {
+			s.St.Cameras[i] = patch
+		})
 		if err := s.commit(); err != nil {
 			return cams.Camera{}, err
 		}
@@ -140,24 +150,35 @@ func (s *Service) Update(id string, patch cams.Camera, secret *string) (cams.Cam
 // cams_epoch O'SMAYDI: holat agent-ichki kuzatuv (§12.2); serverga
 // cam_status hodisasi alohida yuboriladi.
 func (s *Service) SetStatus(id string, st cams.Status, at time.Time) error {
-	for i := range s.St.Cameras {
-		if s.St.Cameras[i].ID == id {
-			s.St.Cameras[i].Status = st
-			t := at
-			s.St.Cameras[i].LastCheckAt = &t
-			return s.St.Save()
+	found := false
+	s.St.Mutate(func() {
+		for i := range s.St.Cameras {
+			if s.St.Cameras[i].ID == id {
+				s.St.Cameras[i].Status = st
+				t := at
+				s.St.Cameras[i].LastCheckAt = &t
+				found = true
+				return
+			}
 		}
+	})
+	if !found {
+		return fmt.Errorf("%w: %s", ErrNotFound, id)
 	}
-	return fmt.Errorf("%w: %s", ErrNotFound, id)
+	return s.St.Save()
 }
 
 // SetCodec — probe'dan olingan kodekni modelga yozadi va sync'ni
 // harakatlantiradi (1.0-draft.12: kodek noma'lum bo'lsa agent H.265
 // kamerani H.264 deb e'lon qilardi — oqim buzilar edi).
 func (s *Service) SetCodec(id, main, sub string) error {
-	for i := range s.St.Cameras {
-		if s.St.Cameras[i].ID == id {
-			changed := false
+	found, changed := false, false
+	s.St.Mutate(func() {
+		for i := range s.St.Cameras {
+			if s.St.Cameras[i].ID != id {
+				continue
+			}
+			found = true
 			if main != "" && s.St.Cameras[i].CodecMain != main {
 				s.St.Cameras[i].CodecMain = main
 				changed = true
@@ -166,18 +187,26 @@ func (s *Service) SetCodec(id, main, sub string) error {
 				s.St.Cameras[i].CodecSub = sub
 				changed = true
 			}
-			if !changed {
-				return nil
-			}
-			if err := s.St.Save(); err != nil {
-				return err
-			}
-			s.St.BumpEpoch()
-			s.changed()
-			return nil
+			return
 		}
+	})
+	if !found {
+		return fmt.Errorf("%w: %s", ErrNotFound, id)
 	}
-	return fmt.Errorf("%w: %s", ErrNotFound, id)
+	if !changed {
+		return nil
+	}
+	// Epoch faqat o'zgarish bo'lganda o'sadi (probe har 30 s'da chaqiradi —
+	// aks holda keraksiz cams_sync ketardi).
+	s.St.MutateEpoch(func() {})
+	// Epoch avval, keyin saqlash: avval Save() qilingani uchun faylda
+	// yangi cams_epoch bo'lmas edi (next sync'ga ta'siri yo'q, lekin
+	// holat nomuvofiqligi xato chiqarishi mumkin edi).
+	if err := s.St.Save(); err != nil {
+		return err
+	}
+	s.changed()
+	return nil
 }
 
 // Delete — bir nechta kamerani o'chirish; parollar ham tozalanadi (§10.1).
@@ -187,9 +216,10 @@ func (s *Service) Delete(ids []string) int {
 	for _, id := range ids {
 		want[id] = true
 	}
-	kept := make([]cams.Camera, 0, len(s.St.Cameras))
+	all := s.St.SnapshotCameras()
+	kept := make([]cams.Camera, 0, len(all))
 	removed := 0
-	for _, c := range s.St.Cameras {
+	for _, c := range all {
 		if want[c.ID] {
 			removed++
 			if c.SecretRef != "" {
@@ -206,14 +236,15 @@ func (s *Service) Delete(ids []string) int {
 	// §6.5.3: o'chirish cams_sync {op:"delete"} orqali serverga yetadi —
 	// navbat state.json'da saqlanadi (restart'ga chidamli).
 	var gone []string
-	for _, c := range s.St.Cameras {
+	for _, c := range all {
 		if want[c.ID] {
 			gone = append(gone, c.ID)
 		}
 	}
-	s.St.AddPendingDelete(gone)
-	s.St.Cameras = kept
-	s.St.BumpEpoch()
+	s.St.MutateEpoch(func() {
+		s.St.AddPendingDelete(gone)
+		s.St.Cameras = kept
+	})
 	_ = s.commit()
 	s.changed()
 	return removed

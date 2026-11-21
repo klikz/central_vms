@@ -5,7 +5,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -246,5 +248,36 @@ func TestLoadNormalize(t *testing.T) {
 	}
 	if st2.Cameras[0].LastCheckAt == nil || !st2.Cameras[0].LastCheckAt.Equal(now) {
 		t.Fatalf("vaqt tiklanmadi: %v", st2.Cameras[0].LastCheckAt)
+	}
+}
+
+// Parallel Mutate/Snapshot/Save/BumpEpoch — qoida: maydonlarga faqat
+// qulf ostida tegiladi (2026-11-21 auditida race detektori
+// Syncer.Push ↔ ClearPendingDeletes juftligini ko'rsatgan edi).
+func TestConcurrentMutateSnapshotSave(t *testing.T) {
+	st := New(stPath(t))
+	st.Cameras = []cams.Camera{{ID: "a", Name: "A", Host: "h"}, {ID: "b", Name: "B", Host: "h"}}
+	var wg sync.WaitGroup
+	for i := 0; i < 6; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			for k := 0; k < 40; k++ {
+				st.Mutate(func() {
+					st.AddPendingDelete([]string{"id-" + strconv.Itoa(i)})
+					if len(st.Cameras) > 0 {
+						st.Cameras[0].Status = cams.StatusOnline
+					}
+				})
+				_ = st.SnapshotCameras()
+				_ = st.SnapshotPending()
+				st.MutateEpoch(func() { st.ClearPendingDeletes() })
+				_ = st.Save()
+			}
+		}(i)
+	}
+	wg.Wait()
+	if st.CamsEpoch < 6*40 {
+		t.Fatalf("epoch hisobi: %d, kamida %d kutilardi", st.CamsEpoch, 6*40)
 	}
 }

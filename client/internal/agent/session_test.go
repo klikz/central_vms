@@ -294,3 +294,52 @@ func TestProfileForCloseCode(t *testing.T) {
 		}
 	}
 }
+
+// Agentning o'zi yuboradigan WS ping o'qish muddatini uzaytiradi: server
+// umuman ping yubormasa ham (eski versiya) ulanish tirik qoladi
+// (2026-11-21 audit topilmasi).
+func TestServe_AgentPingKeepsConnection(t *testing.T) {
+	env := startDev(t, devserver.Options{})
+	cfg := baseCfg(env, clock.Real{})
+	cfg.ReadTO = 400 * time.Millisecond
+	cfg.PingEvery = 150 * time.Millisecond
+	cfg.HbInterval = time.Hour // heartbeat ishtirmaymiz — faqat ping
+	s := NewSession(cfg)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	res := make(chan error, 1)
+	go func() { res <- s.connectAndServe(ctx) }()
+	select {
+	case err := <-res:
+		t.Fatalf("ulanish uzildi (ping saqlab qolishi kerak edi): %v", err)
+	case <-time.After(1500 * time.Millisecond):
+	}
+	cancel()
+	select {
+	case <-res:
+	case <-time.After(3 * time.Second):
+		t.Fatal("cancel'dan keyin serve qaytmadi")
+	}
+}
+
+// Nazorat: ping o'chiq, server ham ping yubormaydi → o'qish muddati tugaydi.
+func TestServe_ReadTimeoutWithoutPing(t *testing.T) {
+	env := startDev(t, devserver.Options{})
+	cfg := baseCfg(env, clock.Real{})
+	cfg.ReadTO = 300 * time.Millisecond
+	cfg.PingEvery = time.Hour
+	cfg.HbInterval = time.Hour
+	s := NewSession(cfg)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	res := make(chan error, 1)
+	go func() { res <- s.connectAndServe(ctx) }()
+	select {
+	case err := <-res:
+		if err == nil {
+			t.Fatal("xato kutilmadi")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("o'qish muddati tugamadi (ping islayaptimi?)")
+	}
+}

@@ -76,7 +76,7 @@ func (r *runtime) newSelftest() *selftest.Runner {
 			defer r.mu.Unlock()
 			out := make([]selftest.CamSpec, 0, len(r.st.Cameras))
 			for _, c := range r.st.Cameras {
-				out = append(out, selftest.CamSpec{ID: c.ID, URL: media.CamRTSPURL(c)})
+				out = append(out, selftest.CamSpec{ID: c.ID, URL: media.CamRTSPURL(c, "main")})
 			}
 			return out
 		},

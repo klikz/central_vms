@@ -103,3 +103,26 @@ func TestBackoff_MusobaqagaKarshiEMAS(t *testing.T) {
 		t.Fatal("Profile() noto'g'ri")
 	}
 }
+
+// Sog'lom sessiyadan keyin kutish bazasi tiklanadi; qisqa sessiyadan
+// keyin yo'q (aks holda hisob kunlar davomida o'sib borardi).
+func TestResetBackoff_AfterHealthySession(t *testing.T) {
+	bo := NewBackoff(ProfileNormal, nil)
+	for i := 0; i < 6; i++ {
+		bo.Next()
+	}
+	if d := bo.Next(); d < 30*time.Second {
+		t.Fatalf("o'sish kutilardi, %v", d)
+	}
+	resetBackoff(bo, 2*time.Hour)
+	if d := bo.Next(); d != time.Second {
+		t.Fatalf("reset ishlamadi: keyingi kutish %v, 1s kutilardi", d)
+	}
+	// Qisqa (uzilish) sessiya reset qilmaydi.
+	bo.Next()
+	bo.Next()
+	resetBackoff(bo, 3*time.Second)
+	if d := bo.Next(); d < 4*time.Second {
+		t.Fatalf("qisqa sessiya reset qildi: %v", d)
+	}
+}

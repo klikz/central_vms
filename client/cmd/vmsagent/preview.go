@@ -35,6 +35,11 @@ type previewSvc struct {
 	w     *cams.Watcher
 	// report — §4.4: probe natijasini serverga yuborish (runtime ulaydi).
 	report func(cams.ProbeResult)
+	// gate — kamera qurilmasi band bo'lsa probe/preview o'tkazib
+	// yuboriladi (§12.1/§8.3b; 2026-11-21 audit topilmasi).
+	gate *cams.Gate
+	// urlID — probe URL'i → kamera ID (gate kaliti uchun).
+	urlID map[string]string
 
 	mu       sync.Mutex
 	inflight map[string]bool
@@ -44,7 +49,8 @@ type previewSvc struct {
 func newPreviewSvc(cs *camsvc.Service, ks *keystore.Store, store *preview.Store,
 	capt *preview.Capturer, log *slog.Logger, report func(cams.ProbeResult)) *previewSvc {
 	ps := &previewSvc{cs: cs, ks: ks, store: store, cap: capt, log: log,
-		inflight: map[string]bool{}, report: report}
+		inflight: map[string]bool{}, report: report,
+		gate: cams.NewGate(), urlID: map[string]string{}}
 	ps.w = cams.NewWatcher(cams.WatcherConfig{
 		Interval: previewInterval, Parallel: 3, Timeout: 5 * time.Second,
 		Dial: ps.dial, List: ps.targets, Emit: ps.emit, Log: log,
@@ -53,20 +59,50 @@ func newPreviewSvc(cs *camsvc.Service, ks *keystore.Store, store *preview.Store,
 }
 
 // targets — faol kameralar (probe URL'i kredslar bilan).
+// Kamera oqimi (publish/pull) faol bo'lsa probe O'TKAZIB YUBORILADI:
+// aks holda kamera sessiya limitlari tufayli probe 401 oladi va jonli
+// oqim turgan kamera serverda "offline" bo'lib ko'rinardi.
 func (ps *previewSvc) targets() []cams.Target {
 	var out []cams.Target
+	m := map[string]string{}
 	for _, c := range ps.cs.List() {
 		if !c.Enabled {
 			continue
 		}
-		out = append(out, cams.Target{ID: c.ID, URL: ps.authURL(c), WantCodec: c.CodecMain == ""})
+		if ps.gate != nil && ps.gate.PublishCount(c.ID) > 0 {
+			continue
+		}
+		u := ps.authURL(c)
+		m[u] = c.ID
+		out = append(out, cams.Target{ID: c.ID, URL: u, WantCodec: c.CodecMain == ""})
 	}
+	ps.mu.Lock()
+	ps.urlID = m
+	ps.mu.Unlock()
 	return out
+}
+
+// SetGate — pull (media) va probe (preview) BITTA gate'ni bo'lishishi
+// uchun (main.go'da yaratiladi).
+func (ps *previewSvc) SetGate(g *cams.Gate) {
+	if g == nil {
+		return
+	}
+	ps.mu.Lock()
+	ps.gate = g
+	ps.mu.Unlock()
+}
+
+// camIDForURL — probe URL'idan gate kaliti (kamera ID).
+func (ps *previewSvc) camIDForURL(u string) string {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	return ps.urlID[u]
 }
 
 // authURL — rtsp://user:pass@host:port/path (parol keystore'dan; §10.1).
 func (ps *previewSvc) authURL(c cams.Camera) string {
-	u := media.CamRTSPURL(c)
+	u := media.CamRTSPURL(c, "main")
 	if c.SecretRef == "" {
 		return u
 	}
@@ -87,11 +123,25 @@ func (ps *previewSvc) authURL(c cams.Camera) string {
 }
 
 func (ps *previewSvc) dial(ctx context.Context, u string) (cams.Prober, func() error, error) {
+	id := ps.camIDForURL(u)
+	if ps.gate != nil && !ps.gate.TryProbe(id) {
+		// Kamera band — natija "unknown" bo'ladi, holat buzilmaydi.
+		return nil, nil, cams.ErrCameraBusy
+	}
 	c, err := rtspclient.Dial(ctx, u, rtspclient.Options{Timeout: 5 * time.Second})
 	if err != nil {
+		if ps.gate != nil {
+			ps.gate.ReleaseProbe(id)
+		}
 		return nil, nil, err
 	}
-	return c, c.Close, nil
+	closeFn := func() error {
+		if ps.gate != nil {
+			ps.gate.ReleaseProbe(id)
+		}
+		return c.Close()
+	}
+	return c, closeFn, nil
 }
 
 // emit — holat O'ZGARGANDA keladi (watcher dedup). Offline→online:
@@ -170,7 +220,18 @@ func (ps *previewSvc) Capture(ctx context.Context, id string) error {
 	}
 	ps.inflight[id] = true
 	ps.mu.Unlock()
+	if ps.gate != nil && !ps.gate.TryProbe(id) {
+		// Oqim faol — rasm uchun qo'shimcha RTSP sessiyasi ochmaymiz
+		// (kamera sessiyani chiqarib tashlashi mumkin edi).
+		ps.mu.Lock()
+		delete(ps.inflight, id)
+		ps.mu.Unlock()
+		return nil
+	}
 	defer func() {
+		if ps.gate != nil {
+			ps.gate.ReleaseProbe(id)
+		}
 		ps.mu.Lock()
 		delete(ps.inflight, id)
 		ps.mu.Unlock()

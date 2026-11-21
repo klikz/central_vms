@@ -2,6 +2,7 @@ package cams
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sort"
 	"sync"
@@ -24,6 +25,11 @@ type Target struct {
 	// uni ham aniqlaydi (1.0-draft.12).
 	WantCodec bool
 }
+
+// ErrCameraBusy — kamera qurilmasi band (faol oqim yoki boshqa probe).
+// Gate.TryProbe shu xatoni qaytaradi; probe natijasi "unknown" bo'ladi —
+// ya'ni holat haqida xato xulosa chiqmaydi (2026-11-21 auditi).
+var ErrCameraBusy = errors.New("cams: kamera band")
 
 // Prober — rtspclient'ning watcher ishlatadigan qismi (fake bilan
 // testlanadi; haqiqiysi: internal/rtspclient.Conn).
@@ -190,6 +196,11 @@ func probeOnce(ctx context.Context, dial DialProber, url string, timeout time.Du
 	}
 	p, closeFn, err := dial(ctx, url)
 	if err != nil {
+		if errors.Is(err, ErrCameraBusy) {
+			// O'tkazib yuborildi: oldingi holat saqlanadi (offline deb
+			// yubormaymiz — aks holda jonli oqim "offline" ko'rinardi).
+			return ProbeResult{Status: StatusUnknown, Method: "gate", Err: "busy"}
+		}
 		return ProbeResult{Status: StatusOffline, Method: "dial", Err: "unreachable"}
 	}
 	defer func() { _ = closeFn() }()

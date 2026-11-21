@@ -159,10 +159,23 @@ func TestCamCRUD(t *testing.T) {
 	if strings.Contains(body, "p1") || !strings.Contains(body, "***") {
 		t.Fatalf("eksport parolni ochib yubordi: %s", body)
 	}
-	// with_secrets=1 — PIN'siz ham (operator talabi, 1.0-draft.10)
+	// with_secrets=1 endi bir martalik tasdiq nonce'ini talab qiladi
+	// (1.0-draft.12: lokal UI'da PIN yo'q — parol eksporti shunga qaramay
+	// tasodifiy/avtomatik so'rov bilan chiqib ketmasligi kerak).
 	res, body = doJSON(t, ts, http.MethodGet, "/api/ui/cams/export?with_secrets=1", "")
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("nonce'siz with_seeks o'tib ketdi: %d %s", res.StatusCode, body)
+	}
+	res, body = doJSON(t, ts, http.MethodPost, "/api/ui/cams/export-nonce", "")
+	var nn struct {
+		Nonce string `json:"nonce"`
+	}
+	if err := json.Unmarshal([]byte(body), &nn); err != nil || nn.Nonce == "" {
+		t.Fatalf("nonce olinmadi: %d %s", res.StatusCode, body)
+	}
+	res, body = doJSON(t, ts, http.MethodGet, "/api/ui/cams/export?with_secrets=1&nonce="+nn.Nonce, "")
 	if !strings.Contains(body, "p1") {
-		t.Fatalf("with_secrets eksport: %s", body)
+		t.Fatalf("with_secrets eksport: %d %s", res.StatusCode, body)
 	}
 
 	// O'chirish
@@ -229,5 +242,50 @@ func TestCamUserField(t *testing.T) {
 	}
 	if !strings.Contains(body, `"user":"viewer"`) {
 		t.Fatalf("tahrirda user yo'qoldi: %s", body)
+	}
+}
+
+// Parol eksporti endi bir martalik tasdiq nonce'isiz ishlamaydi
+// (lokal UI'da PIN yo'q — §10.2; audit topilmasi, 2026-11-21).
+func TestCamsExportSecretsNeedsNonce(t *testing.T) {
+	ts, _ := newCamServer(t)
+	// Parol bilan kamera yaratamiz.
+	res, body := doJSON(t, ts, http.MethodPost, "/api/ui/cams",
+		`{"name":"Sirli","host":"10.0.0.5","secret":"parol123"}`)
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create: %d %s", res.StatusCode, body)
+	}
+	// Nonce'siz with_secrets → 403.
+	res, body = doJSON(t, ts, http.MethodGet, "/api/ui/cams/export?with_secrets=1", "")
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("nonce'siz eksport o'tdi: %d %s", res.StatusCode, body)
+	}
+	if strings.Contains(body, "parol123") {
+		t.Fatal("parol sizib chiqdi")
+	}
+	// Nonce'siz oddiy eksport ishlaydi (parol ustuni yoq).
+	res, body = doJSON(t, ts, http.MethodGet, "/api/ui/cams/export", "")
+	if res.StatusCode != http.StatusOK || strings.Contains(body, "parol123") {
+		t.Fatalf("oddiy eksport: %d %s", res.StatusCode, body)
+	}
+	// Nonce olib, eksport qilamiz.
+	res, body = doJSON(t, ts, http.MethodPost, "/api/ui/cams/export-nonce", "")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("nonce: %d %s", res.StatusCode, body)
+	}
+	var n struct {
+		Nonce string `json:"nonce"`
+	}
+	if err := json.Unmarshal([]byte(body), &n); err != nil || n.Nonce == "" {
+		t.Fatalf("nonce yo'q: %s", body)
+	}
+	res, body = doJSON(t, ts, http.MethodGet, "/api/ui/cams/export?with_secrets=1&nonce="+n.Nonce, "")
+	if res.StatusCode != http.StatusOK || !strings.Contains(body, "parol123") {
+		t.Fatalf("nonce bilan eksport ishlamadi: %d %s", res.StatusCode, body)
+	}
+	// Nonce bir martalik: ikkinchi urinish rad etiladi.
+	res, body = doJSON(t, ts, http.MethodGet, "/api/ui/cams/export?with_secrets=1&nonce="+n.Nonce, "")
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("nonce qayta ishlatildi: %d %s", res.StatusCode, body)
 	}
 }

@@ -145,6 +145,16 @@ func (s *State) BumpEpoch() int64 {
 	return s.CamsEpoch
 }
 
+// MutateEpoch — o'zgarish + cams_epoch o'sishi BITTA qulf ostida
+// (BumpEpoch qulf olgani uchun Mutate ichida chaqirib bo'lmaydi).
+func (s *State) MutateEpoch(fn func()) int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	fn()
+	s.CamsEpoch++
+	return s.CamsEpoch
+}
+
 // SetCameras — ro'yxatni almashtiradi va epoch'ni o'stiradi.
 func (s *State) SetCameras(list []cams.Camera) int64 {
 	s.mu.Lock()
@@ -172,10 +182,40 @@ func normalizeCams(list []cams.Camera) {
 	}
 }
 
+// Mutate — maydonlarga o'zgarishni qulf ostida bajarish. QOIDA:
+// State maydonlari faqat Mutate / Snapshot* / Save ichida tegilsin —
+// camsvc (CRUD) va agent.Syncer (sync qurish) bir vaqtda ishlaydi va
+// ular orasida race bor edi (2026-11-21 audit: race detektori
+// Push ↔ ClearPendingDeletes juftligini ko'rsatdi).
+// Ichida BumpEpoch/AddPendingDelete kabi qulfsiz yordamchilarni chaqirish
+// mumkin; Save() esa TASHQARIDA chaqiriladi (qulf reentrant emas).
+func (s *State) Mutate(fn func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	fn()
+}
+
+// SnapshotCameras — kameralarning izchil nusxasi.
+func (s *State) SnapshotCameras() []cams.Camera {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]cams.Camera, len(s.Cameras))
+	copy(out, s.Cameras)
+	return out
+}
+
+// SnapshotPending — o'chirish navbati nusxasi.
+func (s *State) SnapshotPending() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]string, len(s.PendingDeletes))
+	copy(out, s.PendingDeletes)
+	return out
+}
+
 // AddPendingDelete — o'chirilgan id(lar)ni navbatga qo'shadi (takrorlanmaydi).
+// Qulf chaqiruvchida: Mutate ichida chaqiriladi.
 func (s *State) AddPendingDelete(ids []string) {
-	// Chaqiruvchi (camsvc) qulfni ushlab turadi — shuning uchun bu yerda
-	// qayta qulflamaymiz: State.mu sync.Mutex (reentrant emas).
 	have := map[string]bool{}
 	for _, id := range s.PendingDeletes {
 		have[id] = true
@@ -189,8 +229,5 @@ func (s *State) AddPendingDelete(ids []string) {
 }
 
 // ClearPendingDeletes — sync muvaffaqiyatli bo'lgach navbatni tozalash (§4.3).
-func (s *State) ClearPendingDeletes() {
-	// Qulf qo'yilmaydi: chaqiruvchi (agent.Syncer) Save() orqali qulf oladi;
-	// sync.Mutex reentrant emas — shu yerda qulf deadlock bo'lardi.
-	s.PendingDeletes = nil
-}
+// Qulf chaqiruvchida (Mutate ichida chaqiriladi).
+func (s *State) ClearPendingDeletes() { s.PendingDeletes = nil }

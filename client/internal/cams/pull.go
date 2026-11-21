@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
+	"sync/atomic"
 	"time"
 
 	"central-vms/client/internal/clock"
@@ -25,6 +27,15 @@ type AU struct {
 	Timestamp uint32
 }
 
+// PullStats — issiq yo'l hisoblagichlari (kuzatuvchanlik, §17).
+// 2026-11-21 auditidagi bo'shliq: buzilgan RTP paketlari jimgina
+// tashlanardi, qanchaligi ko'rinmasdi.
+type PullStats struct {
+	Packets  atomic.Int64 // o'qilgan RTP paketlar
+	Discards atomic.Int64 // buzilgan/tashlab yuborilgan paketlar
+	AUs      atomic.Int64 // sink'ga berilgan access unit
+}
+
 // PullOptions — pull sozlamalari.
 type PullOptions struct {
 	URL        string
@@ -33,6 +44,11 @@ type PullOptions struct {
 	Retries    int           // ≤0 → 3 (§9.3)
 	RetryDelay time.Duration // ≤0 → 2 s (§9.3)
 	Log        *slog.Logger  // nil → Discard
+	// Label — log maydonlari ("session=.. camera_id=.. profile=.."):
+	// bir nechta oqimni bir-biridan ajratib ko'rish uchun.
+	Label string
+	// Stats — hisoblagichlar (nil → sanalmaydi).
+	Stats *PullStats
 }
 
 // Pull — oqimni ochadi va sink'ga AU'larni beradi. ctx bekor qilinsa
@@ -57,7 +73,8 @@ func Pull(ctx context.Context, o PullOptions, sink func(AU) error) error {
 			return err
 		}
 		if attempt > 0 {
-			o.Log.Warn("rtsp_pull_qayta_ulanish", "urinish", attempt, "url", redact.String(o.URL), "err", fmt.Sprint(last))
+			o.Log.Warn("rtsp_pull_qayta_ulanish", labelArgs(o,
+				"urinish", attempt, "url", redact.String(o.URL), "err", fmt.Sprint(last))...)
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
@@ -132,11 +149,26 @@ func pullOnce(ctx context.Context, o PullOptions, sink func(AU) error) error {
 		if int(ch) != rtpCh { // RTCP yoki boshqa kanal — o'tkazamiz
 			continue
 		}
+		if o.Stats != nil {
+			o.Stats.Packets.Add(1)
+		}
 		p, err := rtspclient.ParseRTP(raw)
 		if err != nil {
-			continue // buzilgan paket — tashlab ketamiz (+discardcorrupt ruhi)
+			// Buzilgan paket — tashlab ketamiz, lekin sanaymiz va
+			// davomiy holatda loglaymiz (jimgina yo'qolmasin).
+			if o.Stats != nil {
+				n := o.Stats.Discards.Add(1)
+				if n == 1 || n%100 == 0 {
+					o.Log.Warn("rtsp_pull_discard", labelArgs(o,
+						"discarded", n, "packets", o.Stats.Packets.Load())...)
+				}
+			}
+			continue
 		}
 		if nals, ok := dep.Add(p); ok {
+			if o.Stats != nil {
+				o.Stats.AUs.Add(1)
+			}
 			if len(param) > 0 && keyKadr(nals, h265) && !paramSetBor(nals, h265) {
 				nals = append(append([][]byte(nil), param...), nals...)
 			}
@@ -145,4 +177,20 @@ func pullOnce(ctx context.Context, o PullOptions, sink func(AU) error) error {
 			}
 		}
 	}
+}
+
+// labelArgs — log'ga Label maydonlarini qo'shish ("a=1 b=2" ko'rinishi).
+func labelArgs(o PullOptions, args ...any) []any {
+	if o.Label == "" {
+		return args
+	}
+	out := make([]any, 0, len(args)+4)
+	for _, kv := range strings.Fields(o.Label) {
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok {
+			continue
+		}
+		out = append(out, k, v)
+	}
+	return append(out, args...)
 }

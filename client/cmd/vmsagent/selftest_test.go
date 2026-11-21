@@ -21,11 +21,17 @@ func TestMediaHost(t *testing.T) {
 
 func TestCamRTSPURL(t *testing.T) {
 	c := cams.Camera{Host: "10.0.0.7", Port: 0, MainPath: "/Streaming/Channels/101"}
-	if got := media.CamRTSPURL(c); got != "rtsp://10.0.0.7:554/Streaming/Channels/101" {
+	if got := media.CamRTSPURL(c, "main"); got != "rtsp://10.0.0.7:554/Streaming/Channels/101" {
 		t.Errorf("got %q", got)
 	}
 	c2 := cams.Camera{Host: "h", Port: 8554, MainPath: ""}
-	if got := media.CamRTSPURL(c2); got != "rtsp://h:8554/" {
+	// 1.0-draft.12: "sub" profili SUB yo'lini olishi kerak (avval doim
+	// MAIN tortilardi — 2688x1520 oqim 640x360 o'rniga sarflanardi).
+	if got := media.CamRTSPURL(cams.Camera{Host: "h", Port: 554,
+		MainPath: "/Streaming/Channels/101", SubPath: "/Streaming/Channels/102"}, "sub"); got != "rtsp://h:554/Streaming/Channels/102" {
+		t.Errorf("sub yo'li noto'g'ri: %q", got)
+	}
+	if got := media.CamRTSPURL(c2, "sub"); got != "rtsp://h:8554/" {
 		t.Errorf("got %q", got)
 	}
 }

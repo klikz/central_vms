@@ -325,3 +325,43 @@ func TestSyncEmptyDelta(t *testing.T) {
 type discard struct{}
 
 func (discard) Write(p []byte) (int, error) { return len(p), nil }
+
+// Ikki parallel sync chunk'larni aralashtirmaydi: har bir to'liq
+// ketma-ketlik tugagach keyingisi boshlanadi (pushMu, 2026-11-21 audit).
+func TestSync_ConcurrentPushSerialized(t *testing.T) {
+	st := newTestState(t, 250) // 3 chunk
+	fs := &fakeSender{}
+	sy := NewSyncer(fs, st, clock.NewFake(time.Now()), nil)
+
+	// Har yuborilgan chunk'ga darhol ack beramiz.
+	ackers := make(chan struct{})
+	go func() {
+		defer close(ackers)
+		for i := 0; i < 6; i++ {
+			deadline := time.Now().Add(5 * time.Second)
+			for time.Now().Before(deadline) {
+				if fs.count() > i {
+					sy.OnCamsAck(proto.CamsAck{Epoch: st.CamsEpoch, OK: true, Applied: 100})
+					break
+				}
+				time.Sleep(time.Millisecond)
+			}
+		}
+	}()
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); _ = sy.Push(st.CamsEpoch) }()
+	go func() { defer wg.Done(); _ = sy.Push(st.CamsEpoch) }()
+	wg.Wait()
+	<-ackers
+
+	if fs.count() != 6 {
+		t.Fatalf("chunk'lar soni: %d, 6 kutilardi", fs.count())
+	}
+	want := []int{1, 2, 3, 1, 2, 3}
+	for i, w := range want {
+		if got := fs.at(i).SeqNo; got != w {
+			t.Fatalf("chunk ketma-ketligi arashildi: %d. SeqNo=%d, %d kutilardi", i, got, w)
+		}
+	}
+}

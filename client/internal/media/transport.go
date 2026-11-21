@@ -133,12 +133,19 @@ func announceSDP(codec string) string {
 }
 
 // CamRTSPURL — kamera modelidan RTSP manzil (parol YO'Q — §10.2).
-func CamRTSPURL(c cams.Camera) string {
+// CamRTSPURL — kameraning RTSP manzili. profile=="sub" bo'lsa SUB yo'li
+// ishlatiladi (bo'sh bo'lsa main'ga qaytamiz). 2026-11-21 auditidagi
+// xato: profil qaramasdan doim MAIN tortilardi — masalan 2688x1520 HEVC
+// oqimi 640x360 o'rniga o'tardi (kamera sessiyasi, CPU va tarmoq isrofi).
+func CamRTSPURL(c cams.Camera, profile string) string {
 	port := c.Port
 	if port == 0 {
 		port = 554
 	}
 	path := c.MainPath
+	if profile == "sub" && c.SubPath != "" {
+		path = c.SubPath
+	}
 	if path == "" {
 		path = "/"
 	}
