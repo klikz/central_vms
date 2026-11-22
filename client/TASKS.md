@@ -494,3 +494,27 @@ Auditda 8 tasdiqlangan muammo topildi — barchasi tuzatildi (testlar bilan).
 tortilganda kamera sessiya limiti (gate hisoblagichi 2 ga ruxsat beradi —
 prod'da `limits.max_uploads` orqali cheklash tavsiya etiladi);
 `naldump` kabi diagnostika vositalarini `make` targetlariga ulash.
+
+## 2026-11-22 — barqarorlashtirish bosqichi (doctor, monitoring, parser xatosi)
+
+- [x] **`vmsagent -doctor` / `make doctor`**: serverga `/healthz` yetib
+      borishi (ws→http almashtirish bilan), kalit fayli izinlari,
+      state_dir yozuv, agent_id, har bir yoqilgan kameraning RTSP
+      portiga TCP yetib borish, ffmpeg, ui_bind, log papkasi. FAIL bo'lsa
+      exit 1. Jonli: 8 tekshiruv OK.
+- [x] **Konfig parser xatosi (yo'lda ochildi)** — `yamlsub.go`: kalitdan
+      keyin darhol izoh yoki bo'sh qator kelsa, ichma-ich blok jim `nil`
+      bo'lib qolardi va keyingi qator "noto'g'ri indentatsiya" deb
+      chiqarardi (ya'ni foydalanuvchi izohi konfiguratsiyani buzardi).
+      Endi bo'sh/izohli qatorlar oldiga o'tib block davom etadi.
+      Test: `TestParse_CommentAfterKey`.
+- [x] **Prod tavsiyasi: `limits.max_uploads: 4`** (`client.yaml.example`)
+      — Hikvision/Dahua kameraning o'zida sessiya limiti bor; main+sub
+      + probe birga 2-3 sessiya qiladi, 8 upload esa chegarani bosadi
+      (§8.3b, cams.Gate bilan birga).
+- [x] **Diagnostika Makefile tugmalari**: `make doctor`,
+      `make naldump URL='rtsp://...'` (NAL turlari sanog'i — H.265
+      paketlash muammolarini aniqlash vositasi targetga ulandi).
+- [x] **systemd**: `StartLimitIntervalSec/Burst` (crash-loop to'xtatish),
+      `MemoryHigh/MemoryMax` (FFmpeg bolalari shu cgroup'da),
+      `LimitNOFILE=8192`.

@@ -1,0 +1,13 @@
+# vmsd zaxira taymeri — kuniga 03:15 (+0..15 daq. tasodifiy kechikish,
+# bir necha server bir vaqtda diskka urilmasligi uchun). Persistent=true:
+# mashina o'chiq bo'lgan bo'lsa keyingi yukda darhol bitta zaxira qilinadi.
+[Unit]
+Description=Central VMS — kunlik zaxira taymeri
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+RandomizedDelaySec=15m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

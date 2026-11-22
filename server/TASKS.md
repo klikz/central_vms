@@ -509,3 +509,62 @@ o'zim tekshiruvim. Tasdiqlanganlar tuzatildi, testlar qo'shildi.
 (so'rovlar soni/davomiyligi); yangi Ubuntu'da systemd ostida jonli
 sinov; yuk testi; `internal/registry` paket qamrovi 49,6% (umumiy
 darvaza 59,3% — bo'shadan past emas).
+
+## 2026-11-22 — barqarorlashtirish/soddalashtirish bosqichi (CI, kuzatuv, doctor, soak)
+
+- [x] **CI darvozasi** (`.github/workflows/ci.yml`): har push/PR'da
+      `make -C server gate`, `make -C client gate`, `ui-test` (25 test);
+      golangci-lint alohida MASLAHAT bosqichi (break qilmaydi). Endi
+      regressiyalar jonli stekda emas, PR'da ushlanadi.
+- [x] **systemd qattiqlashtirish**: uchala unit'da ham
+      `StartLimitIntervalSec=300/Burst=20` (cheksiz crash-loop o'rniga
+      "failed" — operatorga aniq belgi), `MemoryHigh/MemoryMax`
+      (vmsd 768M/1G; agentniki FFmpeg bolalari bilan shu cgroup'da),
+      `LimitNOFILE` ko'tarildi, vmsd'ga `ProtectSystem=full` va boshqa
+      konservativ himoyalar (root bo'lib qoladi, yozuv yo'llari ochiq).
+- [x] **Zaxira taymeri**: `vmsd-backup.service/.timer` (kuniga 03:15
+      +0..15 daq, `Persistent=true`, 14 nusxa) — `make install` endi
+      buni ham o'rnatadi; `make backup-now` qo'shimcha.
+- [x] **/metrics kengaytirildi** (`httpapi/metricsmw.go`): HTTP
+      so'rovlar soni, status klasslari (2xx/3xx/4xx/5xx), davomiylik
+      histogrammasi (WS yo'llari o'ldan tashqari — ularning gauge'lari
+      hub'larda); agent/UI handshake ok/fail (`ConnStats`);
+      `vmsd_tc_restarts` (FFmpeg flap belgisi).
+      Testlar: `TestHTTPMetrics_CountsAndClasses`, `..._SkipsWSPaths`.
+- [x] **Ogohlantirishlar**: `scripts/alert.sh` + `vms-alert.timer`
+      (har 2 daqiqa): `vmsd_down`, `vmsd_restart` (uptime<120s —
+      crash-loop), `cameras_offline`, `agent_flap` (handshake fail
+      deltasi), `tc_flap`. Spam yo'q: state fayli + 60 daq cooldown;
+      chiqish `journalctl -t vms-alert`. Jonli sinov: buzilgan holatda
+      3 ogohlantirish, tiklanganda jim.
+- [x] **`vmsd -doctor` / `vmsagent -doctor`** (`make doctor`): config,
+      DB butunligi, migratsiyalar, ishlayotgan nusxa/portlar, UI
+      statikasi, MediaMTX API+RTSP, ffmpeg, ZAXIRA YANGILIGI (26 soat
+      kechiksa WARN), disk joyi. Agent: server /healthz (ws→http),
+      kalit izinlari, state_dir, agent_id, kamera TCP'lari, ui_bind.
+      Jonli: 0 FAIL (bitta WARN — lokal mashinada zaxira papkasi yo'q,
+      u prod'ga tegishli).
+- [x] **Soak/yuk sinovi**: `scripts/soak.sh` (`make soak`) — har 20-30
+      s'da /healthz+/metrics, o'rtada `kill -9 vmsd` in'ektsiyasi va
+      TIKLANISH VAQTINI o'lchash. Qisqa tutun o'tdi: 30 namuna,
+      vmsd 5 s'da tiklandi, kamera offline 0, kutilmagan uzilish 0.
+      HOURS=24 rejimi prod mashinasida qilinadi (ochiq band).
+- [x] **Kontrakt matritsasi**: `TestContract_LegacyAgentMinimalSync` —
+      eski agent (position/codecs/bframe'siz cams_sync, rtt_ms'siz
+      cam_status, notanish maydonli hb) yangi serverda to'liq qabul
+      qilinadi, kamera saqlanadi, ulanish uzilmaydi. Golden fixture'lar
+      (§4/§5) allaqachon bor edi; endi jonli oqim ham qoplangan.
+- [x] **Registry qamrovi 49,6% → 62,7%** (`registry_cov_test.go`):
+      tenant variantlari (`cameraOwnedBy`/Delete/Status/Codec — begona
+      tenant ErrNotFound), sessiya yordamchilari (Insert/SetState/
+      TouchTTL/List/Count), favorites/layouts chekkalari.
+- [x] **Yo'lda ochildi (mijoz tomonida)**: `yamlsub` parser xatosi —
+      kalitdan keyin darhol izoh/bo'sh qator kelsa blok `nil` bo'lib,
+      konfiguratsiya buzilar edi. Tuzatildi + test (client TASKS).
+      `client.yaml.example`'da `limits.max_uploads: 4` (kamera sessiya
+      limiti — §8.3b).
+
+**Keyingi qadamlar (ochiq):** toza Ubuntu'da systemd ostida 24 soatlik
+soak + kill/restart in'ektsiyalari; 10-20 kamera × 3-5 tomoshabin yuk
+testi (`make probe` GPU byudjeti bilan birga); Prometheus/grafana
+ixtiyoriy (metrics formati tayyor).

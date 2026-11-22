@@ -36,6 +36,9 @@ type Deps struct {
 	MTXHook http.Handler   // /internal/auth (MediaMTX → vmsd)
 	UI      *wsui.Hub      // S3: UI push kanali (/api/ui/ws)
 	Lg      *slog.Logger
+	// HTTP — HTTP qatlam hisoblagichlari (metricsmw.go). newHTTPServer
+	// Wrap orqali butun mux'ni o'raydi; /metrics Write orqali chiqaradi.
+	HTTP *HTTPMetrics
 
 	// Mux — Routes() tomonidan o'rnatiladi (handler'larning ichki routeri).
 	Mux http.Handler

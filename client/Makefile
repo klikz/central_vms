@@ -43,7 +43,7 @@ BACKUP_DIR ?= /var/backups/vmsagent
 
 .PHONY: all start dev build run install uninstall logs logs-err backup restore status test race cover gate \
         lint fmt vet fixtures deps deps-fetch devserver itest stress secretscan ui-lint ui-shot logs-err \
-        package remote-update stop stop-service clean help push update
+        doctor naldump package remote-update stop stop-service clean help push update
 
 all: build
 
@@ -168,6 +168,19 @@ itest:
 ## 2000 kamera stressi (C4.8)
 stress:
 	./scripts/stress.sh $(CAMS)
+
+## O'zini-tekshirish: server/kalit/state/kameralar (2026-11-22).
+## Boshqa konfiguratsiya uchun: CFG=config/client.local.yaml make doctor
+doctor: build
+	@CFG=$${CFG:-config/client-localhost.yaml}; \
+	if [ ! -f "$$CFG" ]; then CFG=build/config/client.yaml; fi; \
+	./$(BUILD_DIR)/$(BIN) -config $$CFG -doctor
+
+## Diagnostika: MediaMTX'dagi nashr yo'lini o'qib NAL turlarini sanaydi
+## (H.265 paketlash muammolarini aniqlash uchun; 2026-11-21 tajribasi).
+##   make naldump URL='rtsp://127.0.0.1:8554/cam/<agent>/<cam>?token=...'
+naldump:
+	@go run ./cmd/naldump "$(URL)"
 
 ## Tar qadoq (joylarga ko'chirish uchun)
 package: build

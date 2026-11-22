@@ -35,7 +35,7 @@ func TestParse_ExampleFile(t *testing.T) {
 		{"probe.status_keepalive", c.Probe.StatusKeepalive, "auto"},
 		{"probe.codec_probe_interval_h", c.Probe.CodecProbeIntervalH, 24},
 		{"probe.full_probe_on_publish_fail", c.Probe.FullProbeOnPublishFail, true},
-		{"limits.max_uploads", c.Limits.MaxUploads, 8},
+		{"limits.max_uploads", c.Limits.MaxUploads, 4}, // prod tavsiyasi: 4 (kamera sessiya limiti; 2026-11-22)
 		{"limits.max_local_transcodes", c.Limits.MaxLocalTranscodes, 4},
 		{"onvif.enabled", c.Onvif.Enabled, true},
 		{"onvif.switch_codec", c.Onvif.SwitchCodec, true},
@@ -95,6 +95,35 @@ discovery:
 	}
 	if len(c.Discovery.RTSPScanPorts) != 2 || c.Discovery.RTSPScanPorts[1] != 8554 {
 		t.Fatalf("ports: %v", c.Discovery.RTSPScanPorts)
+	}
+}
+
+// TestParse_CommentAfterKey — kalitdan keyin darhol izoh/bo'sh qator
+// kelsa, ichma-ich blok yo'qolmasligi kerak (2026-11-22: `limits:` dan
+// keyin izoh kelsa butun blok jim `nil` bo'lib, keyingi qator "noto'g'ri
+// indentatsiya" deb chiqarardi — foydalanuvchi izohi konfiguratsiyani
+// buzardi).
+func TestParse_CommentAfterKey(t *testing.T) {
+	src := `
+server_url: ws://h:8081
+limits:
+  # Hikvision sessiya limiti — prod'da 4 tavsiya etiladi.
+  max_uploads: 4
+  max_local_transcodes: 4
+
+probe:
+
+  status_parallel: 3
+`
+	c, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if c.Limits.MaxUploads != 4 || c.Limits.MaxLocalTranscodes != 4 {
+		t.Fatalf("limits yo'qoldi: %+v", c.Limits)
+	}
+	if c.Probe.StatusParallel != 3 {
+		t.Fatalf("probe bo'sh qatordan keyin yo'qoldi: %+v", c.Probe)
 	}
 }
 

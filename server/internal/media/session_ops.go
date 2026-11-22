@@ -66,7 +66,8 @@ func (m *Manager) stateSnapshot(st *loopState) map[string]any {
 	return map[string]any{
 		"sessions": sessions, "publishes": pubs,
 		"transcodes": tc, "transcode_max": tq,
-		"backend": string(m.deps.GPU.Backend), "encoder": m.deps.GPU.Encoder,
+		"tc_restarts": st.tcRestarts,
+		"backend":     string(m.deps.GPU.Backend), "encoder": m.deps.GPU.Encoder,
 	}
 }
 
@@ -467,6 +468,7 @@ func (m *Manager) transcodeEnded(st *loopState, c *cmd) {
 			p.tcTries = 0
 		}
 		p.tcNextTry = m.deps.Clock.Now().Add(delay)
+		st.tcRestarts++ // /metrics: vmsd_tc_restarts (o'sib turgansa — FFmpeg flap)
 		m.deps.Lg.Info("transcode uzildi — qayta ko'tariladi", "camera", p.cameraID,
 			"yashadi", c.elapsed.Round(time.Second).String(), "exit_xato", c.failed,
 			"try", p.tcTries)

@@ -7,6 +7,9 @@
 #   make check     — to'liq zanjir: kamera → holat → preview → kadr
 #   make stop      — uchalasini to'xtatish
 #   make gate      — ikkala tomondagi test darvozalari
+#   make doctor    — ikkala tomonning o'zini-tekshiruvi (2026-11-22)
+#   make metrics   — ichki /metrics matni (127.0.0.1:8189)
+#   make soak      — qisqa tutun sinovi (HOURS=24 → tunlik)
 
 NODE_DIR ?= $(firstword $(wildcard $(HOME)/.local/node/bin) $(wildcard $(HOME)/.nvm/versions/node/*/bin))
 export PATH := $(NODE_DIR):$(PATH)

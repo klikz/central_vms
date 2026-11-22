@@ -36,7 +36,7 @@ STOP_PATTERNS := 'build/[v]msd -config' 'exe/[v]msd' 'go-build[^ ]*/[v]msd' \
 
 .PHONY: all start dev build run media media-get probe migrate-up migrate-down migrate-status admin \
         ui-build ui-dev ui-test test race cover gate lint fmt vet package install logs logs-file stop \
-        stop-service clean help
+        stop-service doctor metrics backup-now soak clean help
 
 all: build
 
@@ -124,6 +124,26 @@ e2e-s2:
 e2e-s3:
 	./scripts/e2e_s3.sh
 
+## O'zini-tekshirish: config/DB/MediaMTX/portlar/zaxira/disk (2026-11-22).
+## Server ishlab turganda ham ishlaydi; FAIL bo'lsa exit 1.
+doctor: build
+	./$(BUILD_DIR)/$(BIN) -config $${CFG:-config/dev.yaml} -doctor
+
+## Ichki metrikalar (127.0.0.1:8189/metrics). METRICS_URL=... bilan
+## boshqa manzil ham mumkin.
+metrics:
+	@curl -fsS "$${METRICS_URL:-http://127.0.0.1:8189/metrics}"
+
+## Zaxirani taymer kutmasdan hozir qilish (test/tiklash mashqi uchun).
+backup-now: build
+	@VMSD_BIN=$(CURDIR)/$(BUILD_DIR)/$(BIN) VMSD_CONFIG=$${CFG:-$(CURDIR)/config/dev.yaml} \
+	  bash deploy/backup.sh "$${DB_PATH:-var/vmsd.db}" "$${BACKUP_DIR:-var/backups}" 14
+
+## Soak: uzoq ishlash + uzilish in'ektsiyasi (scripts/soak.sh).
+## HOURS=0 → ~10 daqiqalik tutun sinovi; HOURS=24 → tunlik.
+soak:
+	@HOURS=$${HOURS:-0} bash scripts/soak.sh
+
 ## Birinchi admin: make admin USER=admin (parol so'raladi, terminalga chiqmaydi)
 ## Admin yaratish/yangilash (login mavjud bo'lsa parolini yangilaydi).
 ## Parol ekranda ko'rinmaydi; DB'da argon2id hash saqlanadi.
@@ -198,11 +218,13 @@ package: build
 ## Prod o'rnatish: /opt/vmsd + systemd unitlar (root §4.2; S4'da to'liq tekshiriladi).
 install: package
 	@test $$(id -u) -eq 0 || { echo "root kerak: sudo make install" >&2; exit 1; }
-	mkdir -p /opt/vmsd /var/lib/vmsd /var/log/vmsd
+	mkdir -p /opt/vmsd /var/lib/vmsd /var/log/vmsd /var/backups/vmsd
 	cp -r $(BUILD_DIR)/vmsd $(BUILD_DIR)/web $(BUILD_DIR)/migrations $(BUILD_DIR)/mediamtx /opt/vmsd/
 	[ -f /opt/vmsd/config/config.yaml ] || cp config/prod.yaml.example /opt/vmsd/config/config.yaml
-	cp -f systemd/vmsd.service systemd/vms-media.service /etc/systemd/system/
-	systemctl daemon-reload && systemctl enable --now vms-media vmsd
+	install -m 755 deploy/backup.sh /opt/vmsd/backup.sh
+	install -m 755 scripts/alert.sh /opt/vmsd/alert.sh
+	cp -f systemd/vmsd.service systemd/vms-media.service systemd/vmsd-backup.service systemd/vmsd-backup.timer systemd/vms-alert.service systemd/vms-alert.timer /etc/systemd/system/
+	systemctl daemon-reload && systemctl enable --now vms-media vmsd vmsd-backup.timer vms-alert.timer
 	@echo "o'rnatildi. PROBE MAJBURIY (GPU o'zgaruvchan): sudo -u vmsd /opt/vmsd/vmsd -config /opt/vmsd/config/config.yaml -probe"
 
 ## Journal (prod) yoki dev log fayli (alohida — client logi bilan aralashmaydi).

@@ -47,11 +47,28 @@ func main() {
 	var (
 		cfgPath     = flag.String("config", "config/client.yaml", "konfiguratsiya fayli (YAML)")
 		showVersion = flag.Bool("version", false, "versiyani chiqarib chiqish")
+		doctor      = flag.Bool("doctor", false, "o'zini-tekshirish: server/kalit/state/kameralar (exit 1 agar FAIL bo'lsa)")
 	)
 	flag.Parse()
 
 	if *showVersion {
 		printVersion()
+		return
+	}
+
+	// doctor: hech narsani o'zgartirmaydi; agent ishlab turganda ham
+	// ishlaydi (state.json o'qiladi, faqat qo'shimcha tekshiruv fayllari
+	// yaratiladi va ular o'chiriladi). 2026-11-22 barqarorlik ishlari.
+	if *doctor {
+		cfg, err := config.Load(*cfgPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "vmsagent doctor: %v\n", err)
+			os.Exit(1)
+		}
+		if err := runAgentDoctor(cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
+		}
 		return
 	}
 

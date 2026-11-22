@@ -2,8 +2,10 @@
 // o'zgarishlarini so'rov-siz yuboradi (client_status, cam_status,
 // session_state, session_count, session_revoked). Kontrakt: docs/api.md.
 //
-// Ulanish: GET /api/ui/ws?access=<JWT> — brauzer WS header qo'yolmaydi,
-// shuning uchun access token query orqali olinadi (faqat qisqa muddatli).
+// Ulanish: GET /api/ui/ws?ticket=<bir martalik> — brauzer WS header
+// qo'yolmaydi, shuning uchun avval POST /api/ui/ws-ticket orqali qisqa
+// muddatli (15 s) bir martalik kalit olinadi. `?access=` QABUL
+// qilinmaydi (token log'larga tushar edi; 2026-11-21 server auditi).
 package wsui
 
 import (
@@ -15,6 +17,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -100,6 +103,11 @@ type Hub struct {
 	// seq — har bir broadcast uchun tartib raqami (UI eski xabarni
 	// e'tiborsiz qoldirishi uchun).
 	seq uint64
+
+	// connOK/connFail — /metrics uchun (2026-11-22): muvaffaqiyatli
+	// UI ulanishlari va rad etilganlar (yaroqsiz ticket/token).
+	connOK   atomic.Int64
+	connFail atomic.Int64
 }
 
 type conn struct {
@@ -190,6 +198,12 @@ func (h *Hub) Count() int {
 	return len(h.conns)
 }
 
+// ConnStats — jami muvaffaqiyatli UI ulanishlari va rad etilganlar
+// (/metrics; 2026-11-22).
+func (h *Hub) ConnStats() (ok, fail int64) {
+	return h.connOK.Load(), h.connFail.Load()
+}
+
 // ticketTTL — WS ulanish kalitining yashash muddati.
 const ticketTTL = 15 * time.Second
 
@@ -245,6 +259,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if t := r.URL.Query().Get("ticket"); t != "" {
 		c, ok := h.takeTicket(t)
 		if !ok {
+			h.connFail.Add(1)
 			http.Error(w, `{"error":"bad_ticket"}`, http.StatusUnauthorized)
 			return
 		}
@@ -253,6 +268,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		tok := authBearer(r.Header.Get("Authorization"))
 		v, err := h.tokens.Verify(tok, "access")
 		if err != nil {
+			h.connFail.Add(1)
 			http.Error(w, `{"error":"bad_token"}`, http.StatusUnauthorized)
 			return
 		}
@@ -260,8 +276,10 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	ws, err := h.upgr.Upgrade(w, r, nil)
 	if err != nil {
+		h.connFail.Add(1)
 		return
 	}
+	h.connOK.Add(1)
 	c := &conn{hub: h, ws: ws, out: make(chan []byte, 32), user: *cl, done: make(chan struct{})}
 	h.mu.Lock()
 	h.conns[c] = struct{}{}

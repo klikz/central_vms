@@ -1,18 +1,43 @@
 # vmsd — prod systemd unit (root §4.2 make install; S4'da to'liq tekshiriladi).
+# 2026-11-22 qattiqlashtirish: crash-loop'ni to'xtatish (StartLimit), xotira
+# cheki (MemoryMax), fd limiti, o'qish-only tizim qismlari.
 [Unit]
 Description=Central VMS server (vmsd)
 After=network-online.target vms-media.service
 Wants=network-online.target
+# RestartSec=5 bilan 300 s ichida 20 martadan ko'p qulasa systemd xizmatni
+# "failed" qilib to'xtatadi — cheksiz crash-loop (disk/CPU yeyish) o'rniga
+# aniq belgi. Tiklash: systemctl restart vmsd (yoki interval o'zi ochiriladi).
+StartLimitIntervalSec=300
+StartLimitBurst=20
 
 [Service]
 Type=simple
 ExecStart=/opt/vmsd/vmsd -config /opt/vmsd/config/config.yaml -web /opt/vmsd/web
 Restart=always
-RestartSec=3
+RestartSec=5
 # jwt_secret maxfiy: /etc/vmsd/secret.env ichida VMSD_JWT_SECRET=... (0600)
 EnvironmentFile=-/etc/vmsd/secret.env
 StandardOutput=journal
 StandardError=journal
+SyslogIdentifier=vmsd
+
+# Xotira: vmsd odatda yuz MB atrofida yuradi; 768M'da throttling (swap/
+# reclaim), 1G'da OOM-kill — mashinaning o'zi qotmasin. MediaMTX alohida.
+MemoryHigh=768M
+MemoryMax=1G
+LimitNOFILE=65536
+TasksMax=512
+
+# Konservative qattiqlashtirish (vmsd root bo'lib qoladi — /opt/vmsd va
+# /var/lib|log/vmsd yozuv uchun ochiq; /etc, /usr, /boot o'qish-only):
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target

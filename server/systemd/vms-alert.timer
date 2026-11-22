@@ -1,0 +1,13 @@
+# vms-alert taymeri — har 2 daqiqada tekshiruv (deltalar shu oraliqqa
+# nisbatan hisoblanadi; alert.sh ichidagi FLAP/TC bo'sagalar 2 daq
+# oynasiga moslangan). 2026-11-22.
+[Unit]
+Description=Central VMS — monitoring tekshiruvi taymeri
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

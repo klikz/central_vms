@@ -63,13 +63,39 @@ auth-hook `http://127.0.0.1:8189/internal/auth` (protocol.md §15).
 
 ## 6. Zaxira
 
+`make install` endi `vmsd-backup.timer`'ni ham o'rnatadi (kuniga 03:15
++0..15 daq tasodifiy; `Persistent=true` — mashina o'chiq bo'lsa keyingi
+yukda bitta zaxira darhol). Qo'lda:
+
 ```bash
 sudo install -m 755 deploy/backup.sh /opt/vmsd/backup.sh
-sudo crontab -l 2>/dev/null | { cat; echo '15 3 * * * /opt/vmsd/backup.sh /opt/vmsd/var/vmsd.db /var/backups/vmsd 14'; } | sudo crontab -
+sudo systemctl enable --now vmsd-backup.timer   # tavsiya etilgan
+# yoki cron (eski usul):
+sudo crontab -l 2>/dev/null | { cat; echo '15 3 * * * VMSD_BIN=/opt/vmsd/vmsd VMSD_CONFIG=/opt/vmsd/config/config.yaml /opt/vmsd/backup.sh /var/lib/vmsd/vmsd.db /var/backups/vmsd 14'; } | sudo crontab -
 ```
 
 `backup.sh` SQLite'ni `VACUUM INTO` bilan issiq nusxa oladi (server
-to'xtamaydi) va eski nusxalarni soni bo'yicha tozalaydi.
+to'xtamaydi), butunlikni tekshiradi va eski nusxalarni soni bo'yicha
+tozalaydi. Holat: `systemctl list-timers vmsd-backup.timer`; qo'lda
+ishga tushirish: `make backup-now` yoki
+`sudo systemctl start vmsd-backup.service`.
+
+## 6b. Kuzatuv va ogohlantirishlar (2026-11-22)
+
+- `GET http://127.0.0.1:8189/metrics` (ichki bind; `make metrics`) —
+  Prometheus matni: uptime, agent/UI ulanishlari + handshake ok/fail,
+  HTTP so'rovlar soni/status klasslari/davomiylik histogrammasi,
+  kameralar, transcode'lar va `vmsd_tc_restarts`.
+- `vms-alert.timer` (har 2 daqiqa) — `scripts/alert.sh`: server
+  o'chiqmi, yaqinda qayta ko'tarilganmi (crash-loop), kameralar
+  offline, agent flap, FFmpeg flap — holat O'ZGARGANDA `journalctl
+  -t vms-alert`ga yozadi (spam yo'q; cooldown 60 daq, state
+  `/var/lib/vms-alert`).
+- Bir martalik tekshiruv: `vmsd -doctor` (`make doctor`) — config/DB/
+  migratsiyalar/MediaMTX/portlar/ffmpeg/zaxira yangiligi/disk joyi.
+  Agent tomonda: `vmsagent -doctor` (`make -C client doctor`).
+- Uzoq sinov: `make soak` (HOURS=24 tunlik) — kill -9 in'ektsiyasi bilan
+  tiklanish vaqtini o'lchaydi; natija `var/soak/*.csv`.
 
 ## 7. Jurnallar
 
@@ -89,5 +115,6 @@ to'xtamaydi) va eski nusxalarni soni bo'yicha tozalaydi.
 6. Kamera qo'shilganda ~30 s ichida serverda `online` va kodek ko'rinadi.
 7. Preview ochilganda kadr keladi (WebRTC), `session_state` UI'da ko'rinadi.
 8. `journalctl -u vmsd | grep media_stopped` — sababsiz to'xtash yo'q.
-9. Zaxira skripti ishlaydi: `/var/backups/vmsd/vmsd-*.db` ochiladi (`sqlite3 ... "PRAGMA integrity_check;"`).
+9. Zaxira skripti ishlaydi: `/var/backups/vmsd/vmsd-*.db` ochiladi (`sqlite3 ... "PRAGMA integrity_check;"`); taymer faol: `systemctl list-timers vmsd-backup.timer`.
 10. Mashina qayta boshlansa ikkala unit ko'tariladi, agentlar qayta ulanadi.
+11. `vmsd -doctor` va `vmsagent -doctor` — `0 FAIL` (ogohlantirishlar o'rnini toping); `journalctl -t vms-alert`da yangi ogohlantirish yo'q.

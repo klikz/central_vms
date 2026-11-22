@@ -1,0 +1,13 @@
+# vms-alert — /metrics beligilarini tekshirib, holat o'zgarganda
+# journald'ga ogohlantirish yozadi (scripts/alert.sh). 2026-11-22.
+[Unit]
+Description=Central VMS — monitoring ogohlantirishlari
+After=vmsd.service
+
+[Service]
+Type=oneshot
+Environment=METRICS_URL=http://127.0.0.1:8189/metrics
+Environment=STATE_DIR=/var/lib/vms-alert
+ExecStart=/opt/vmsd/alert.sh
+NoNewPrivileges=true
+PrivateTmp=true

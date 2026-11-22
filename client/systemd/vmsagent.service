@@ -3,6 +3,10 @@ Description=Central VMS agent (vmsagent) - joydagi kamera agenti
 Documentation=https://example.internal/central_vms/client
 After=network-online.target
 Wants=network-online.target
+# Crash-loop himoyasi (server unitlari bilan bir xil siyosat): 300 s'da
+# 20 martadan ko'p qulasa "failed" — operatorga aniq belgi.
+StartLimitIntervalSec=300
+StartLimitBurst=20
 
 [Service]
 Type=simple
@@ -14,7 +18,10 @@ Restart=always
 RestartSec=5
 TimeoutStopSec=10
 NoNewPrivileges=true
-LimitNOFILE=4096
+LimitNOFILE=8192
+# Xotira cheki: FFmpeg bolalari shu cgroup ichida (1G = agent + transcode'lar).
+MemoryHigh=768M
+MemoryMax=1G
 
 User=vmsagent
 Group=vmsagent

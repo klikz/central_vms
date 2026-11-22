@@ -338,6 +338,10 @@ type loopState struct {
 	sessions map[string]*session
 	pubs     map[string]*publish
 	byKey    map[string]string // "camID|profile|mode" → pubID
+	// tcRestarts — FFmpeg jarayoni o'lgani uchun qayta ko'tarilgan
+	// transcode'lar soni (/metrics; faqat loop goroutine'sida yoziladi;
+	// 2026-11-22 barqarorlik ishlari).
+	tcRestarts int
 }
 
 func (m *Manager) loop() {

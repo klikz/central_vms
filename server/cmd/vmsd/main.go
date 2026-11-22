@@ -50,6 +50,7 @@ func run() error {
 		seedAdm  = flag.String("seed-admin", "", "admin yaratish/yangilash: username:parol (make admin)")
 		showVer  = flag.Bool("version", false, "versiyani chiqarish")
 		backupO  = flag.String("backup", "", "bazaning issiq nusxasi (VACUUM INTO) — shu faylga yozib chiqish")
+		doctor   = flag.Bool("doctor", false, "o'zini-tekshirish: config/DB/MediaMTX/portlar/zaxira (exit 1 agar FAIL bo'lsa)")
 	)
 	flag.Parse()
 
@@ -72,6 +73,12 @@ func run() error {
 	}
 	defer logW.Close()
 	lg = lg.With(slog.String("svc", "vmsd"), slog.String("version", version.Version))
+
+	// doctor: hech narsani o'zgartirmaydi — DB'ni faqat o'qiydi, portlarni
+	// qisqa vaqtga ochib yopadi. Server ishlab turganda ham ishlaydi.
+	if *doctor {
+		return runDoctor(cfg)
+	}
 
 	if *migrate != "" {
 		return runMigrate(lg, cfg, *migrate)
@@ -155,6 +162,9 @@ func run() error {
 		Join:  wsagent.NewJoiner(db, reg, lg, cfg.Join.RatePer5m, nil),
 		Agent: hub,
 		Lg:    lg,
+		// HTTP qatlam hisoblagichlari — newHTTPServer Wrap qiladi,
+		// /metrics chiqaradi (2026-11-22 barqarorlik ishlari).
+		HTTP: &httpapi.HTTPMetrics{},
 	}
 	// --- S2 media bog'lamalari ---
 	caps, gerr := gpu.Detect(cfg.Media.FFmpegPath)

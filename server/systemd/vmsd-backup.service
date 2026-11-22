@@ -1,0 +1,19 @@
+# vmsd zaxira xizmati — kunlik issiq nusxa (VACUUM INTO, server to'xtamaydi).
+# `make install` buni va vmsd-backup.timer'ni /etc/systemd/system'ga soladi;
+# cron varianti (install-notes §6) endi ikkinchi plan.
+[Unit]
+Description=Central VMS — SQLite zaxirasi (vmsd -backup / VACUUM INTO)
+After=vmsd.service
+Wants=vmsd.service
+
+[Service]
+Type=oneshot
+# backup.sh: 1-rejim — vmsd binarisi orqali (sqlite3 CLI shart emas),
+# butunlik tekshiruvi ichida; eski nusxalar KEEP bo'yicha o'chiriladi.
+Environment=VMSD_BIN=/opt/vmsd/vmsd
+Environment=VMSD_CONFIG=/opt/vmsd/config/config.yaml
+ExecStart=/opt/vmsd/backup.sh /var/lib/vmsd/vmsd.db /var/backups/vmsd 14
+# Zaxira papkasi faqat root'ga (ichida parol hashlari bor).
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true

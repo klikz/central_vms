@@ -5,13 +5,19 @@
 Description=Central VMS media server (MediaMTX)
 After=network-online.target
 Wants=network-online.target
+# Crash-loop himoyasi (vmsd.service bilan bir xil siyosat).
+StartLimitIntervalSec=300
+StartLimitBurst=20
 
 [Service]
 Type=simple
 ExecStart=/opt/vmsd/mediamtx/mediamtx /opt/vmsd/mediamtx/mediamtx.yml
 Restart=always
 RestartSec=3
-LimitNOFILE=4096
+LimitNOFILE=65536
+NoNewPrivileges=true
+LockPersonality=true
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target

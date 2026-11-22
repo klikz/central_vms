@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -80,6 +81,12 @@ type Hub struct {
 	clock    clock     // testlarda fake (idle/ping kuzatuvi)
 	sink     MediaSink // S2: media xabarlari session manager'ga
 	ui       UIBroadcaster
+
+	// connOK/connFail — /metrics uchun (2026-11-22): muvaffaqiyatli
+	// handshake'lar va rad etilganlar (flap yoki kalit qidirish
+	// belgisi; alert.sh shu oraliqdan foydalanadi).
+	connOK   atomic.Int64
+	connFail atomic.Int64
 }
 
 // rotateWait — sozlanadigan tasdiq kutish vaqti.
@@ -286,6 +293,13 @@ func (h *Hub) Count() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return len(h.conns)
+}
+
+// ConnStats — jami muvaffaqiyatli handshake'lar va rad etilganlar
+// (/metrics; 2026-11-22). Fail/ok nisbati o'sib borsa — agent flap
+// qilmoqda yoki kalit qidirilmoqda degani (alert.sh shuni kuzatadi).
+func (h *Hub) ConnStats() (ok, fail int64) {
+	return h.connOK.Load(), h.connFail.Load()
 }
 
 // PushConfig — admin amali: `config_push` (protocol.md §5.7).

@@ -1,0 +1,73 @@
+# CI darvozasi — har push/PR'da ikkala tomondagi test darvozasini
+# (make gate: fmt+vet+lint+race+coverage bo'sagasi) va UI testlarini
+# ishga tushiradi. Mahalliy `make gate` bilan BIR XIL — ya'ni CI'da
+# yong'il narsa yo'q; qo'shimcha: golangci-lint maslahat bosqichi.
+#
+# Eslatma: e2e (jonli MediaMTX/FFmpeg zanjiri) CI'da EMAS — ular
+# `make e2e-s2/e3` orqali maxsus mashinada (scripts/soak.sh bilan).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  server-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+      # gate = fmt vet lint race + coverage bo'sagasi (server/Makefile).
+      # golangci-lint o'rnatilmagan muhitda gate avtomatik vet+gofmt'ga
+      # tushadi — quyidagi "lint (maslahat)" bosqichi to'liq to'plamni
+      # alohida ko'rsatadi (break qilmaydi, faqat ogohlantiradi).
+      - name: gate
+        run: make -C server gate
+      - name: lint (maslahat)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.64
+          working-directory: server
+
+  client-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: client/go.mod
+      - name: gate
+        run: make -C client gate
+      - name: lint (maslahat)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.64
+          working-directory: client
+
+  ui-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: server/webui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/webui/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npx vitest run

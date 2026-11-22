@@ -54,9 +54,16 @@ func newHTTPServer(cfg config.Config, lg *slog.Logger, deps *httpapi.Deps) []*ht
 	// hijack'dan keyin o'z deadline'larini o'zi boshqaradi (wsagent/
 	// wsui readLoop'larida SetReadDeadline bor), shuning uchun 30 s
 	// ularga ta'sir qilmaydi.
+	// HTTP hisoblagichlari (2026-11-22 barqarorlik ishlari): so'rovlar
+	// soni, status klasslari, davomiylik histogrammasi — /metrics'da.
+	// WS yo'llari o'ldan tashqari (ularning gauge'lari hub'larda).
+	var handler http.Handler = mux
+	if deps != nil && deps.HTTP != nil {
+		handler = deps.HTTP.Wrap(mux)
+	}
 	srv := &http.Server{
 		Addr:              cfg.Bind,
-		Handler:           httpapi.BodyLimit(mux),
+		Handler:           httpapi.BodyLimit(handler),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		IdleTimeout:       120 * time.Second,

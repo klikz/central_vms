@@ -94,16 +94,24 @@ func (p *parser) parseMapping(indent int) (map[string]any, error) {
 		}
 
 		// Qiymat bo'sh — ichma-ich uyum yoki blok ro'yxat bo'lishi mumkin.
+		// Bo'sh va faqat-izohli qatorlar OLDIRAB o'tiladi (2026-11-22:
+		// `limits:` dan keyin darhol izoh kelsa, butun blok jim `nil`
+		// deb o'qilar, keyingi qator esa "noto'g'ri indentatsiya" deb
+		// chiqarardi — foydalanuvchi izohi konfiguratsiyani buzardi).
+		for p.i < len(p.lines) {
+			cand := stripComment(strings.TrimRight(p.lines[p.i], " \t\r"))
+			if strings.TrimSpace(cand) == "" {
+				p.i++
+				continue
+			}
+			break
+		}
 		if p.i >= len(p.lines) {
 			out[key] = nil
 			continue
 		}
 		next := p.lines[p.i]
 		nextTrim := stripComment(strings.TrimRight(next, " \t\r"))
-		if strings.TrimSpace(nextTrim) == "" {
-			out[key] = nil
-			continue
-		}
 		nextIndent := indentOf(next)
 		if nextIndent <= indent {
 			out[key] = nil

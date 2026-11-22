@@ -38,9 +38,11 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	conn, err := h.handshake(ws, agentID)
 	if err != nil {
+		h.connFail.Add(1) // /metrics: flap/brute-force belgisi (2026-11-22)
 		h.lg.Info("handshake rad etildi", "agent_id", agentID, "err", err)
 		return
 	}
+	h.connOK.Add(1)
 	h.runConn(conn)
 }
 

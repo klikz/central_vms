@@ -23,7 +23,12 @@ probe:
   full_probe_on_publish_fail: true      # publish xatosida darhol qayta probe (§12.3)
 
 limits:
-  max_uploads: 8                        # server config_push bilan yangilanadi (§5.7)
+  # Hikvision/Dahua kameraning O'ZIDA sessiya limiti bor (odatda 4):
+  # bitta kamera uchun main+sub publish + probe birga 2-3 sessiya qiladi.
+  # Shuning uchun prod'da 4 tavsiya etiladi (8 emas): ko'p kamera bir
+  # vaqtda tortilsa ham kamera sessiyalari chegarada qoladi (cams.Gate
+  # band kamerani proberlamaydi — §8.3b; 2026-11-22 izohi).
+  max_uploads: 4                        # server config_push bilan yangilanadi (§5.7)
   max_local_transcodes: 4               # GPU bo'lsa 8, CPU-only 4 (§10.4)
 
 onvif:
