@@ -225,3 +225,30 @@ func TestWsui_BroadcastDuringDisconnectNoPanic(t *testing.T) {
 	close(stop)
 	wg.Wait()
 }
+
+// `?access=` endi qabul qilinmaydi: access token query string'da
+// proksi/log'larga tushardi (2026-11-21 server auditi).
+func TestWsui_AccessQueryRejected(t *testing.T) {
+	srv, _, acc := newTestHub(t, Config{PingTO: time.Second, DeadTO: 5 * time.Second})
+	ws, resp, err := websocket.DefaultDialer.Dial(wsURL(srv)+"?access="+acc, nil)
+	if err == nil {
+		ws.Close()
+		t.Fatal("?access= bilan ulanish o'tib ketdi")
+	}
+	if resp == nil || resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("401 kutilardi: %v", resp)
+	}
+}
+
+// Ticket bir martalik: ikkinchi marta ishlatib bo'lmaydi.
+func TestWsui_TicketSingleUse(t *testing.T) {
+	srv, h, _ := newTestHub(t, Config{PingTO: time.Second, DeadTO: 5 * time.Second})
+	q := ticketQ(t, h)
+	ws := dial(t, srv, q)
+	ws.Close()
+	if _, resp, err := websocket.DefaultDialer.Dial(wsURL(srv)+q, nil); err == nil {
+		t.Fatal("ticket qayta ishlatildi")
+	} else if resp != nil && resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("401 kutilardi: %d", resp.StatusCode)
+	}
+}
