@@ -116,6 +116,9 @@ func (t *Transcoder) Count() int {
 	return len(t.procs)
 }
 
+// Limit — bir vaqtda yurishi mumkin bo'lgan FFmpeg jarayonlari (sozlama).
+func (t *Transcoder) Limit() int { return t.max }
+
 // Get — kamera bo'yicha statistika.
 func (t *Transcoder) Get(cameraID string) (Stats, bool) {
 	t.mu.Lock()

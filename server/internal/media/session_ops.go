@@ -38,6 +38,38 @@ func (m *Manager) sessionEvent(st *loopState, s *session, state, reason string) 
 	})
 }
 
+// StateSnapshot — media menejerining joriy holati (admin API va
+// /metrics uchun; api.md: GET /api/admin/media/state).
+func (m *Manager) StateSnapshot() map[string]any {
+	return m.submit(&cmd{op: "state"}).stateOut
+}
+
+// stateSnapshot — faqat loop goroutine'ida chaqiriladi.
+func (m *Manager) stateSnapshot(st *loopState) map[string]any {
+	sessions := map[string]int{}
+	for _, s := range st.sessions {
+		sessions[s.state]++
+	}
+	pubs := make([]map[string]any, 0, len(st.pubs))
+	for _, p := range st.pubs {
+		pubs = append(pubs, map[string]any{
+			"id": p.id, "camera": p.cameraID, "agent": p.agentID, "profile": p.profile,
+			"path": p.path, "mode": p.mode, "ready": p.ready,
+			"refcount": p.refcount, "transcoding": p.tcStarted, "tc_path": p.tcPath,
+		})
+	}
+	tc, tq := 0, 0
+	if m.deps.Transcode != nil {
+		tc = m.deps.Transcode.Count()
+		tq = m.deps.Transcode.Limit()
+	}
+	return map[string]any{
+		"sessions": sessions, "publishes": pubs,
+		"transcodes": tc, "transcode_max": tq,
+		"backend": string(m.deps.GPU.Backend), "encoder": m.deps.GPU.Encoder,
+	}
+}
+
 // ErrNotOwner — sessiya boshqa foydalanuvchiniki (IDOR himoyasi,
 // 2026-11-21 server auditi: sessiya ID'lari wsui Broadcast'ida
 // filtrsiz tarqaladi, shuning uchun ID'ni bilgan har qanday foydalanuvchi
@@ -78,6 +110,8 @@ func (m *Manager) handle(st *loopState, c *cmd) {
 		m.transcodeFailed(st, c)
 	case "tcend":
 		m.transcodeEnded(st, c)
+	case "state":
+		c.stateOut = m.stateSnapshot(st)
 	case "stats":
 		// stats allaqachon muhofaza qilingan; tick bilan bir xil ish
 	}

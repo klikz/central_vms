@@ -17,7 +17,7 @@ import (
 func (d *Deps) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	us, err := d.Reg.ListUsers()
 	if err != nil {
-		regErr(w, err)
+		d.regErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, us)
@@ -40,12 +40,12 @@ func (d *Deps) handleAdminUserCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	hash, err := auth.HashPassword(in.Password)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal", err.Error())
+		d.fail(w, http.StatusInternalServerError, "internal", err)
 		return
 	}
 	id, err := d.Reg.CreateUser(in.Username, hash, in.Role, in.DisplayName)
 	if err != nil {
-		regErr(w, err)
+		d.regErr(w, err)
 		return
 	}
 	cl, _ := auth.ClaimsFrom(r)
@@ -83,8 +83,21 @@ func (d *Deps) handleAdminUserPatch(w http.ResponseWriter, r *http.Request) {
 		hash = &h
 	}
 	if err := d.Reg.UpdateUser(id, in.Role, in.DisplayName, in.Disabled, hash); err != nil {
-		regErr(w, err)
+		d.regErr(w, err)
 		return
+	}
+	// Xavfsizlikka tegishli o'zgarishlarda (parol, disable, rol) mavjud
+	// access tokenlar DARHOL yaroqsiz bo'ladi: avlod o'stiriladi va
+	// refresh'lar o'chiriladi. Avval bu o'zgarishlar access token
+	// muddati (15 daqiqa) tugaguncha kuchga kirmas edi (2026-11-21
+	// server auditi).
+	if hash != nil || (in.Disabled != nil) || (in.Role != nil) {
+		if err := d.Reg.BumpUserTokenEpoch(id); err != nil {
+			d.Lg.Warn("token avlod o'stirish", "user", id, "err", err)
+		}
+		if err := d.Tokens.RevokeUser(id); err != nil {
+			d.Lg.Warn("refresh bekor qilish", "user", id, "err", err)
+		}
 	}
 	cl, _ := auth.ClaimsFrom(r)
 	_ = d.Audit.Add(cl.Sub, audit.UserUpdate, r.PathValue("id"))
@@ -97,7 +110,7 @@ func (d *Deps) handleAdminUserPatch(w http.ResponseWriter, r *http.Request) {
 func (d *Deps) handleJoinsList(w http.ResponseWriter, r *http.Request) {
 	list, err := d.Reg.ListJoinRequests(r.URL.Query().Get("status"))
 	if err != nil {
-		regErr(w, err)
+		d.regErr(w, err)
 		return
 	}
 	if list == nil {
@@ -122,11 +135,11 @@ func (d *Deps) handleJoinApprove(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, wsagent.ErrNameTaken):
-			writeErr(w, http.StatusConflict, "name_taken", err.Error())
+			d.fail(w, http.StatusConflict, "name_taken", err)
 		case errors.Is(err, wsagent.ErrBadKey):
-			writeErr(w, http.StatusBadRequest, "bad_request", err.Error())
+			d.fail(w, http.StatusBadRequest, "bad_request", err)
 		default:
-			regErr(w, err)
+			d.regErr(w, err)
 		}
 		return
 	}
@@ -148,7 +161,7 @@ func (d *Deps) handleJoinReject(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&in)
 	if err := d.Join.Reject(id, in.Note, claimsSub(r)); err != nil {
-		regErr(w, err)
+		d.regErr(w, err)
 		return
 	}
 	_ = d.Audit.Add(claimsSub(r), audit.JoinReject, strconv.FormatInt(id, 10))
@@ -163,7 +176,7 @@ func (d *Deps) handleJoinDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := d.Join.Delete(id); err != nil {
-		regErr(w, err)
+		d.regErr(w, err)
 		return
 	}
 	_ = d.Audit.Add(claimsSub(r), audit.JoinDelete, strconv.FormatInt(id, 10))
@@ -175,7 +188,7 @@ func (d *Deps) handleJoinDelete(w http.ResponseWriter, r *http.Request) {
 func (d *Deps) handlePreauthList(w http.ResponseWriter, r *http.Request) {
 	list, err := d.Reg.ListPreauth()
 	if err != nil {
-		regErr(w, err)
+		d.regErr(w, err)
 		return
 	}
 	if list == nil {
@@ -200,11 +213,11 @@ func (d *Deps) handlePreauthAdd(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, registry.ErrBadInput):
-			writeErr(w, http.StatusBadRequest, "bad_ip", err.Error())
+			d.fail(w, http.StatusBadRequest, "bad_ip", err)
 		case errors.Is(err, registry.ErrExists):
-			writeErr(w, http.StatusConflict, "exists", err.Error())
+			d.fail(w, http.StatusConflict, "exists", err)
 		default:
-			regErr(w, err)
+			d.regErr(w, err)
 		}
 		return
 	}
@@ -219,7 +232,7 @@ func (d *Deps) handlePreauthDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := d.Reg.DeletePreauth(id); err != nil {
-		regErr(w, err)
+		d.regErr(w, err)
 		return
 	}
 	_ = d.Audit.Add(claimsSub(r), audit.PreauthDel, strconv.FormatInt(id, 10))
@@ -244,7 +257,7 @@ func (d *Deps) handleClientPatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := d.Reg.PatchClient(id, in.Name, in.SiteID, in.MaxUploads, in.MaxTranscodes, in.TranscodeMode); err != nil {
-		regErr(w, err)
+		d.regErr(w, err)
 		return
 	}
 	// Limit/siyosat o'zgarsa agentga darhol config_push (protocol.md §5.7).
@@ -276,11 +289,11 @@ func (d *Deps) handleClientDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	c, err := d.Reg.GetClientByID(id)
 	if err != nil {
-		regErr(w, err)
+		d.regErr(w, err)
 		return
 	}
 	if err := d.Reg.DeleteClient(id); err != nil {
-		regErr(w, err)
+		d.regErr(w, err)
 		return
 	}
 	if d.Agent != nil && d.Agent.Kick(c.AgentID, 4004, "mijoz_ochirildi") {
@@ -301,7 +314,7 @@ func (d *Deps) handleCameraPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := d.Reg.PatchCameraPolicy(r.PathValue("id"), in.PlayProfile, in.TranscodeMode, in.Enabled); err != nil {
-		regErr(w, err)
+		d.regErr(w, err)
 		return
 	}
 	_ = d.Audit.Add(claimsSub(r), audit.AdminAction, "camera_policy:"+r.PathValue("id"))
@@ -322,7 +335,7 @@ func (d *Deps) handleSecretRotate(w http.ResponseWriter, r *http.Request) {
 	}
 	secret, err := d.Agent.RotateSecret(agentID, 60)
 	if err != nil {
-		regErr(w, err)
+		d.regErr(w, err)
 		return
 	}
 	_ = d.Audit.Add(claimsSub(r), audit.AdminAction, "secret_rotate:"+agentID)
@@ -334,7 +347,7 @@ func (d *Deps) handleSecretRotate(w http.ResponseWriter, r *http.Request) {
 func (d *Deps) handleAudit(w http.ResponseWriter, r *http.Request) {
 	items, err := d.Audit.List(200)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal", err.Error())
+		d.fail(w, http.StatusInternalServerError, "internal", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, items)
@@ -345,4 +358,48 @@ func claimsSub(r *http.Request) int64 {
 		return c.Sub
 	}
 	return 0
+}
+
+// handleUserDelete — api.md'da hujjatlangan `DELETE /api/admin/users/{id}`
+// (avval umulqon register qilinmagan edi — 405 qaytardi).
+func (d *Deps) handleUserDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeErr(w, http.StatusBadRequest, "bad_input", "")
+		return
+	}
+	cl, _ := auth.ClaimsFrom(r)
+	if cl != nil && cl.Sub == id {
+		writeErr(w, http.StatusBadRequest, "self_delete", "")
+		return
+	}
+	if err := d.Reg.DeleteUser(id); err != nil {
+		d.regErr(w, err)
+		return
+	}
+	_ = d.Audit.Add(cl.Sub, "user_delete", strconv.FormatInt(id, 10))
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// handleMediaState — api.md: `GET /api/admin/media/state` (faol sessiyalar,
+// FFmpeg jarayonlari, backend; operator "nima uchun preview yo'q" deganda
+// shu yerga qaraydi).
+func (d *Deps) handleMediaState(w http.ResponseWriter, r *http.Request) {
+	out := map[string]any{}
+	if d.Media != nil {
+		if st := d.Media.StateSnapshot(); st != nil {
+			out["media"] = st
+		}
+	}
+	if d.Agent != nil {
+		out["agents_online"] = d.Agent.Count()
+	}
+	if d.UI != nil {
+		out["ui_conns"] = d.UI.Count()
+	}
+	if total, online, err := d.Reg.CountCameras(); err == nil {
+		out["cameras_total"] = total
+		out["cameras_online"] = online
+	}
+	writeJSON(w, http.StatusOK, out)
 }

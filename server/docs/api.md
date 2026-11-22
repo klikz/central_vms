@@ -44,6 +44,7 @@ so'rov yubormaydi, sahifa yangilanmaydi:
 | POST | `/api/cameras/{id}/play` | `{profile:"sub"|"main", browser:{hevc:bool}}` → `{session_id, whep_url, token, ttl, codec, transcoded}` |
 | POST | `/api/cameras/{id}/preview` | `{on:true|false}` → preview sessiya (kind=preview, profile=sub) |
 | DELETE | `/api/sessions/{id}` | sessiyani mayin to'xtatish (idempotent). Faqat sessiya egasi — begga ID `403 session_not_yours` |
+| POST | `/api/ui/ws-ticket` | `{ticket, ttl_s}` — UI WS uchun bir martalik kalit (15 s). `GET /api/ui/ws?ticket=…`; `?access=` QABUL QILINMAYDI (token query'da proksi loglariga tushardi). So'rov o'zi access token bilan (header/cookie) himoyalangan |
 | POST | `/api/sessions/refresh` | `{session_id, extend_s}` → TTL uzatish. `extend_s` 0..120 s (0 — default); katta qiymat `400 bad_extend`. Faqat sessiya egasi: begga ID `403 session_not_yours` (sessiya ID'lari WS'da tarqaladi — 2026-11-21 auditi) |
 | GET | `/api/sessions` | faol oqimlar (admin: barchasi, viewer: o'ziniki) |
 
@@ -71,7 +72,11 @@ readers=0 bo'ladi va `idle_stop_s` keyin agentga `media_stop` yuboriladi
 
 ## Admin (S1/S4)
 
-`GET/POST/PATCH/DELETE /api/admin/users`;
+`GET/POST/PATCH/DELETE /api/admin/users[/{id}]` — `DELETE` oxirgi faol
+adminni o'chirmaydi (`409`), o'zini o'chirish `400 self_delete`.
+Parol/rol/disable o'zgarishida foydalanuvchining barcha tokenlari
+darhol bekor qilinadi (access keyingi so'rovda `401 token_revoked`,
+refresh'lar o'chiriladi).
 `GET /api/admin/joins?status=pending` — ulanish so‘rovlari;
 `POST /api/admin/joins/{id}/approve` `{name}` → `{agent_id}` (nom band bo‘lsa `409 name_taken`);
 `POST /api/admin/joins/{id}/reject` `{note}`; `DELETE /api/admin/joins/{id}`;
@@ -79,7 +84,9 @@ readers=0 bo'ladi va `idle_stop_s` keyin agentga `media_stop` yuboriladi
 ruxsat (1.0-draft.10; bir martalik kod oqimi bekor qilindi);
 `GET/POST/PATCH /api/admin/clients` (nom, site, max_uploads, max_transcodes, transcode_mode, o'chirish);
 `PATCH /api/admin/cameras/{id}` `{transcode_mode, play_profile, enabled}` (policy);
-`GET /api/admin/media/state` (faol sessiyalar, FFmpeg jarayonlari, backend, navbat — S2/S4);
+`GET /api/admin/media/state` — `{media:{sessions, publishes[], transcodes,
+transcode_max, backend, encoder}, agents_online, ui_conns, cameras_total,
+cameras_online}` (operator "nima uchun preview yo'q" deganda shu yerga qaraydi);
 `GET /api/admin/audit`.
 
 ## Agent (ochiq endpoint — protocol.md §3)
@@ -103,7 +110,8 @@ WS   /api/agent/ws?agent_id=…   (auth/welcome handshake — protocol.md §4)
 ```
 POST /internal/auth     MediaMTX auth-hook (protocol.md §15) — S2'da to'liq
 GET  /healthz           {ok, version, protocol, protocol_label}
-GET  /metrics           Prometheus (S4)
+GET  /metrics           Prometheus — ichki bind'da (MediaMTX auth-hook
+                        bilan bir xil 127.0.0.1 manzil), tashqariga chiqmaydi
 ```
 
 ## Kamera URL namunasi (Dahua, agent tomonida — serverga mask'langan holda keladi)

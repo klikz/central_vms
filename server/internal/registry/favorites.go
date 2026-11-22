@@ -1,8 +1,11 @@
 package registry
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 )
 
 // --- Favorites (root §6/§11) ---
@@ -114,29 +117,52 @@ func (r *Registry) ListLayouts(userID int64) ([]Layout, error) {
 
 // UpdateLayout — nom/grid/slot qisman; nil → o'zgarmaydi.
 func (r *Registry) UpdateLayout(layoutID, userID int64, name *string, grid *int, slotsJSON *string) error {
-	if name == nil && grid == nil && slotsJSON == nil {
-		return nil
-	}
 	if grid != nil && !validGrid(*grid) {
 		return fmt.Errorf("layout yangilash: %w", ErrBadInput)
 	}
 	if slotsJSON != nil && !json.Valid([]byte(*slotsJSON)) {
 		return fmt.Errorf("layout yangilash: slots json: %w", ErrBadInput)
 	}
+	sets := map[string]any{}
 	if name != nil {
-		if _, err := r.db.Exec("UPDATE layouts SET name=?, updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id=? AND user_id=?", *name, layoutID, userID); err != nil {
-			return wrap(err, "layout name")
-		}
+		sets["name"] = *name
 	}
 	if grid != nil {
-		if _, err := r.db.Exec("UPDATE layouts SET grid=?, updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id=? AND user_id=?", *grid, layoutID, userID); err != nil {
-			return wrap(err, "layout grid")
-		}
+		sets["grid"] = *grid
 	}
 	if slotsJSON != nil {
-		if _, err := r.db.Exec("UPDATE layouts SET slots_json=?, updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id=? AND user_id=?", *slotsJSON, layoutID, userID); err != nil {
-			return wrap(err, "layout slots")
+		sets["slots_json"] = *slotsJSON
+	}
+	if len(sets) > 0 {
+		sets["updated_at"] = "strftime('%Y-%m-%dT%H:%M:%SZ','now')"
+	}
+	// updated_at qiymati funksion ifoda — dynUpdate'ning `=?` shabloni
+	// uchun uni alohida yig'amiz.
+	var parts []string
+	var args []any
+	for _, col := range []string{"name", "grid", "slots_json"} {
+		if v, ok := sets[col]; ok {
+			parts = append(parts, col+"=?")
+			args = append(args, v)
 		}
+	}
+	if len(parts) == 0 {
+		var one int
+		err := r.db.QueryRow("SELECT 1 FROM layouts WHERE id=? AND user_id=?", layoutID, userID).Scan(&one)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("layout yangilash: %w", ErrNotFound)
+		}
+		return wrap(err, "layout yangilash")
+	}
+	parts = append(parts, "updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')")
+	args = append(args, layoutID, userID)
+	res, err := r.db.Exec("UPDATE layouts SET "+strings.Join(parts, ", ")+
+		" WHERE id=? AND user_id=?", args...)
+	if err != nil {
+		return wrap(err, "layout yangilash")
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("layout yangilash: %w", ErrNotFound)
 	}
 	return nil
 }

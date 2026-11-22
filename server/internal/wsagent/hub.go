@@ -4,6 +4,7 @@ package wsagent
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -31,6 +32,7 @@ type Config struct {
 	HandshakeTO   time.Duration // 5 s
 	IdleTO        time.Duration // 30 s — ping oraliqi (protocol.md §2)
 	DeadTO        time.Duration // 90 s — javobsizlikda yopish (4004); IdleTO'dan katta
+	RotateWait    time.Duration // secret_rotate tasdig'i kutiladigan vaqt (0 → 10 s)
 }
 
 // UIBroadcaster — UI'ga holat yuborish (wsui.Hub; import siklini oldini
@@ -63,17 +65,29 @@ type Hub struct {
 	registry *registry.Registry
 	lg       *slog.Logger
 
-	mu          sync.Mutex
-	conns       map[string]*Conn
-	epochs      map[string]int64 // cams_epoch (xotira; DB'ga S2'da yoziladi)
-	lastSeq     map[string]int64
+	mu      sync.Mutex
+	conns   map[string]*Conn
+	epochs  map[string]int64 // cams_epoch (xotira; DB'ga S2'da yoziladi)
+	lastSeq map[string]int64
+	// pendingRotate — ikki bosqichli secret_rotate (§5.6).
+	pendingRotate map[string]*pendingRotate
+	// syncApplied — chunk'lar bo'yicha applied yig'indisi.
 	syncApplied map[string]int
-	// syncSeen — to'liq cams_sync'da KO'RINGAN kamera ID'lari (chunk'lar
-	// bo'yicha to'planadi; §4.2 pruning shu to'plamga qarab qilinadi).
-	syncSeen map[string]map[string]bool // chunk'lar bo'yicha applied yig'indisi
-	clock    clock                      // testlarda fake (idle/ping kuzatuvi)
-	sink     MediaSink                  // S2: media xabarlari session manager'ga
-	ui       UIBroadcaster              // S3: UI'ga push
+	// syncSeen — to'liq cams_sync'da KO'RINGAN kamera ID'lari
+	// (chunk'lar bo'yicha to'planadi; §4.2 pruning shu to'plamga
+	// qarab qilinadi).
+	syncSeen map[string]map[string]bool
+	clock    clock     // testlarda fake (idle/ping kuzatuvi)
+	sink     MediaSink // S2: media xabarlari session manager'ga
+	ui       UIBroadcaster
+}
+
+// rotateWait — sozlanadigan tasdiq kutish vaqti.
+func (h *Hub) rotateWait() time.Duration {
+	if h.cfg.RotateWait > 0 {
+		return h.cfg.RotateWait
+	}
+	return rotateWait
 }
 
 // SetUI — UI push kanalin o'rnatish (S3.0).
@@ -189,19 +203,89 @@ type hubError struct{ s string }
 
 func (e *hubError) Error() string { return e.s }
 
-// RotateSecret — admin amali: yangi secret DB hash + agentga `secret_rotate`
-// (protocol.md §5.6; agent keyingi ulanishdan yangi secret bilan keladi).
+// pendingRotate — ikki bosqichli sir almashtirish holati.
+type pendingRotate struct {
+	secret   string
+	clientID int64
+	done     chan error
+}
+
+// rotateWait — agent tasdig'i kutiladigan vaqt.
+const rotateWait = 10 * time.Second
+
+// RotateSecret — admin amali (protocol.md §5.6).
+//
+// ESKISI: DB hash darhol almashtirilardi, yuborish xatosi (`_ = h.Send`)
+// yutilardi va agent javobi (`secret_rotated.ok`) umuman o'qilmas edi.
+// Agent yangi sirni olmasa keyingi ulanishda 4003 oladi va o'zi
+// tiklana olmaydi — operator "Clear connection → Request access" yo'liga
+// majbur bo'lardi (2026-11-21 server auditi).
+//
+// Endi: agentga yuboriladi, DB hash FAQAT agent tasdiqlaganda
+// almashtiriladi. Tasdiq yo'qsa eski sir ishlayveradi va admin xato
+// oladi.
 func (h *Hub) RotateSecret(agentID string, graceS int) (string, error) {
 	secret := randToken(32)
 	c, err := h.registry.GetClientByAgentID(agentID)
 	if err != nil {
 		return "", err
 	}
-	if err := h.registry.UpdateClientSecret(c.ID, HashSecret(secret)); err != nil {
+	if !h.Online(agentID) {
+		return "", ErrNotOnline
+	}
+	pr := &pendingRotate{secret: secret, clientID: c.ID, done: make(chan error, 1)}
+	h.mu.Lock()
+	if h.pendingRotate == nil {
+		h.pendingRotate = map[string]*pendingRotate{}
+	}
+	h.pendingRotate[agentID] = pr
+	h.mu.Unlock()
+	defer func() {
+		h.mu.Lock()
+		delete(h.pendingRotate, agentID)
+		h.mu.Unlock()
+	}()
+	if err := h.Send(agentID, proto.MsgSecretRotate, proto.SecretRotate{NewSecret: secret, GraceS: graceS}); err != nil {
 		return "", err
 	}
-	_ = h.Send(agentID, proto.MsgSecretRotate, proto.SecretRotate{NewSecret: secret, GraceS: graceS})
-	return secret, nil
+	select {
+	case err := <-pr.done:
+		if err != nil {
+			return "", err
+		}
+		return secret, nil
+	case <-time.After(h.rotateWait()):
+		return "", fmt.Errorf("agent %s sir yangilanishini %s ichida tasdiqlamadi — eski sir saqlanib qoldi",
+			agentID, h.rotateWait())
+	}
+}
+
+// finishRotate — agent javobi (`secret_rotated`): tasdiq bo'lsa DB hash
+// almashtiriladi.
+func (h *Hub) finishRotate(agentID string, sr proto.SecretRotated) {
+	h.mu.Lock()
+	pr := h.pendingRotate[agentID]
+	h.mu.Unlock()
+	if pr == nil {
+		return
+	}
+	if !sr.OK {
+		pr.done <- fmt.Errorf("agent sirni qabul qilmadi")
+		return
+	}
+	if err := h.registry.UpdateClientSecret(pr.clientID, HashSecret(pr.secret)); err != nil {
+		pr.done <- err
+		return
+	}
+	h.lg.Info("sir almashtirildi (agent tasdiqladi)", "agent_id", agentID)
+	pr.done <- nil
+}
+
+// Count — faol agent ulanishlari (metrics).
+func (h *Hub) Count() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.conns)
 }
 
 // PushConfig — admin amali: `config_push` (protocol.md §5.7).

@@ -262,6 +262,7 @@ type cmd struct {
 	elapsed     time.Duration // transcode yashagan vaqti (tcend)
 	failed      bool          // transcode xato bilan tugadimi (tcend)
 	res         *StartResult
+	stateOut    map[string]any // op: "state"
 	ids         []string
 	err         error
 	done        chan struct{}

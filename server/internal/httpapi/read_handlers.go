@@ -13,7 +13,7 @@ import (
 func (d *Deps) handleSites(w http.ResponseWriter, r *http.Request) {
 	sites, err := d.Reg.ListSites()
 	if err != nil {
-		regErr(w, err)
+		d.regErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, sites)
@@ -22,7 +22,7 @@ func (d *Deps) handleSites(w http.ResponseWriter, r *http.Request) {
 func (d *Deps) handleClients(w http.ResponseWriter, r *http.Request) {
 	cs, err := d.Reg.ListClients()
 	if err != nil {
-		regErr(w, err)
+		d.regErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, cs)
@@ -36,7 +36,7 @@ func (d *Deps) handleClientCameras(w http.ResponseWriter, r *http.Request) {
 	}
 	cams, err := d.Reg.ListCamerasByClient(id)
 	if err != nil {
-		regErr(w, err)
+		d.regErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, cams)
@@ -45,7 +45,7 @@ func (d *Deps) handleClientCameras(w http.ResponseWriter, r *http.Request) {
 func (d *Deps) handleCamera(w http.ResponseWriter, r *http.Request) {
 	cam, err := d.Reg.GetCamera(r.PathValue("id"))
 	if err != nil {
-		regErr(w, err)
+		d.regErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, cam)
@@ -55,7 +55,7 @@ func (d *Deps) handleFavorites(w http.ResponseWriter, r *http.Request) {
 	cl, _ := auth.ClaimsFrom(r)
 	ids, err := d.Reg.ListFavoriteCameraIDs(cl.Sub)
 	if err != nil {
-		regErr(w, err)
+		d.regErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, ids)
@@ -64,7 +64,7 @@ func (d *Deps) handleFavorites(w http.ResponseWriter, r *http.Request) {
 func (d *Deps) handleFavoriteAdd(w http.ResponseWriter, r *http.Request) {
 	cl, _ := auth.ClaimsFrom(r)
 	if err := d.Reg.AddFavorite(cl.Sub, r.PathValue("cameraId"), 0); err != nil {
-		regErr(w, err)
+		d.regErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -73,7 +73,7 @@ func (d *Deps) handleFavoriteAdd(w http.ResponseWriter, r *http.Request) {
 func (d *Deps) handleFavoriteDel(w http.ResponseWriter, r *http.Request) {
 	cl, _ := auth.ClaimsFrom(r)
 	if err := d.Reg.RemoveFavorite(cl.Sub, r.PathValue("cameraId")); err != nil {
-		regErr(w, err)
+		d.regErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -87,7 +87,7 @@ func (d *Deps) handleFavoritesReorder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := d.Reg.ReorderFavorites(cl.Sub, ids); err != nil {
-		regErr(w, err)
+		d.regErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -97,7 +97,7 @@ func (d *Deps) handleLayouts(w http.ResponseWriter, r *http.Request) {
 	cl, _ := auth.ClaimsFrom(r)
 	ls, err := d.Reg.ListLayouts(cl.Sub)
 	if err != nil {
-		regErr(w, err)
+		d.regErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, ls)
@@ -125,7 +125,7 @@ func (d *Deps) handleLayoutCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := d.Reg.CreateLayout(cl.Sub, b.Name, b.Grid, b.slotsStr())
 	if err != nil {
-		regErr(w, err)
+		d.regErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]int64{"id": id})
@@ -147,7 +147,7 @@ func (d *Deps) handleLayoutUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := d.Reg.UpdateLayout(lid, cl.Sub, strPtr(b.Name), intPtr(b.Grid), slotsOrNil(b)); err != nil {
-		regErr(w, err)
+		d.regErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -169,7 +169,7 @@ func (d *Deps) handleLayoutDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := d.Reg.DeleteLayout(lid, cl.Sub); err != nil {
-		regErr(w, err)
+		d.regErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -183,7 +183,7 @@ func (d *Deps) handleLayoutDefault(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := d.Reg.SetDefaultLayout(lid, cl.Sub); err != nil {
-		regErr(w, err)
+		d.regErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

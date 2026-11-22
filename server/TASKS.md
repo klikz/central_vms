@@ -457,21 +457,55 @@ o'zim tekshiruvim. Tasdiqlanganlar tuzatildi, testlar qo'shildi.
       `IdleTimeout` 120 s (slow-loris); rate-limit map'ida kalitlar
       umuman tozalanmas edi (RSS o'sishi) — sweep qo'shildi.
 
-**Ochiq qoldi (keyingi yurish, ataylab qoldirildi):**
-- [ ] Token bekor qilish (revocation): logout/rol pasaytirish/parol
-      almashtirishdan keyin ham access token 15 daqiqa ishlaydi; eski
-      refresh cookie 7 kun yaroqli. Yechim: `refresh_tokens(jti)` +
-      `users.token_epoch`.
-- [ ] Registry PATCH'larida transaction yo'q (users/sites/cameras/
-      layouts) va `RowsAffected()==0` tekshirilmaydi — qisman yozuv +
-      mavjud bo'lmagan id'ga 200 OK.
-- [ ] `regErr` xato tasnifida `strings.Contains` ishlatiladi; ichki
-      xato matni mijozga chiqadi; `api.md`'da hujjatlangan
-      `DELETE /api/admin/users`, `/api/admin/media/state`, `/metrics`
-      umulqon yo'q.
-- [ ] `/api/ui/ws` token'ni query'dan oladi (proksi loglariga tushadi)
-      va `CheckOrigin: true` — bir martalik `ws_ticket` kerak.
-- [ ] Retention purge'ni bo'laklarga bo'lish (`LIMIT 500` sikli).
-- [ ] `cams_sync` ack'larini `seq` bo'yicha deduplash (takroriy chunk
-      qayta bajariladi); `epochs/lastSeq/syncApplied` mijoz o'chirilganda
-      tozalanmaydi.
+
+## 2026-11-22 — server auditining ikkinchi bosqichi: qolgan 9 band yopildi
+
+- [x] **`secret_rotate` endi ikki bosqichli** (`wsagent/hub.go`): DB hash
+      FAQAT agent `secret_rotated{ok:true}` yuborgach almashtiriladi;
+      yuborish xatosi yoki javobsizlik admin xatosi bilan qaytadi va
+      eski sir ishlayveradi. Avval `_ = h.Send(...)` xatoni yutardi —
+      agent yangi sirni olmasa keyingi ulanishda 4003 bilan qulflanib,
+      faqat operator aralashuvi bilan tiklanardi.
+      Testlar: `TestSecretRotate`, `TestSecretRotateUnconfirmedKeepsOld`.
+- [x] **Token bekor qilish (revocation)** — migratsiya `0005`:
+      `users.token_epoch` + `refresh_tokens(jti,user_id,expires_at)`.
+      Refresh rotatsiyasi endi haqiqiy (eski cookie `401 bad_refresh`);
+      parol/rol/disable o'zgarishida avlod o'sadi va access token
+      keyingi so'rovda `401 token_revoked`, refresh'lar o'chiriladi.
+      Test: `TestTokenRevocationHTTP`, `TestRefreshTokensAndEpoch`.
+- [x] **UI WS tokeni query'da yurmaydi**: `POST /api/ui/ws-ticket`
+      (bir martalik, 15 s) + `GET /api/ui/ws?ticket=`; `?access=`
+      qabul qilinmaydi. `CheckOrigin` endi same-origin (CSWSH yopildi).
+      UI (`webui/src/lib/ws.ts`) avval ticket oladi; `make ui-test` —
+      25 test OK.
+- [x] **Login limiti**: kalit `ip+akkaunt` + alohida IP qatlami
+      (40/5 min). Avval bitta akkauntga turli IP'lardan urinish
+      5/5 min limitidan o'tib ketar, muvaffaqiyatli login esa shu
+      IP'dagi barcha urinishlarni nolga qaytarardi.
+- [x] **Registry PATCH'lari atomik** (`dynUpdate`): bitta UPDATE,
+      `RowsAffected==0 → 404` (users/sites/cameras/layouts). Avval
+      qisman yozuv + mavjud bo'lmagan id'ga 200 OK va yolg'on audit.
+- [x] **`regErr`** `errors.Is` bilan; ichki xato matni mijozga chiqmaydi
+      (`d.fail` orqali loglanadi). 13 ta `err.Error()` sizib chiqishi
+      olib tashlandi.
+- [x] **`audit_log` truncation** (64/256 belgi) — uzun `username`/`target`
+      bilan jadval shishmaydi, admin audit sahifasi qotmaydi.
+- [x] **Retention purge bo'laklari** (`LIMIT 500` sikli) — bitta katta
+      tranzaksiya `MaxOpenConns(1)` bilan yozuvchilarni qotirmaydi.
+- [x] **Hodisa ketma-ketligi**: `wsui` Envelope'iga `seq` qo'shildi;
+      yangi agent ulanishida `epochs/lastSeq/syncApplied/syncSeen`
+      tozalanadi (mijoz o'chirilganda eski yod qolardi).
+      Izoh (qasddan qoldirilgan qism): cams_sync chunk'larini `seq`
+      bo'yicha qat'iy deduplash xavfli — qisman xatodan keyin agent
+      boshidan qayta yuboradi va dedup tuzatishni o'tkazib yuborardi;
+      amallar idempotent (upsert/delete), `applied` hisobi esa
+      allaqachon to'g'rilangan.
+- [x] **api.md kontrakti bajarildi**: `DELETE /api/admin/users/{id}`
+      (oxirgi faol adminni o'chirmaydi, o'zini o'chirish `400
+      self_delete`), `GET /api/admin/media/state`, `GET /metrics`
+      (ichki bind'da) qo'shildi.
+
+**Keyingi kuzatuv/reja:** `/metrics` ga HTTP qatlam hisoblagichlari
+(so'rovlar soni/davomiyligi); yangi Ubuntu'da systemd ostida jonli
+sinov; yuk testi; `internal/registry` paket qamrovi 49,6% (umumiy
+darvaza 59,3% — bo'shadan past emas).

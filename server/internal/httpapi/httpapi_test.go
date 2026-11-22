@@ -113,6 +113,10 @@ func newServer(t *testing.T) (*httptest.Server, *registry.Registry, *wsagent.Hub
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Prod'dagi kabi: refresh hisobi DB'da, access token avlodi tekshiriladi.
+	tokens.SetRefreshStore(reg)
+	tokens.SetEpochSource(reg.UserTokenEpoch)
+	tokens.SetEpochCacheTTL(time.Millisecond) // test: bekor qilish tez ko'rinsin
 	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
 	if os.Getenv("VMS_TESTLOG") == "1" {
 		lg = slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -398,7 +402,22 @@ func TestJoinToCamerasFlow(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 
-	// Secret rotate (admin) — DB hash o'zgaradi.
+	// Secret rotate (admin) — DB hash FAQAT agent tasdig'idan keyin
+	// o'zgaradi (ikki bosqichli, 2026-11-21 auditi). Agent javobini
+	// simulyatsiya qilamiz.
+	go func() {
+		for {
+			var e2 proto.Envelope
+			if err := ws.ReadJSON(&e2); err != nil {
+				return
+			}
+			if e2.Type == proto.MsgSecretRotate {
+				raw2, _ := json.Marshal(proto.SecretRotated{OK: true})
+				_ = ws.WriteJSON(proto.Envelope{Type: proto.MsgSecretRotated, Data: raw2})
+				return
+			}
+		}
+	}()
 	code, m, raw = do(t, http.MethodPost, srv.URL+"/api/admin/clients/"+itoa64(clients[0].ID)+"/secret-rotate", "", adminTok)
 	if code != 200 {
 		t.Fatalf("rotate: %d %s", code, raw)

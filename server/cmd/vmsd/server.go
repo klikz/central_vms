@@ -61,6 +61,14 @@ func newHTTPServer(cfg config.Config, lg *slog.Logger, deps *httpapi.Deps) []*ht
 		ReadTimeout:       30 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
+	// GET /metrics — api.md'da hujjatlangan edi, lekin umulqon yo'q edi.
+	// Ichki bind'da (127.0.0.1) beriladi: sonlar tashqariga chiqmasligi
+	// uchun va Prometheus bir xil mashinada yig'ishi uchun.
+	hookMux.HandleFunc("GET /metrics", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		writeMetrics(w, deps)
+	})
+
 	hook := &http.Server{
 		Addr:              cfg.MediaMTX.AuthHookBind,
 		Handler:           hookMux,

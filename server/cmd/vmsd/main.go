@@ -136,15 +136,21 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	// Token bekor qilish: refresh hisobi DB'da yuradi, access token esa
+	// foydalanuvchi avlodi bilan solishtiriladi (2026-11-21 server
+	// auditi: logout/eski refresh/rol o'zgarishi hisobga olinmas edi).
+	tokens.SetRefreshStore(reg)
+	tokens.SetEpochSource(reg.UserTokenEpoch)
 	hub := wsagent.NewHub(wsagent.Config{
 		ServerVersion: version.Version, MinProto: protoVersion, MaxProto: protoVersion,
 	}, reg, lg)
 	deps := &httpapi.Deps{
-		Cfg:    cfg,
-		Reg:    reg,
-		Tokens: tokens,
-		Login:  auth.NewRate(5, 5*time.Minute, nil),
-		Audit:  audit.New(db),
+		Cfg:     cfg,
+		Reg:     reg,
+		Tokens:  tokens,
+		Login:   auth.NewRate(5, 5*time.Minute, nil),
+		LoginIP: auth.NewRate(40, 5*time.Minute, nil),
+		Audit:   audit.New(db),
 		// §3: ulanish so'rovlari (kod bekor qilindi — 1.0-draft.10).
 		Join:  wsagent.NewJoiner(db, reg, lg, cfg.Join.RatePer5m, nil),
 		Agent: hub,

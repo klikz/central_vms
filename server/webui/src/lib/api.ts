@@ -191,6 +191,9 @@ export const api = {
     return j.user as User;
   },
   logout: () => req("POST", "/api/auth/logout"),
+  // UI WS uchun bir martalik kalit: access token query'da yurmaydi
+  // (proksi loglariga tushmasligi uchun, 2026-11-21 server auditi).
+  wsTicket: () => req<{ ticket: string; ttl_s: number }>("POST", "/api/ui/ws-ticket"),
   me: () => req<Me>("GET", "/api/me"),
   sites: () => req<Site[]>("GET", "/api/sites"),
   clients: () => req<Client[]>("GET", "/api/clients"),

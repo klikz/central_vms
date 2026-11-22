@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"database/sql"
 	"fmt"
 )
 
@@ -82,35 +83,69 @@ func (r *Registry) ListUsers() ([]User, error) {
 
 // UpdateUser — qisman yangilash: nil maydon o'zgarmaydi. PassHash bo'sh bo'lmasa
 // almashtiriladi (hash chaqiruvchida tayyorlanadi).
+// DeleteUser — foydalanuvchini o'chirish (api.md: DELETE
+// /api/admin/users/{id}). Oxirgi admin o'chirilmaydi (aks holda
+// tizim boshqaruvsiz qoladi).
+func (r *Registry) DeleteUser(id int64) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return wrap(err, "user o'chirish")
+	}
+	defer func() { _ = tx.Rollback() }()
+	var role string
+	var disabled int
+	if err := tx.QueryRow("SELECT role, disabled FROM users WHERE id=?", id).Scan(&role, &disabled); err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("user o'chirish: %w", ErrNotFound)
+		}
+		return wrap(err, "user o'qish")
+	}
+	if role == "admin" && disabled == 0 {
+		var n int
+		if err := tx.QueryRow("SELECT count(*) FROM users WHERE role='admin' AND disabled=0").Scan(&n); err != nil {
+			return wrap(err, "admin sanash")
+		}
+		if n <= 1 {
+			return fmt.Errorf("user o'chirish: oxirgi faol admin: %w", ErrExists)
+		}
+	}
+	if _, err := tx.Exec("DELETE FROM refresh_tokens WHERE user_id=?", id); err != nil {
+		return wrap(err, "refresh tozalash")
+	}
+	res, err := tx.Exec("DELETE FROM users WHERE id=?", id)
+	if err != nil {
+		return wrap(err, "user o'chirish")
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("user o'chirish: %w", ErrNotFound)
+	}
+	return tx.Commit()
+}
+
 func (r *Registry) UpdateUser(id int64, role *string, displayName *string, disabled *bool, passHash *string) error {
 	if role != nil && !validRole(*role) {
 		return fmt.Errorf("user yangilash: %w", ErrBadInput)
 	}
+	sets := map[string]any{}
 	if role != nil {
-		if _, err := r.db.Exec("UPDATE users SET role=? WHERE id=?", *role, id); err != nil {
-			return wrap(err, "user role")
-		}
+		sets["role"] = *role
 	}
 	if displayName != nil {
-		if _, err := r.db.Exec("UPDATE users SET display_name=? WHERE id=?", *displayName, id); err != nil {
-			return wrap(err, "user name")
-		}
+		sets["display_name"] = *displayName
 	}
 	if disabled != nil {
 		v := 0
 		if *disabled {
 			v = 1
 		}
-		if _, err := r.db.Exec("UPDATE users SET disabled=? WHERE id=?", v, id); err != nil {
-			return wrap(err, "user disabled")
-		}
+		sets["disabled"] = v
 	}
 	if passHash != nil && *passHash != "" {
-		if _, err := r.db.Exec("UPDATE users SET pass_hash=? WHERE id=?", *passHash, id); err != nil {
-			return wrap(err, "user pass")
-		}
+		sets["pass_hash"] = *passHash
 	}
-	return nil
+	return dynUpdate(r.db, "users", sets,
+		[]string{"role", "display_name", "disabled", "pass_hash"},
+		"id=?", []any{id}, "user yangilash")
 }
 
 // TouchLogin — last_login_at (UTC) yangilash.

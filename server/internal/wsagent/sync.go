@@ -168,7 +168,14 @@ func (c *Conn) dispatch(env proto.Envelope) error {
 		}
 		return c.hub.registry.SaveCodecProbeForClient(c.clientID, cp.CameraID, cp.Codecs.Main, cp.Codecs.Sub,
 			cp.BFrame.Main, cp.BFrame.Sub)
-	case proto.MsgHB, proto.MsgPong, proto.MsgSecretRotated, proto.MsgCodecFixDone,
+	case proto.MsgSecretRotated:
+		var sr proto.SecretRotated
+		if err := json.Unmarshal(env.Data, &sr); err != nil {
+			return err
+		}
+		c.hub.finishRotate(c.agentID, sr)
+		return c.hub.registry.MarkClientSeen(c.clientID)
+	case proto.MsgHB, proto.MsgPong, proto.MsgCodecFixDone,
 		proto.MsgDiscoveryDone, proto.MsgSelftestDone:
 		return c.hub.registry.MarkClientSeen(c.clientID)
 	case proto.MsgMediaReady:

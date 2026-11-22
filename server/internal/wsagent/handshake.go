@@ -124,6 +124,16 @@ func (h *Hub) handshake(ws *websocket.Conn, agentID string) (*Conn, error) {
 		old.closeWith(CloseReplaced, "qayta_ulanish")
 	}
 	h.conns[agentID] = conn
+	// Yangi ulanish = yangi sinxron hisobi. Mijoz o'chirilganda bu
+	// yodlar tozalanmas edi (epochs/lastSeq/syncApplied o'sib
+	// borardi) va keyingi agent (yoki qayta qo'shilgan eski ID)
+	// eski epoch/seq bilan urushardi (2026-11-21 server auditi).
+	// Welcome'da epoch=0 chiqadi → agent to'liq sync yuboradi,
+	// bu esa §4.2 pruning bilan birga holatni kafolatlaydi.
+	delete(h.epochs, agentID)
+	delete(h.lastSeq, agentID)
+	delete(h.syncApplied, agentID)
+	delete(h.syncSeen, agentID)
 	h.mu.Unlock()
 
 	if err := h.registry.UpdateClientHello(client.ID, hello.AgentVersion, hello.OS, hello.LanIP, mustJSON(hello.Caps)); err != nil {

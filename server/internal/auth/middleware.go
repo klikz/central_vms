@@ -100,8 +100,52 @@ func (t *Tokens) Middleware(next http.Handler) http.Handler {
 			writeAuthErr(w, http.StatusUnauthorized, code, "")
 			return
 		}
+		// Token avlodi (users.token_epoch): parol almashtirish, hisobni
+		// o'chirish yoki rol pasaytirishdan keyin eski access token
+		// 15 daqiqagacha ishlayverardi — endi darhol rad etiladi
+		// (2026-11-21 server auditi).
+		if t.epoch != nil {
+			if e, err := t.epochCached(c.Sub); err == nil && e != c.Epoch {
+				writeAuthErr(w, http.StatusUnauthorized, "token_revoked", "")
+				return
+			}
+		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxClaims, c)))
 	})
+}
+
+// epochCached — har so'rovda DB'ga yurmaslik uchun qisqa muddatli kesh
+// (5 s). Kesh xatolik ehtimoli: o'chirishdan keyin eng ko'p 5 s.
+func (t *Tokens) epochCached(userID int64) (int64, error) {
+	t.mu.Lock()
+	if t.epochs == nil {
+		t.epochs = map[int64]epochEntry{}
+	}
+	now := t.clock.Now()
+	ttl := t.epochTTL
+	if ttl == 0 {
+		ttl = epochCacheTTL
+	}
+	if e, ok := t.epochs[userID]; ok && now.Sub(e.at) < ttl {
+		t.mu.Unlock()
+		return e.v, nil
+	}
+	t.mu.Unlock()
+	v, err := t.epoch(userID)
+	if err != nil {
+		return 0, err
+	}
+	t.mu.Lock()
+	t.epochs[userID] = epochEntry{v: v, at: now}
+	if len(t.epochs) > 4096 { // xotira sizmasligi uchun
+		for k, e := range t.epochs {
+			if now.Sub(e.at) > ttl {
+				delete(t.epochs, k)
+			}
+		}
+	}
+	t.mu.Unlock()
+	return v, nil
 }
 
 // RequireRole — rol mos kelmasa 403 insufficient_role.

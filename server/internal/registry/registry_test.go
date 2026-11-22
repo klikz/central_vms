@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"go.uber.org/goleak"
 
@@ -469,5 +470,47 @@ func TestMatchPreauth_BeyondListLimit(t *testing.T) {
 	}
 	if m == nil {
 		t.Fatal("200+ yozuvda eski CIDR mos kelmadi (jim bekor bo'ldi)")
+	}
+}
+
+// Refresh hisobi va token avlodi (2026-11-21 server auditi: logout va
+// parol/rol o'zgarishi server tomonida umuman hisobga olinmas edi).
+func TestRefreshTokensAndEpoch(t *testing.T) {
+	r := testReg(t)
+	uid := mustUser(t, r, "u-rev", "viewer")
+	exp := time.Now().Add(time.Hour)
+	if err := r.SaveRefresh("jti-1", uid, exp); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := r.HasRefresh("jti-1"); !ok {
+		t.Fatal("jti-1 topilmadi")
+	}
+	if err := r.DeleteRefresh("jti-1"); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := r.HasRefresh("jti-1"); ok {
+		t.Fatal("o'chirilgan jti hali bor")
+	}
+	if err := r.SaveRefresh("jti-a", uid, exp); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.SaveRefresh("jti-b", uid, exp); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.DeleteRefreshForUser(uid); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := r.HasRefresh("jti-a"); ok {
+		t.Fatal("user bo'yicha tozalanmadi")
+	}
+	e0, err := r.UserTokenEpoch(uid)
+	if err != nil || e0 != 0 {
+		t.Fatalf("avlod: %d %v", e0, err)
+	}
+	if err := r.BumpUserTokenEpoch(uid); err != nil {
+		t.Fatal(err)
+	}
+	if e1, _ := r.UserTokenEpoch(uid); e1 != 1 {
+		t.Fatalf("avlod o'smadi: %d", e1)
 	}
 }

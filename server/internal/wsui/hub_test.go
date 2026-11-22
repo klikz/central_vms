@@ -38,6 +38,14 @@ func newTestHub(t *testing.T, cfg Config) (*httptest.Server, *Hub, string) {
 	return srv, h, acc
 }
 
+// ticketQ — test uchun bir martalik WS kaliti (?access= endi qabul
+// qilinmaydi: token query'da loglarga tushadi).
+func ticketQ(t *testing.T, h *Hub) string {
+	t.Helper()
+	tok, _ := h.MintTicket(&auth.Claims{Sub: 7, User: "view1", Role: "viewer"})
+	return "?ticket=" + tok
+}
+
 func wsURL(srv *httptest.Server) string {
 	return "ws" + strings.TrimPrefix(srv.URL, "http")
 }
@@ -66,8 +74,8 @@ func readEnv(t *testing.T, ws *websocket.Conn, within time.Duration) Envelope {
 }
 
 func TestConnectAndBroadcast(t *testing.T) {
-	srv, h, acc := newTestHub(t, Config{PingTO: time.Second, DeadTO: 3 * time.Second})
-	ws := dial(t, srv, "?access="+acc)
+	srv, h, _ := newTestHub(t, Config{PingTO: time.Second, DeadTO: 3 * time.Second})
+	ws := dial(t, srv, ticketQ(t, h))
 	if env := readEnv(t, ws, 2*time.Second); env.Type != EvHello {
 		t.Fatalf("hello kutilardi: %q", env.Type)
 	}
@@ -90,9 +98,9 @@ func TestConnectAndBroadcast(t *testing.T) {
 }
 
 func TestTwoClientsBothReceive(t *testing.T) {
-	srv, h, acc := newTestHub(t, Config{})
-	a := dial(t, srv, "?access="+acc)
-	b := dial(t, srv, "?access="+acc)
+	srv, h, _ := newTestHub(t, Config{})
+	a := dial(t, srv, ticketQ(t, h))
+	b := dial(t, srv, ticketQ(t, h))
 	readEnv(t, a, 2*time.Second)
 	readEnv(t, b, 2*time.Second)
 	h.Broadcast(EvSessionCount, SessionCount{Active: 5, UserMax: 16, Global: 48})
@@ -145,8 +153,8 @@ func TestTrySendFullDrops(t *testing.T) {
 func TestSlowClientClosed(t *testing.T) {
 	// Haqiqiy stsenariy: mijoz o'qimaydi → TCP backpressure → out
 	// kanali to'ladi → ulanish yopiladi.
-	srv, h, acc := newTestHub(t, Config{PingTO: time.Second, DeadTO: 5 * time.Second})
-	ws := dial(t, srv, "?access="+acc)
+	srv, h, _ := newTestHub(t, Config{PingTO: time.Second, DeadTO: 5 * time.Second})
+	ws := dial(t, srv, ticketQ(t, h))
 	readEnv(t, ws, 2*time.Second)
 	_ = ws // o'qimaymiz — ataylab
 	big := strings.Repeat("x", 64*1024)
@@ -167,8 +175,8 @@ func TestSlowClientClosed(t *testing.T) {
 }
 
 func TestIdleNoResponseCloses(t *testing.T) {
-	srv, h, acc := newTestHub(t, Config{PingTO: 200 * time.Millisecond, DeadTO: 400 * time.Millisecond})
-	ws := dial(t, srv, "?access="+acc)
+	srv, h, _ := newTestHub(t, Config{PingTO: 200 * time.Millisecond, DeadTO: 400 * time.Millisecond})
+	ws := dial(t, srv, ticketQ(t, h))
 	readEnv(t, ws, 2*time.Second)
 	// Pinglarga javob bermaymiz: server DeadTO'da yopishi kerak.
 	ws.SetPingHandler(func(string) error { return nil })
@@ -187,7 +195,7 @@ func TestIdleNoResponseCloses(t *testing.T) {
 // qulf tashqarisida qiladi → "send on closed channel" bilan BUTUN vmsd
 // qulardi (2026-11-21 server auditi; race detektori ham shuni ko'rsatdi).
 func TestWsui_BroadcastDuringDisconnectNoPanic(t *testing.T) {
-	srv, h, acc := newTestHub(t, Config{PingTO: 20 * time.Millisecond, DeadTO: 200 * time.Millisecond})
+	srv, h, _ := newTestHub(t, Config{PingTO: 20 * time.Millisecond, DeadTO: 200 * time.Millisecond})
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -204,7 +212,7 @@ func TestWsui_BroadcastDuringDisconnectNoPanic(t *testing.T) {
 		}
 	}()
 	for i := 0; i < 40; i++ {
-		ws := dial(t, srv, "?access="+acc)
+		ws := dial(t, srv, ticketQ(t, h))
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

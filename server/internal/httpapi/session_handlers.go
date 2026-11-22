@@ -23,7 +23,7 @@ func (d *Deps) handleCameraPlay(w http.ResponseWriter, r *http.Request, kind str
 	}
 	cam, err := d.Reg.GetCamera(r.PathValue("id"))
 	if err != nil {
-		regErr(w, err)
+		d.regErr(w, err)
 		return
 	}
 	var in struct {
@@ -96,7 +96,7 @@ func (d *Deps) handleSessionRefresh(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusForbidden, "session_not_yours", "")
 			return
 		}
-		writeErr(w, http.StatusNotFound, "session_gone", err.Error())
+		d.fail(w, http.StatusNotFound, "session_gone", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -113,7 +113,7 @@ func (d *Deps) handleSessionStop(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusForbidden, "session_not_yours", "")
 			return
 		}
-		writeErr(w, http.StatusNotFound, "session_gone", err.Error())
+		d.fail(w, http.StatusNotFound, "session_gone", err)
 		return
 	}
 	_ = d.Audit.Add(cl.Sub, "stop", r.PathValue("id"))
@@ -124,7 +124,7 @@ func (d *Deps) handleSessionStop(w http.ResponseWriter, r *http.Request) {
 func (d *Deps) handleSessions(w http.ResponseWriter, r *http.Request) {
 	rows, err := d.Reg.ListActiveSessions()
 	if err != nil {
-		regErr(w, err)
+		d.regErr(w, err)
 		return
 	}
 	cl, _ := auth.ClaimsFrom(r)

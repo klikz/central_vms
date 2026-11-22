@@ -1,5 +1,5 @@
 // UI push kanali (/api/ui/ws) — avtomatik qayta ulanish bilan.
-import { getAccess } from "./api";
+import { api, getAccess } from "./api";
 
 export type UIEvent = {
   type: string;
@@ -21,7 +21,7 @@ export class UIChannel {
     this.closed = false;
     if (this.live) return; // takroriy ulanish bo'lmasin
     this.live = true;
-    this.open();
+    void this.open();
   }
 
   private setStatus(v: boolean) {
@@ -34,11 +34,28 @@ export class UIChannel {
     return () => this.statusHandlers.delete(h);
   }
 
-  private open() {
+  private async open() {
     const tok = getAccess();
     if (!tok) return;
+    // Avval bir martalik ticket olamiz (?access= server tomonida
+    // qabul qilinmaydi — token query string'da loglarga tushardi).
+    let ticket = "";
+    try {
+      const j = await api.wsTicket();
+      ticket = j?.ticket ?? "";
+    } catch {
+      ticket = "";
+    }
+    if (!ticket) {
+      this.live = false;
+      this.setStatus(false);
+      if (this.closed) return;
+      const wait = Math.min(10000, 500 * 2 ** this.retry++);
+      setTimeout(() => void this.open(), wait);
+      return;
+    }
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    const url = `${proto}://${location.host}/api/ui/ws?access=${encodeURIComponent(tok)}`;
+    const url = `${proto}://${location.host}/api/ui/ws?ticket=${encodeURIComponent(ticket)}`;
     const ws = new WebSocket(url);
     this.ws = ws;
     ws.onopen = () => {
@@ -59,7 +76,7 @@ export class UIChannel {
       if (this.closed) return;
       // Eksponensial qayta ulanish (0.5 s → 10 s gacha).
       const wait = Math.min(10000, 500 * 2 ** this.retry++);
-      setTimeout(() => this.open(), wait);
+      setTimeout(() => void this.open(), wait);
     };
     ws.onerror = () => ws.close();
   }

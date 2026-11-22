@@ -17,8 +17,17 @@ func TestUIPushEvents(t *testing.T) {
 	srv, _, _, _, _, ui := newServer(t)
 	adminTok := login(t, srv, "admin1")
 
-	// UI ulanadi (access token query orqali — brauzer WS header qo'ymaydi).
-	wsURL := "ws://" + strings.TrimPrefix(srv.URL, "http://") + "/api/ui/ws?access=" + adminTok
+	// UI ulanadi: avval bir martalik ticket olinadi (?access= endi
+	// qabul qilinmaydi — token query'da loglarga tushardi).
+	codeTk, tkMap, tkRaw := do(t, http.MethodPost, srv.URL+"/api/ui/ws-ticket", "", adminTok)
+	if codeTk != http.StatusOK {
+		t.Fatalf("ws-ticket: %d %s", codeTk, tkRaw)
+	}
+	ticket, _ := tkMap["ticket"].(string)
+	if ticket == "" {
+		t.Fatalf("ws-ticket javobi: %v", tkMap)
+	}
+	wsURL := "ws://" + strings.TrimPrefix(srv.URL, "http://") + "/api/ui/ws?ticket=" + ticket
 	ws, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
 		t.Fatalf("UI ulanish: %v", err)

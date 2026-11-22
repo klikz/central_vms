@@ -213,22 +213,33 @@ func (r *Registry) PatchCameraPolicy(cameraID string, playProfile, transcodeMode
 	if transcodeMode != nil && !validTranscodeMode(*transcodeMode) {
 		return fmt.Errorf("camera patch: %w", ErrBadInput)
 	}
+	sets := map[string]any{}
 	if playProfile != nil {
-		if _, err := r.db.Exec("UPDATE cameras SET play_profile=? WHERE id=?", *playProfile, cameraID); err != nil {
-			return wrap(err, "camera play_profile")
-		}
+		sets["play_profile"] = *playProfile
 	}
 	if transcodeMode != nil {
-		if _, err := r.db.Exec("UPDATE cameras SET transcode_mode=? WHERE id=?", *transcodeMode, cameraID); err != nil {
-			return wrap(err, "camera transcode_mode")
-		}
+		sets["transcode_mode"] = *transcodeMode
 	}
 	if enabled != nil {
-		if _, err := r.db.Exec("UPDATE cameras SET enabled=? WHERE id=?", b2i(*enabled), cameraID); err != nil {
-			return wrap(err, "camera enabled")
+		v := 0
+		if *enabled {
+			v = 1
 		}
+		sets["enabled"] = v
 	}
-	return nil
+	return dynUpdate(r.db, "cameras", sets,
+		[]string{"play_profile", "transcode_mode", "enabled"},
+		"id=?", []any{cameraID}, "camera patch")
+}
+
+// CountCameras — jami va online kameralar (metrics/admin holati).
+func (r *Registry) CountCameras() (total, online int, err error) {
+	if err := r.db.QueryRow(`SELECT count(*),
+		COALESCE(sum(CASE WHEN status='online' THEN 1 ELSE 0 END),0) FROM cameras`).
+		Scan(&total, &online); err != nil {
+		return 0, 0, wrap(err, "kameralar sanash")
+	}
+	return total, online, nil
 }
 
 func (r *Registry) GetCamera(cameraID string) (Camera, error) {

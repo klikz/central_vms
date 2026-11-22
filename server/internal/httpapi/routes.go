@@ -5,11 +5,11 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net"
 	"net/http"
 	"reflect"
-	"strings"
 
 	"central-vms/server/internal/audit"
 	"central-vms/server/internal/auth"
@@ -26,7 +26,9 @@ type Deps struct {
 	Cfg     config.Config
 	Reg     *registry.Registry
 	Tokens  *auth.Tokens
-	Login   *auth.Rate // 5/5 min (root §9)
+	Login   *auth.Rate // akkaunt+IP bo'yicha 5/5 min (root §9)
+	LoginIP *auth.Rate // IP bo'yicha umumiy 40/5 min (akkaunt soni
+	// bo'yicha tarqalgan brute-force'ni cheklash uchun; 2026-11-21 auditi)
 	Audit   *audit.Log
 	Join    *wsagent.Joiner // §3: ulanish so'rovlari (kod bekor qilindi)
 	Agent   *wsagent.Hub
@@ -65,6 +67,10 @@ func Routes(d *Deps) http.Handler {
 	}
 
 	authMW := d.Tokens.Middleware
+	// UI WS uchun bir martalik kalit (brauzer WS'ga header qo'yolmaydi).
+	if d.UI != nil {
+		mux.Handle("POST /api/ui/ws-ticket", authMW(http.HandlerFunc(d.handleWSTicket)))
+	}
 	mux.Handle("GET /api/me", authMW(http.HandlerFunc(d.handleMe)))
 	mux.Handle("GET /api/sites", authMW(http.HandlerFunc(d.handleSites)))
 	mux.Handle("GET /api/clients", authMW(http.HandlerFunc(d.handleClients)))
@@ -97,6 +103,7 @@ func Routes(d *Deps) http.Handler {
 	mux.Handle("GET /api/admin/users", admin(d.handleAdminUsers))
 	mux.Handle("POST /api/admin/users", admin(d.handleAdminUserCreate))
 	mux.Handle("PATCH /api/admin/users/{id}", admin(d.handleAdminUserPatch))
+	mux.Handle("DELETE /api/admin/users/{id}", admin(d.handleUserDelete))
 	// Ulanish so'rovlari va IP bo'yicha oldindan ruxsat (protocol.md §3.3).
 	mux.Handle("GET /api/admin/joins", admin(d.handleJoinsList))
 	mux.Handle("POST /api/admin/joins/{id}/approve", admin(d.handleJoinApprove))
@@ -110,6 +117,8 @@ func Routes(d *Deps) http.Handler {
 	mux.Handle("PATCH /api/admin/cameras/{id}", admin(d.handleCameraPolicy))
 	mux.Handle("POST /api/admin/clients/{id}/secret-rotate", admin(d.handleSecretRotate))
 	mux.Handle("GET /api/admin/audit", admin(d.handleAudit))
+	// api.md'da bor deb yozilgan, lekin umulqon register qilinmagan:
+	mux.Handle("GET /api/admin/media/state", admin(d.handleMediaState))
 
 	return mux
 }
@@ -132,19 +141,41 @@ func writeErr(w http.ResponseWriter, code int, kind, detail string) {
 	writeJSON(w, code, map[string]string{"error": kind, "detail": detail})
 }
 
+// fail — xatoni logga yozadi, mijozga faqat kod chiqadi. Ichki matn
+// (SQLite xatolari, fayl yo'llari, SQL) mijozga chiqmasligi kerak
+// (2026-11-21 server auditi).
+func (d *Deps) fail(w http.ResponseWriter, code int, kind string, err error) {
+	if d.Lg != nil && err != nil {
+		if code >= 500 {
+			d.Lg.Error(kind, "err", err)
+		} else {
+			d.Lg.Warn(kind, "err", err)
+		}
+	}
+	writeErr(w, code, kind, "")
+}
+
 // regErr — registry xatolarini HTTP statusga aylantiradi.
-func regErr(w http.ResponseWriter, err error) {
+// ESKISI: `strings.Contains(err.Error(), ...)` — ichki xato matnida
+// "not found"/"exists" so'zi bo'lsa noto'g'ri status qaytardi va
+// `internal` holatda SQLite matnini (fayl yo'llari, SQL) mijozga
+// chiqarardi (2026-11-21 server auditi). Endi errors.Is + detail bo'sh,
+// to'liq xato faqat logga.
+func (d *Deps) regErr(w http.ResponseWriter, err error) {
 	switch {
 	case err == nil:
 		return
-	case strings.Contains(err.Error(), registry.ErrNotFound.Error()):
+	case errors.Is(err, registry.ErrNotFound):
 		writeErr(w, http.StatusNotFound, "not_found", "")
-	case strings.Contains(err.Error(), registry.ErrExists.Error()):
+	case errors.Is(err, registry.ErrExists):
 		writeErr(w, http.StatusConflict, "exists", "")
-	case strings.Contains(err.Error(), registry.ErrBadInput.Error()):
+	case errors.Is(err, registry.ErrBadInput):
 		writeErr(w, http.StatusBadRequest, "bad_input", "")
 	default:
-		writeErr(w, http.StatusInternalServerError, "internal", err.Error())
+		if d.Lg != nil {
+			d.Lg.Error("registry xatosi", "err", err)
+		}
+		writeErr(w, http.StatusInternalServerError, "internal", "")
 	}
 }
 

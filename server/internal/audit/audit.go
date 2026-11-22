@@ -36,8 +36,25 @@ type Log struct {
 
 func New(db *sql.DB) *Log { return &Log{db: db} }
 
+// trunc — belgilar soni bo'yicha qisqartirish (rune'larni buzmaydi).
+func trunc(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
+}
+
 // Add — bitta yozuv. userID=0 → NULL (anonim: enroll, uzilgan sessiyalar).
 func (l *Log) Add(userID int64, action, target string) error {
+	// Truncation: `target`ga foydalanuvchi kiritgan istalgan satr
+	// (masalan uzun username) tushadi. Qisqartirilmasa audit_log
+	// MB'lab satrlar bilan shishadi va admin audit sahifasi qotadi
+	// (2026-11-21 server auditi).
+	action, target = trunc(action, 64), trunc(target, 256)
 	var uid any
 	if userID != 0 {
 		uid = userID

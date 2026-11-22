@@ -7,9 +7,13 @@
 package wsui
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,8 +34,13 @@ const (
 
 // Envelope — barcha UI xabarlari shu qobiqda yuboriladi.
 type Envelope struct {
-	Type string          `json:"type"`
-	TS   time.Time       `json:"ts"`
+	Type string    `json:"type"`
+	TS   time.Time `json:"ts"`
+	// Seq — hodisalar ketma-ketligi. UI shu raqam orqali uzilishdan
+	// keyin takrorlangan/eski xabarni e'tiborsiz qoldiradi (§ kontrakt);
+	// avval `h.seq` hisoblanar, lekin qobiqqa tushmas edi (2026-11-21
+	// server auditi).
+	Seq  int64           `json:"seq"`
 	Data json.RawMessage `json:"data"`
 }
 
@@ -72,15 +81,22 @@ type SessionCount struct {
 }
 
 // Hub — barcha UI ulanishlari (bitta egasi).
+// ticketInfo — bir martalik WS ulanish kaliti.
+type ticketInfo struct {
+	claims  auth.Claims
+	expires time.Time
+}
+
 type Hub struct {
 	tokens *auth.Tokens
 	lg     *slog.Logger
 	upgr   websocket.Upgrader
 
-	mu     sync.Mutex
-	conns  map[*conn]struct{}
-	pingTO time.Duration
-	deadTO time.Duration
+	mu      sync.Mutex
+	conns   map[*conn]struct{}
+	tickets map[string]ticketInfo
+	pingTO  time.Duration
+	deadTO  time.Duration
 	// seq — har bir broadcast uchun tartib raqami (UI eski xabarni
 	// e'tiborsiz qoldirishi uchun).
 	seq uint64
@@ -115,7 +131,17 @@ func NewHub(tokens *auth.Tokens, lg *slog.Logger, cfg Config) *Hub {
 			ReadBufferSize: 1024, WriteBufferSize: 4096,
 			// UI bitta origin'dan (vmsd o'zi statikani ham beradi);
 			// dev rejimda Vite 5173 — ruxsat beriladi (faqat token bilan).
-			CheckOrigin: func(_ *http.Request) bool { return true },
+			// Bir xil manba (same-origin): `CheckOrigin: true` bo'lgani
+			// uchun boshqa sayt brauzerning UI WS'ini ochib, hodisalarni
+			// o'qishi mumkin edi (CSWSH; 2026-11-21 server auditi).
+			CheckOrigin: func(r *http.Request) bool {
+				o := r.Header.Get("Origin")
+				if o == "" {
+					return true // brauzerdan tashqari mijozlar (testlar)
+				}
+				u, err := url.Parse(o)
+				return err == nil && strings.EqualFold(u.Host, r.Host)
+			},
 		},
 	}
 }
@@ -129,7 +155,7 @@ func (h *Hub) Broadcast(typ string, data any) {
 	}
 	h.mu.Lock()
 	h.seq++
-	env, err := json.Marshal(Envelope{Type: typ, TS: time.Now().UTC(), Data: raw})
+	env, err := json.Marshal(Envelope{Type: typ, TS: time.Now().UTC(), Seq: int64(h.seq), Data: raw})
 	conns := make([]*conn, 0, len(h.conns))
 	for c := range h.conns {
 		conns = append(conns, c)
@@ -164,17 +190,73 @@ func (h *Hub) Count() int {
 	return len(h.conns)
 }
 
-// ServeHTTP — tokenni query'dan oladi (brauzer WS header qo'yolmaydi).
-func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	tok := r.URL.Query().Get("access")
-	if tok == "" {
-		tok = r.Header.Get("Authorization")
-		tok = authBearer(tok)
+// ticketTTL — WS ulanish kalitining yashash muddati.
+const ticketTTL = 15 * time.Second
+
+// MintTicket — bir martalik WS ulanish kaliti. Avval UI access token'ni
+// query'da (`?access=`) yuborardi — token TLS proksi access-log'lariga
+// va brauzer tarixiga tushardi (2026-11-21 server auditi). Endi qisqa
+// muddatli, bir martalik ticket ishlatiladi.
+func (h *Hub) MintTicket(cl *auth.Claims) (string, time.Duration) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", 0
 	}
-	cl, err := h.tokens.Verify(tok, "access")
-	if err != nil {
-		http.Error(w, `{"error":"bad_token"}`, http.StatusUnauthorized)
-		return
+	tok := hex.EncodeToString(b)
+	h.mu.Lock()
+	if h.tickets == nil {
+		h.tickets = map[string]ticketInfo{}
+	}
+	now := time.Now()
+	for k, v := range h.tickets { // eskirganlarni tozalash
+		if now.After(v.expires) {
+			delete(h.tickets, k)
+		}
+	}
+	h.tickets[tok] = ticketInfo{claims: *cl, expires: now.Add(ticketTTL)}
+	h.mu.Unlock()
+	return tok, ticketTTL
+}
+
+// takeTicket — ticket'ni bir marta ishlatish uchun olish.
+func (h *Hub) takeTicket(v string) (*auth.Claims, bool) {
+	if v == "" {
+		return nil, false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	t, ok := h.tickets[v]
+	if !ok {
+		return nil, false
+	}
+	delete(h.tickets, v)
+	if time.Now().After(t.expires) {
+		return nil, false
+	}
+	c := t.claims
+	return &c, true
+}
+
+// ServeHTTP — ulanish: `?ticket=<bir martalik>` yoki `Authorization:`
+// (brauzer WS header qo'yolmaydi — shuning uchun ticket).
+// `?access=` QABUL QILINMAYDI: token query'da loglarga tushadi.
+func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var cl *auth.Claims
+	if t := r.URL.Query().Get("ticket"); t != "" {
+		c, ok := h.takeTicket(t)
+		if !ok {
+			http.Error(w, `{"error":"bad_ticket"}`, http.StatusUnauthorized)
+			return
+		}
+		cl = c
+	} else {
+		tok := authBearer(r.Header.Get("Authorization"))
+		v, err := h.tokens.Verify(tok, "access")
+		if err != nil {
+			http.Error(w, `{"error":"bad_token"}`, http.StatusUnauthorized)
+			return
+		}
+		cl = v
 	}
 	ws, err := h.upgr.Upgrade(w, r, nil)
 	if err != nil {

@@ -33,7 +33,11 @@ type testEnv struct {
 	db  interface{ Close() error }
 }
 
-func newTestEnv(t *testing.T) *testEnv {
+func newTestEnv(t *testing.T) *testEnv { return newTestEnvWith(t, Config{}) }
+
+// newTestEnvWith — Config'ning ba'zi maydonlarini test uchun
+// qisqartirish imkoni (masalan RotateWait).
+func newTestEnvWith(t *testing.T, extra Config) *testEnv {
 	t.Helper()
 	db, err := store.Open(filepath.Join(t.TempDir(), "ws.db"))
 	if err != nil {
@@ -50,7 +54,11 @@ func newTestEnv(t *testing.T) *testEnv {
 	if os.Getenv("VMS_TESTLOG") != "" {
 		lg = slog.New(slog.NewTextHandler(os.Stderr, nil))
 	}
-	hub := NewHub(Config{ServerVersion: "test", MinProto: 1, MaxProto: 1, HandshakeTO: 2 * time.Second, IdleTO: time.Second, DeadTO: 5 * time.Second}, reg, lg)
+	cfg := Config{ServerVersion: "test", MinProto: 1, MaxProto: 1, HandshakeTO: 2 * time.Second, IdleTO: time.Second, DeadTO: 5 * time.Second}
+	if extra.RotateWait > 0 {
+		cfg.RotateWait = extra.RotateWait
+	}
+	hub := NewHub(cfg, reg, lg)
 	hub.clock = fc
 	srv := httptest.NewServer(http.HandlerFunc(hub.ServeHTTP))
 	t.Cleanup(func() { srv.Close(); db.Close() })
@@ -325,18 +333,35 @@ func TestSecretRotate(t *testing.T) {
 	ws, _ := dialHandshake(t, e, agentID, secret, 1)
 	startHB(t, ws)
 
-	newSecret, err := e.hub.RotateSecret(agentID, 30)
-	if err != nil {
-		t.Fatalf("rotate: %v", err)
+	// Ikki bosqichli rotate: DB hash FAQAT agent tasdig'idan keyin
+	// almashtiriladi (2026-11-21 server auditi).
+	type rot struct {
+		s   string
+		err error
 	}
+	ch := make(chan rot, 1)
+	go func() {
+		s, err := e.hub.RotateSecret(agentID, 30)
+		ch <- rot{s, err}
+	}()
 	env := readEnvUntil(t, ws, proto.MsgSecretRotate)
 	if env.Type != proto.MsgSecretRotate {
 		t.Fatalf("xabar: %q", env.Type)
 	}
 	var sr proto.SecretRotate
 	_ = json.Unmarshal(env.Data, &sr)
-	if sr.NewSecret != newSecret || sr.GraceS != 30 {
+	if sr.GraceS != 30 {
 		t.Fatalf("secret_rotate: %+v", sr)
+	}
+	rawAck, _ := json.Marshal(proto.SecretRotated{OK: true})
+	_ = ws.WriteJSON(proto.Envelope{Type: proto.MsgSecretRotated, Seq: 3, TS: time.Now().UTC(), Data: rawAck})
+	got := <-ch
+	if got.err != nil {
+		t.Fatalf("rotate: %v", got.err)
+	}
+	newSecret := got.s
+	if newSecret == "" || sr.NewSecret != newSecret {
+		t.Fatalf("secret mos emas: %+v", sr)
 	}
 	// Eski secret endi ishlamaydi: eski secret bilan yangi ulanish 4003.
 	if ws3, _, err := websocket.DefaultDialer.Dial(wsURL(e.srv.URL)+"?agent_id="+agentID, nil); err == nil {
@@ -692,4 +717,20 @@ func waitAck(t *testing.T, ws *websocket.Conn) {
 		}
 	}
 	t.Fatal("cams_ack kelmadi")
+}
+
+// Agent tasdiqlamasa: sir O'ZGARMASLIGI qolishi va admin xato olishi
+// kerak (aks holda agent 4003 bilan qulflanib qolardi).
+func TestSecretRotateUnconfirmedKeepsOld(t *testing.T) {
+	e := newTestEnvWith(t, Config{RotateWait: 300 * time.Millisecond})
+	agentID, secret := e.enroll(t)
+	ws, _ := dialHandshake(t, e, agentID, secret, 1)
+	startHB(t, ws)
+	if _, err := e.hub.RotateSecret(agentID, 30); err == nil {
+		t.Fatal("tasdiqlanmagan rotate muvaffaqiyatli qaytdi")
+	}
+	// Eski secret bilan qayta ulanish ISHLASHI kerak.
+	ws2, _ := dialHandshake(t, e, agentID, secret, 1)
+	startHB(t, ws2)
+	ws2.Close()
 }

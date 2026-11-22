@@ -245,39 +245,35 @@ func (r *Registry) UpdateClientSecret(clientID int64, secretHash string) error {
 
 // PatchClient — admin sozlamalari (nom/site/limitlar/siyosat; nil → o'zgarmaydi).
 func (r *Registry) PatchClient(clientID int64, name *string, siteID *int64, maxUploads, maxTranscodes *int, mode *string) error {
+	if name != nil && strings.TrimSpace(*name) == "" {
+		return fmt.Errorf("client patch: %w", ErrBadInput)
+	}
 	if mode != nil && !validTranscodeMode(*mode) {
 		return fmt.Errorf("client patch: %w", ErrBadInput)
 	}
+	sets := map[string]any{}
 	if name != nil {
-		if _, err := r.db.Exec("UPDATE clients SET name=? WHERE id=?", *name, clientID); err != nil {
-			return wrap(err, "client name")
-		}
+		sets["name"] = strings.TrimSpace(*name)
 	}
 	if siteID != nil {
 		var v any
 		if *siteID != 0 {
 			v = *siteID
 		}
-		if _, err := r.db.Exec("UPDATE clients SET site_id=? WHERE id=?", v, clientID); err != nil {
-			return wrap(err, "client site")
-		}
+		sets["site_id"] = v
 	}
 	if maxUploads != nil && *maxUploads > 0 {
-		if _, err := r.db.Exec("UPDATE clients SET max_uploads=? WHERE id=?", *maxUploads, clientID); err != nil {
-			return wrap(err, "client max_uploads")
-		}
+		sets["max_uploads"] = *maxUploads
 	}
 	if maxTranscodes != nil && *maxTranscodes > 0 {
-		if _, err := r.db.Exec("UPDATE clients SET max_transcodes=? WHERE id=?", *maxTranscodes, clientID); err != nil {
-			return wrap(err, "client max_transcodes")
-		}
+		sets["max_transcodes"] = *maxTranscodes
 	}
 	if mode != nil {
-		if _, err := r.db.Exec("UPDATE clients SET transcode_mode=? WHERE id=?", *mode, clientID); err != nil {
-			return wrap(err, "client mode")
-		}
+		sets["transcode_mode"] = *mode
 	}
-	return nil
+	return dynUpdate(r.db, "clients", sets,
+		[]string{"name", "site_id", "max_uploads", "max_transcodes", "transcode_mode"},
+		"id=?", []any{clientID}, "client patch")
 }
 
 // DeleteClient — agent o'chirish (cascade: kameralar o'chadi, S1 qabul bandi).

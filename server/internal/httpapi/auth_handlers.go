@@ -29,12 +29,20 @@ func (d *Deps) setRefreshCookie(w http.ResponseWriter, token string, exp time.Ti
 	})
 }
 
+// loginKey — login limitining kaliti: IP + akkaunt.
+func loginKey(ip, username string) string { return ip + "|" + username }
+
 func (d *Deps) handleLogin(w http.ResponseWriter, r *http.Request) {
 	ip := clientIP(r)
-	if ok, retry := d.Login.Allow(ip); !ok {
-		_ = d.Audit.Add(0, audit.LoginFailed, "rate:"+ip)
-		writeErr(w, http.StatusTooManyRequests, "rate_limited", retrySekund(retry))
-		return
+	// IP bo'yicha umumiy qatlam: kalit `ip|username` bo'lgani uchun
+	// hujumchi har so'rovda yangi username bilan limitdan qochib
+	// ketmasligi kerak (2026-11-21 auditi).
+	if d.LoginIP != nil {
+		if ok, retry := d.LoginIP.Allow(ip); !ok {
+			_ = d.Audit.Add(0, audit.LoginFailed, "rate-ip:"+ip)
+			writeErr(w, http.StatusTooManyRequests, "rate_limited", retrySekund(retry))
+			return
+		}
 	}
 	var in struct {
 		Username string `json:"username"`
@@ -42,6 +50,16 @@ func (d *Deps) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Username == "" {
 		writeErr(w, http.StatusBadRequest, "bad_json", "")
+		return
+	}
+	// Akkaunt qatlami: avval limit FAQAT IP bo'yicha edi — bitta
+	// akkauntga (masalan "admin") turli IP'lardan urinish 5/5 min
+	// limitidan o'tib ketar, muvaffaqiyatli login esa shu IP'dagi
+	// barcha urinishlarni nolga qaytargani uchun ikkinchi akkauntga
+	// cheksiz sinash mumkin edi (2026-11-21 server auditi).
+	if ok, retry := d.Login.Allow(loginKey(ip, in.Username)); !ok {
+		_ = d.Audit.Add(0, audit.LoginFailed, "rate-user:"+in.Username)
+		writeErr(w, http.StatusTooManyRequests, "rate_limited", retrySekund(retry))
 		return
 	}
 	u, hash, err := d.Reg.GetUserByName(in.Username)
@@ -64,6 +82,7 @@ func (d *Deps) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "bad_credentials", "")
 		return
 	}
+	d.Login.Reset(loginKey(ip, u.Username))
 	d.Login.Reset(ip)
 	if err := d.Reg.TouchLogin(u.ID); err != nil {
 		d.Lg.Warn("touch login", "err", err)
@@ -72,12 +91,12 @@ func (d *Deps) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	access, aexp, err := d.Tokens.IssueAccess(u.ID, u.Username, u.Role)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal", err.Error())
+		d.fail(w, http.StatusInternalServerError, "internal", err)
 		return
 	}
 	refresh, rexp, err := d.Tokens.IssueRefresh(u.ID, u.Username, u.Role)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal", err.Error())
+		d.fail(w, http.StatusInternalServerError, "internal", err)
 		return
 	}
 	d.setRefreshCookie(w, refresh, rexp)
@@ -103,15 +122,30 @@ func (d *Deps) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "bad_refresh", "")
 		return
 	}
+	// Refresh JTI hisobi: rotatsiyada eski yozuv o'chirilgani uchun
+	// ko'chirilgan yoki eski cookie keyingi so'rovda rad etiladi
+	// (2026-11-21 server auditi: avval eski refresh 7 kun davomida
+	// yangi access chiqaraverardi).
+	if ok, err := d.Tokens.ValidateRefresh(cl.JTI); err != nil {
+		d.fail(w, http.StatusInternalServerError, "internal", err)
+		return
+	} else if !ok {
+		writeErr(w, http.StatusUnauthorized, "bad_refresh", "")
+		return
+	}
 	access, aexp, err := d.Tokens.IssueAccess(u.ID, u.Username, u.Role)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal", err.Error())
+		d.fail(w, http.StatusInternalServerError, "internal", err)
 		return
 	}
 	// Refresh rotatsiyasi: eski cookie yangisiga almashtiriladi.
+	if err := d.Tokens.DropRefresh(cl.JTI); err != nil {
+		d.fail(w, http.StatusInternalServerError, "internal", err)
+		return
+	}
 	refresh, rexp, err := d.Tokens.IssueRefresh(u.ID, u.Username, u.Role)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "internal", err.Error())
+		d.fail(w, http.StatusInternalServerError, "internal", err)
 		return
 	}
 	d.setRefreshCookie(w, refresh, rexp)
@@ -123,6 +157,8 @@ func (d *Deps) handleRefresh(w http.ResponseWriter, r *http.Request) {
 func (d *Deps) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(refreshCookie); err == nil {
 		if cl, verr := d.Tokens.Verify(c.Value, "refresh"); verr == nil {
+			// Logout endi server tomonida ham haqiqiy: refresh o'chiriladi.
+			_ = d.Tokens.DropRefresh(cl.JTI)
 			_ = d.Audit.Add(cl.Sub, audit.Logout, cl.User)
 		}
 	}
@@ -134,7 +170,7 @@ func (d *Deps) handleMe(w http.ResponseWriter, r *http.Request) {
 	cl, _ := auth.ClaimsFrom(r)
 	u, err := d.Reg.GetUserByID(cl.Sub)
 	if err != nil {
-		regErr(w, err)
+		d.regErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -162,7 +198,7 @@ func (d *Deps) handleJoin(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, wsagent.ErrRateLimited):
 		writeErr(w, http.StatusTooManyRequests, "rate_limited", "")
 	case errors.Is(err, wsagent.ErrBadKey):
-		writeErr(w, http.StatusBadRequest, "bad_key", err.Error())
+		d.fail(w, http.StatusBadRequest, "bad_key", err)
 	case errors.Is(err, wsagent.ErrRejected):
 		writeJSON(w, http.StatusForbidden, map[string]any{
 			"status": "rejected", "request_id": out.RequestID,
