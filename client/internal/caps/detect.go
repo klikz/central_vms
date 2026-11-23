@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"runtime"
 	"strings"
 
 	"central-vms/client/internal/proto"
@@ -22,10 +23,17 @@ func Detect(ctx context.Context, ffmpegPath string) (proto.Caps, error) {
 	enc, _ := runFF(ctx, ffmpegPath, "-hide_banner", "-encoders")
 	dec, _ := runFF(ctx, ffmpegPath, "-hide_banner", "-decoders")
 
+	// /proc — Linux'ga xos; Windows'da yo'q. CPU uchun universal
+	// fallback (runtime.NumCPU), RAM uchun platforma yordamchisi
+	// (mem_unix.go / mem_windows.go). 2026-11-23 Windows auditi.
+	cores := ParseCPUCount(ReadFileString("/proc/cpuinfo"))
+	if cores <= 0 {
+		cores = runtime.NumCPU()
+	}
 	return proto.Caps{
 		GPU:           PickGPU(ParseEncoders(enc)),
-		CPUCores:      ParseCPUCount(ReadFileString("/proc/cpuinfo")),
-		RAMMB:         ParseMemMB(ReadFileString("/proc/meminfo")),
+		CPUCores:      cores,
+		RAMMB:         totalRAMMB(),
 		FFmpegVersion: ParseFFmpegVersion(ver),
 		HEVCDecode:    HEVCDecode(dec),
 	}, nil

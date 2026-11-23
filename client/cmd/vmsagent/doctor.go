@@ -17,6 +17,7 @@ import (
 
 	"central-vms/client/internal/cams"
 	"central-vms/client/internal/config"
+	"central-vms/client/internal/keystore"
 	"central-vms/client/internal/statestore"
 )
 
@@ -54,7 +55,7 @@ func runAgentDoctor(cfg config.Config) error {
 	if st, err := os.Stat(cfg.KeyFile); err != nil {
 		r.warn("kalit fayli yo'q (%s) — agent hali ro'yxatdan o'tmagan (lokal UI'dan join qiling)", cfg.KeyFile)
 	} else {
-		if st.Mode().Perm()&0o077 != 0 {
+		if !keystore.KeyPermsOK(st) {
 			r.warn("kalit fayli izinlari %o — chmod 600 tavsiya etiladi", st.Mode().Perm())
 		} else {
 			r.ok("kalit fayli: %s (%o)", cfg.KeyFile, st.Mode().Perm())

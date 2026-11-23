@@ -30,6 +30,11 @@ const (
 	RefAgentSecret = "agent_secret_enc"
 )
 
+// KeyPermsOK — tashqi tekshiruvlar (doctor) uchun: platformaga mos
+// rejim qoidasi (Unix: 0600; Windows: tekshiruv ma'nosi yo'q —
+// perms_windows.go).
+func KeyPermsOK(fi os.FileInfo) bool { return keyPermsOK(fi) }
+
 var (
 	ErrKeySize  = errors.New("keystore: agent.key 32 bait bo'lishi kerak")
 	ErrKeyPerms = errors.New("keystore: agent.key rejimi 0600 bo'lishi shart")
@@ -42,7 +47,7 @@ func LoadKey(path string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("keystore: kalit fayli: %w", err)
 	}
-	if st.Mode().Perm()&0o077 != 0 {
+	if !keyPermsOK(st) {
 		return nil, fmt.Errorf("%w: %s rejimi %04o", ErrKeyPerms, filepath.Base(path), st.Mode().Perm())
 	}
 	b, err := os.ReadFile(path)

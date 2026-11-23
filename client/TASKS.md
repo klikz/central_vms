@@ -566,3 +566,41 @@ nomlarga o'tkazildi (ssh iqtibosidagi `$V` kengaytmasi ham tuzatildi).
       → UI settings bilan server_url → "sessiya qayta boshlandi" →
       UI join → server tasdiqi → "ulanish tasdiqlandi", client `online`.
       Faylga `server_url: ws://...` yozilgani tasdiqlandi.
+
+## 2026-11-23 — Windows yugitirish auditi (foydalanuvchi xatosi bilan boshlandi)
+
+Foydalanuvchi hisoboti: Windows'da `vmsagent` — "agent.key rejimi 0600
+bo'lishi shart" xatosi. Ildiz: NTFS ACL'lari Unix rejim bitlariga
+kirmaydi, Go oddiy fayl uchun 0666 qaytaradi — Unix qoidasi Windows'da
+HAR qanday kalitni rad eder edi.
+
+- [x] **Kalit rejimi tekshiruvi platformaga bo'lindi**: keystore'da
+      `perms_unix.go` (0600 shart — §10.1 O'ZGARMADI) / `perms_windows.go`
+      (tekshiruv ma'nosi yo'q; himoya — kalit foydalanuvchi papkasida
+      `<exe>/data`). Doctor ham endi `keystore.KeyPermsOK` orqali
+      Windows'da asossiz ogohlantirmaydi.
+- [x] **caps (qobiliyat aniqlash)**: `/proc/cpuinfo` Windows'da yo'q edi →
+      CPU endi `runtime.NumCPU()` fallback; RAM `/proc/meminfo` o'rniga
+      Windows'da `kernel32!GlobalMemoryStatusEx` (x/sys/windows'da bu API
+      YO'Q ekanligi tekshiruvda ochildi — sof syscall/LazyDLL ishlatildi).
+- [x] **Statik audit (Windows'da ishga tushirish yo'li bo'yicha)**:
+      lokal UI `embed` orqali (cwd bog'liq emas); `state.json`/`secrets.bin`
+      atomik yozish — Go `os.Rename` Windows'da almashtiradi; Ctrl+C
+      (SIGINT) Windows'da ishlaydi, SIGHUP reload UI "Save" orqali;
+      `boot_id` fallback (uuid) Windows'da ham to'g'ri; `/var/...`
+      yo'llari endi avtomatik config'da yo'q (binar papkasi).
+- [x] **Cross-tekshiruv**: `GOOS=windows go build ./... && GOOS=windows
+      go vet ./...` — ikkala modulda TOZA (CI'da `cross-win` job'i).
+- [x] Yangi exe: `make buildWin` → `builds/cvms_agent_0.N.exe`.
+
+**Cheklov (halol):** bu dev-mashinada Wine yo'q va `sudo` interaktiv
+parol so'raydi — `.exe` ni bu yerda JONLISIN yugurtira olmadim.
+Tasdiq darajasi: cross-vet + statik audit + xatoning ildizini topib
+tuzatish. Windows mashinasida ishga tushirish tartibi:
+1. `cvms_agent_0.N.exe` ni papkaga qo'ying (masalan `C:\vmsagent\`).
+2. Ikki marta bosing yoki `cmd>: cvms_agent_0.N.exe` — config o'zi
+   yaratiladi (`C:/vmsagent/config/...` emas — exe yonidagi `data/`,
+   `logs/`), keyin `http://127.0.0.1:8082` brauzerda ochiladi.
+3. UI'da Server URL kiriting → Join → server tomonida tasdiq.
+4. Xato bo'lsa: `logs\vmsagent.log` va ekran xatolarini yuboring —
+   darhol tuzatamiz.
