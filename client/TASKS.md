@@ -536,3 +536,11 @@ prod'da `limits.max_uploads` orqali cheklash tavsiya etiladi);
       `C:\\ProgramData\\vmsagent\\state.json`) — Linux default yo'llari
       (/var/...) Windows'da yaratilmaydi; `vmsagent -doctor` buni
       aniq xato bilan ko'rsatadi.
+
+### 2026-11-23 (kechirgan qism) — `builds/cvms_agent_0.N` (tekis papka)
+
+Yuqoridagi `builds/<versiyada>/` sxemi foydalanuvchi talabiga ko'ra
+BEKOR: endi hammasi bitta `builds/` ichida, versiya nomda —
+`cvms_agent_0.1`, `cvms_agent_0.2.exe`, qadoq `cvms_agent_0.N.tar.gz`.
+Hisoblagich: `builds/.next_version`. `remote-update`/`package` shu
+nomlarga o'tkazildi (ssh iqtibosidagi `$V` kengaytmasi ham tuzatildi).

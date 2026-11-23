@@ -4,11 +4,17 @@
 MODULE      := central-vms/client
 BIN         := vmsagent
 BUILD_DIR   := build
-# Barcha yig'ilgan artefaktlar VERSIYALANGAN holda `builds/<versiyada>/`
-# ichida saqlanadi (2026-11-23 foydalanuvchi talabi). `build/` esa
-# ish staging'i: eng yangi linux binar shu yerga nusxalanadi (start/run/
-# install/itest oqimlari uzilmasligi uchun).
+# Barcha artefaktlar TEKIS `builds/` papkasida, versiya FAYL NOMIDA
+# (2026-11-23 foydalanuvchi talabi): cvms_agent_0.1, cvms_agent_0.2.exe, ...
+# Har `make build`/`buildWin` hisoblagichni +1 qiladi (builds/.next_version).
+# Standart bo'lmagan GOOS/GOARCH faqat nomga suffix qo'shadi. `build/` esa
+# staging: eng yangi linux binar shu yerga nusxalanadi (start/run/install/
+# itest oqimlari uzilmasligi uchun).
 BUILDS_DIR  := builds
+VERFILE     := $(BUILDS_DIR)/.next_version
+# Nom suffixlari: standart (linux/amd64) — bo'sh; aks holda _<os>/_<arch>.
+LNXSFX = $(if $(filter-out linux,$(GOOS)),_$(GOOS))$(if $(filter-out amd64,$(GOARCH)),_$(GOARCH))
+WNSFX  = $(if $(filter-out amd64,$(WINARCH)),_$(WINARCH))
 RUN_DIR     := $(BUILD_DIR)/run
 GO          := go
 GOFLAGS     := -trimpath
@@ -84,26 +90,31 @@ dev:
 	$(GO) run ./cmd/$(BIN) -config $$CFG & echo $$! > $(RUN_DIR)/dev-$(BIN).pid; \
 	wait $$(cat $(RUN_DIR)/dev-$(BIN).pid)
 
-## Artefaktlar: builds/<versiyada>/<bin>-<os>-<arch>; build/ staging
-## (root §4.1: binary + config + unit + install.sh + VERSION).
+## Artefaktlar: builds/cvms_agent_0.N (tekis papka; N har build'da +1,
+## hisoblagich: builds/.next_version). build/ staging (root §4.1: binary +
+## config + unit + install.sh + VERSION).
 build:
-	@mkdir -p $(BUILD_DIR)/config $(BUILD_DIR)/systemd $(BUILDS_DIR)/$(VERSION)
-	CGO_ENABLED=$(CGO) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILDS_DIR)/$(VERSION)/$(BIN)-$(GOOS)-$(GOARCH) ./cmd/$(BIN)
-	cp -f $(BUILDS_DIR)/$(VERSION)/$(BIN)-$(GOOS)-$(GOARCH) $(BUILD_DIR)/$(BIN)
+	@mkdir -p $(BUILD_DIR)/config $(BUILD_DIR)/systemd $(BUILDS_DIR)
+	@N=$$(( $$(cat $(VERFILE) 2>/dev/null || echo 0) + 1 )); echo $$N > $(VERFILE); \
+	echo "build versiyasi: 0.$$N"; \
+	CGO_ENABLED=$(CGO) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILDS_DIR)/cvms_agent_0.$$N$(LNXSFX) ./cmd/$(BIN) && \
+	cp -f $(BUILDS_DIR)/cvms_agent_0.$$N$(LNXSFX) $(BUILD_DIR)/$(BIN)
 	cp -f config/client.yaml.example $(BUILD_DIR)/config/client.yaml
 	cp -f systemd/vmsagent.service $(BUILD_DIR)/systemd/vmsagent.service
 	cp -f install.sh $(BUILD_DIR)/install.sh
 	printf '%s (commit %s, %s)\n' "$(VERSION)" "$(COMMIT)" "$(BUILD_AT)" > $(BUILD_DIR)/VERSION
-	@echo "builds/$(VERSION)/ tayyor: $$(ls $(BUILDS_DIR)/$(VERSION))"
+	@echo "builds/ tayyor: $$(ls $(BUILDS_DIR) | grep -v '^\\.')"
 
 ## Windows uchun cross-compile (Windows PC'dagi agent uchun; CGO=0 —
-## sof Go, mingw shart emas). Artefakt: builds/<versiyada>/*.exe
+## sof Go, mingw shart emas). Artefakt: builds/cvms_agent_0.N$(WNSFX).exe
 ##   make buildWin            # amd64 (standapt)
 ##   make buildWin WINARCH=arm64
 buildWin:
-	@mkdir -p $(BUILDS_DIR)/$(VERSION)
-	CGO_ENABLED=0 GOOS=windows GOARCH=$(WINARCH) $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILDS_DIR)/$(VERSION)/$(BIN)-windows-$(WINARCH).exe ./cmd/$(BIN)
-	@echo "tayyor: $(BUILDS_DIR)/$(VERSION)/$(BIN)-windows-$(WINARCH).exe"
+	@mkdir -p $(BUILDS_DIR)
+	@N=$$(( $$(cat $(VERFILE) 2>/dev/null || echo 0) + 1 )); echo $$N > $(VERFILE); \
+	echo "build versiyasi: 0.$$N (windows-$(WINARCH))"; \
+	CGO_ENABLED=0 GOOS=windows GOARCH=$(WINARCH) $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILDS_DIR)/cvms_agent_0.$$N$(WNSFX).exe ./cmd/$(BIN)
+	@echo "tayyor: $$(ls $(BUILDS_DIR)/cvms_agent*.exe 2>/dev/null | tail -1)"
 
 ## Mock server (server kutmasdan C1–C3 ni tekshirish)
 devserver:
@@ -202,18 +213,21 @@ naldump:
 	@go run ./cmd/naldump "$(URL)"
 
 ## Tar qadoq (joylarga ko'chirish uchun)
+## Qadoq: oxirgi build versiyasiga ulanadi (yangi hisob RAQAM olmaydi) —
+## builds/cvms_agent_0.N.tar.gz.
 package: build
-	@mkdir -p $(BUILDS_DIR)/$(VERSION)
-	tar -C $(BUILD_DIR) -czf $(BUILDS_DIR)/$(VERSION)/$(BIN)-$(VERSION)-linux-$(GOARCH).tar.gz \
-	  $(BIN) config systemd install.sh VERSION
-	@echo "qadoq: $(BUILDS_DIR)/$(VERSION)/$(BIN)-$(VERSION)-linux-$(GOARCH).tar.gz"
+	@V=$$(cat $(VERFILE) 2>/dev/null || echo 0); \
+	tar -C $(BUILD_DIR) -czf $(BUILDS_DIR)/cvms_agent_0.$$V$(LNXSFX).tar.gz \
+	  $(BIN) config systemd install.sh VERSION && \
+	echo "qadoq: $(BUILDS_DIR)/cvms_agent_0.$$V$(LNXSFX).tar.gz"
 
 ## Joyda SSH orqali yangilash: SSH_HOST=192.168.x.x make remote-update
 remote-update: package
 	@test -n "$$SSH_HOST" || { echo "SSH_HOST=... kerak"; exit 1; }
-	scp $(BUILDS_DIR)/$(VERSION)/$(BIN)-$(VERSION)-linux-$(GOARCH).tar.gz $$SSH_HOST:/tmp/
-	ssh $$SSH_HOST 'sudo tar -xzf /tmp/$(BIN)-$(VERSION)-linux-$(GOARCH).tar.gz -C /opt/vmsagent && sudo systemctl restart $(BIN)'
-	@echo "yangilandi: $$SSH_HOST"
+	@V=$$(cat $(VERFILE) 2>/dev/null || echo 0); \
+	scp $(BUILDS_DIR)/cvms_agent_0.$$V$(LNXSFX).tar.gz $$SSH_HOST:/tmp/ && \
+	ssh $$SSH_HOST "sudo tar -xzf /tmp/cvms_agent_0.$$V$(LNXSFX).tar.gz -C /opt/vmsagent && sudo systemctl restart $(BIN)" && \
+	echo "yangilandi: $$SSH_HOST (0.$$V)"
 
 install: build
 	cd $(BUILD_DIR) && ./install.sh

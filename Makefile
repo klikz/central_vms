@@ -8,7 +8,7 @@
 #   make stop      — uchalasini to'xtatish
 #   make gate      — ikkala tomondagi test darvozalari
 #   make doctor    — ikkala tomonning o'zini-tekshiruvi (2026-11-22)
-#   make buildWin— Windows uchun cross-compile (builds/<ver>/*.exe)
+#   make buildWin— Windows uchun cross-compile (builds/cvms_*_0.N.exe)
 #   make metrics   — ichki /metrics matni (127.0.0.1:8189)
 #   make soak      — qisqa tutun sinovi (HOURS=24 → tunlik)
 

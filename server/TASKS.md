@@ -594,3 +594,14 @@ ixtiyoriy (metrics formati tayyor).
       ko'rinadi.
 - [x] Darvozalar: server gate OK (60,2%), client gate OK (70%),
       `file` tasdiqi: PE32+ executable for MS Windows (ikkala exe).
+
+### 2026-11-23 (kechirgan qism) — `builds/` TEKIS papka, versiya fayl nomida
+
+Foydalanuvchi aniqlashtirdi: papkalar EMAS — bitta `builds/` ichida,
+versiya fayl nomida o'sib boradi:
+`builds/cvms_server_0.1`, `cvms_server_0.2.exe`, `cvms_testagent_0.N`,
+qadoq `cvms_server_0.N.tar.gz`. Hisoblagich `builds/.next_version`
+(har `make build`/`buildWin` +1; `package` raqam OLMAI — oxirgisiga
+ulanadi). Standart bo'lmagan GOOS/GOARCH faqat suffix: `_arm64` va h.k.
+Jonli tasdiq: `make build` → 0.1; `make buildWin` → 0.2.exe (ikkala
+tomon); CI `cross-win` job'i glob'ga o'tkazildi.

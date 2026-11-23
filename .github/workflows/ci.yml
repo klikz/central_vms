@@ -85,4 +85,4 @@ jobs:
           go-version-file: server/go.mod
       - name: buildWin (server + agent, amd64)
         run: make buildWin
-      - run: ls -l server/builds/*/vmsd-windows-amd64.exe client/builds/*/vmsagent-windows-amd64.exe
+      - run: ls -l server/builds/cvms_server_*.exe client/builds/cvms_agent_*.exe
