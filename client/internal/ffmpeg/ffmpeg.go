@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"strconv"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -101,9 +100,10 @@ func Run(ctx context.Context, o Options) (*Handle, error) {
 	}
 	cmd := exec.CommandContext(ctx, path, o.Args...)
 	cmd.Env = o.Env
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	// ctx bekor qilinganda: butun guruhga SIGKILL (ffmpeg bolalari bilan).
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.SysProcAttr = sysProcAttr()
+	// ctx bekor qilinganda: butun guruhga SIGKILL (ffmpeg bolalari bilan;
+	// Windows'da — Kill(), procsys_windows.go).
+	cmd.Cancel = func() error { return killForce(cmd) }
 	cmd.WaitDelay = 3 * time.Second
 
 	h := &Handle{cmd: cmd, fin: make(chan struct{}), errBuf: newTail(4096)}
@@ -153,12 +153,12 @@ func (h *Handle) Stop(grace time.Duration) error {
 	if pid <= 0 {
 		return nil
 	}
-	_ = syscall.Kill(-pid, syscall.SIGINT) // gracieuz yopilish
+	_ = killGraceful(h.cmd) // gracieuz yopilish (Unix: SIGINT; Win: Kill)
 	select {
 	case <-h.fin:
 		return nil
 	case <-time.After(grace):
-		return syscall.Kill(-pid, syscall.SIGKILL)
+		return killForce(h.cmd)
 	}
 }
 

@@ -71,3 +71,18 @@ jobs:
           cache-dependency-path: server/webui/package-lock.json
       - run: npm ci --no-audit --no-fund
       - run: npx vitest run
+
+  # Windows cross-compile (`make buildWin`) — platform-ga xos kod
+  # (syscall.Statfs, Setpgid/Kill) qaytadan qo'shilmasligi uchun qo'rg'on
+  # bosqich: faqat BUILD, test yo'q (tez).
+  cross-win:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+      - name: buildWin (server + agent, amd64)
+        run: make buildWin
+      - run: ls -l server/builds/*/vmsd-windows-amd64.exe client/builds/*/vmsagent-windows-amd64.exe

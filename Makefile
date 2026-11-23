@@ -8,6 +8,7 @@
 #   make stop      — uchalasini to'xtatish
 #   make gate      — ikkala tomondagi test darvozalari
 #   make doctor    — ikkala tomonning o'zini-tekshiruvi (2026-11-22)
+#   make buildWin— Windows uchun cross-compile (builds/<ver>/*.exe)
 #   make metrics   — ichki /metrics matni (127.0.0.1:8189)
 #   make soak      — qisqa tutun sinovi (HOURS=24 → tunlik)
 
@@ -38,13 +39,19 @@ SECRETS    := secrets/camera.env
 
 PY := python3
 
-.PHONY: all build media server agent run stop restart status token seed join approve cams addcam delcam preview frame check gate server-gate client-gate ui-test logs push update
+.PHONY: all build buildWin media server agent run stop restart status token seed join approve cams addcam delcam preview frame check gate server-gate client-gate ui-test logs push update doctor metrics soak
 
 all: build
 
 build:
 	$(MAKE) -C $(SRV) ui-build build
 	$(MAKE) -C $(CLI) build
+
+## Windows uchun cross-compile (ikkala tomon): server/builds/<ver>/*.exe
+## va client/builds/<ver>/*.exe. WINARCH=arm64 ham qo'llab-quvvatlanadi.
+buildWin:
+	$(MAKE) -C $(SRV) buildWin
+	$(MAKE) -C $(CLI) buildWin
 
 ## --- Ishga tushirish (bitta mashina) ---
 
@@ -164,6 +171,21 @@ ui-test:
 	$(MAKE) -C $(SRV) ui-test
 
 gate: server-gate client-gate ui-test
+
+## Ikkala tomonning o'zini-tekshiruvi (stek ishlab turganda to'liq
+## ma'noli). Batafsil variantlar: make -C server doctor / -C client doctor.
+doctor:
+	@$(MAKE) --no-print-directory -C $(SRV) doctor CFG=$(SCFG)
+	@$(MAKE) --no-print-directory -C $(CLI) doctor CFG=$(CCFG)
+
+## Ichki metrikalar (127.0.0.1:8189) — `make -C server metrics`.
+metrics:
+	@$(MAKE) --no-print-directory -C $(SRV) metrics
+
+## Soak: HOURS=0 (~10 daq tutun) yoki HOURS=24 tunlik; kill -9 in'ektsiyasi
+## bilan tiklanish vaqtini olchaydi. Natija: server/var/soak/*.csv.
+soak:
+	@$(MAKE) --no-print-directory -C $(SRV) soak
 
 logs:
 	@echo "--- vmsd:"; tail -5 $(LOG)/vmsd-localhost.log 2>/dev/null | tail -5

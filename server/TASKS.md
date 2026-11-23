@@ -568,3 +568,29 @@ darvaza 59,3% — bo'shadan past emas).
 soak + kill/restart in'ektsiyalari; 10-20 kamera × 3-5 tomoshabin yuk
 testi (`make probe` GPU byudjeti bilan birga); Prometheus/grafana
 ixtiyoriy (metrics formati tayyor).
+
+## 2026-11-23 — versiyalangan `builds/` va Windows cross-compile (`make buildWin`)
+
+- [x] **Barcha artefaktlar `builds/<versiyada>/` ichida** (foydalanuvchi
+      talabi): `make build` → `builds/<ver>/vmsd-linux-amd64`,
+      `testagent-linux-amd64`; `make package` tar'gz ham shu yerga.
+      `build/` staging bo'lib qoldi (eng yangi linux binar nusxalanadi —
+      start/run/seed/soak/install oqimlari uzilmaydi). `clean` ikkalasini
+      oladi; `builds/` .gitignore'da.
+- [x] **`make buildWin`** (root, server, client): Windows uchun
+      cross-compile (`vmsd-windows-amd64.exe`, `testagent-...exe`,
+      `vmsagent-windows-amd64.exe`). CGO=0 — SQLite sof Go
+      (modernc.org/sqlite), mingw shart emas. `WINARCH=arm64` ham
+      ishlaydi. Xato tuzatilgan: `WINARCH ?= amd64 # izoh` Make'da
+      qiymatga bo'shliq qo'shadi — izoh alohida qatorga ko'chirildi.
+- [x] **Platform xatolari yopildi (cross-compile ochilganda):**
+      `vmsd -doctor`dagi `syscall.Statfs` → `doctor_disk_unix.go` /
+      `doctor_disk_windows.go` (x/sys/windows GetDiskFreeSpaceEx — modul
+      grafinda bor edi, tarmoq shartsiz); agent `internal/ffmpeg`dagi
+      `Setpgid/Kill(-pid)` → `procsys_unix.go` / `procsys_windows.go`
+      (Windows'da guruh/sinyal yo'q — graceful=Kill, izoh hujjatli).
+- [x] **CI qo'rg'oni**: `cross-win` job'i — har push'da `make buildWin`
+      (faqat build, tez); platform-ga xos kod qaytib kelmasa darhol
+      ko'rinadi.
+- [x] Darvozalar: server gate OK (60,2%), client gate OK (70%),
+      `file` tasdiqi: PE32+ executable for MS Windows (ikkala exe).

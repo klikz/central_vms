@@ -14,3 +14,6 @@ secrets/
 agent.key
 secrets.bin
 state.json
+
+# Versiyalangan yigish artefaktlari (make build / buildWin)
+builds/

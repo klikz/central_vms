@@ -4,12 +4,20 @@
 MODULE      := central-vms/client
 BIN         := vmsagent
 BUILD_DIR   := build
+# Barcha yig'ilgan artefaktlar VERSIYALANGAN holda `builds/<versiyada>/`
+# ichida saqlanadi (2026-11-23 foydalanuvchi talabi). `build/` esa
+# ish staging'i: eng yangi linux binar shu yerga nusxalanadi (start/run/
+# install/itest oqimlari uzilmasligi uchun).
+BUILDS_DIR  := builds
 RUN_DIR     := $(BUILD_DIR)/run
 GO          := go
 GOFLAGS     := -trimpath
 CGO         := 0
 GOOS        ?= linux
 GOARCH      ?= amd64
+# make buildWin WINARCH=arm64 bilan ham yig'iladi (DIQQAT: Make
+# qator-uzi izohidan oldingi bo'shliqlarni qiymatga qo'shadi — izoh alohida qatorda).
+WINARCH     ?= amd64
 
 # Versiya: git bo'lmasa 'dev' (root REJA §4.3)
 VERSION   := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
@@ -43,7 +51,7 @@ BACKUP_DIR ?= /var/backups/vmsagent
 
 .PHONY: all start dev build run install uninstall logs logs-err backup restore status test race cover gate \
         lint fmt vet fixtures deps deps-fetch devserver itest stress secretscan ui-lint ui-shot logs-err \
-        doctor naldump package remote-update stop stop-service clean help push update
+        doctor naldump buildWin package remote-update stop stop-service clean help push update
 
 all: build
 
@@ -76,15 +84,26 @@ dev:
 	$(GO) run ./cmd/$(BIN) -config $$CFG & echo $$! > $(RUN_DIR)/dev-$(BIN).pid; \
 	wait $$(cat $(RUN_DIR)/dev-$(BIN).pid)
 
-## build/ tarkibi root §4.1: binary + config + unit + install.sh + VERSION
+## Artefaktlar: builds/<versiyada>/<bin>-<os>-<arch>; build/ staging
+## (root §4.1: binary + config + unit + install.sh + VERSION).
 build:
-	@mkdir -p $(BUILD_DIR)/config $(BUILD_DIR)/systemd
-	CGO_ENABLED=$(CGO) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BIN) ./cmd/$(BIN)
+	@mkdir -p $(BUILD_DIR)/config $(BUILD_DIR)/systemd $(BUILDS_DIR)/$(VERSION)
+	CGO_ENABLED=$(CGO) GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILDS_DIR)/$(VERSION)/$(BIN)-$(GOOS)-$(GOARCH) ./cmd/$(BIN)
+	cp -f $(BUILDS_DIR)/$(VERSION)/$(BIN)-$(GOOS)-$(GOARCH) $(BUILD_DIR)/$(BIN)
 	cp -f config/client.yaml.example $(BUILD_DIR)/config/client.yaml
 	cp -f systemd/vmsagent.service $(BUILD_DIR)/systemd/vmsagent.service
 	cp -f install.sh $(BUILD_DIR)/install.sh
 	printf '%s (commit %s, %s)\n' "$(VERSION)" "$(COMMIT)" "$(BUILD_AT)" > $(BUILD_DIR)/VERSION
-	@echo "build/ tayyor: $$(ls $(BUILD_DIR))"
+	@echo "builds/$(VERSION)/ tayyor: $$(ls $(BUILDS_DIR)/$(VERSION))"
+
+## Windows uchun cross-compile (Windows PC'dagi agent uchun; CGO=0 —
+## sof Go, mingw shart emas). Artefakt: builds/<versiyada>/*.exe
+##   make buildWin            # amd64 (standapt)
+##   make buildWin WINARCH=arm64
+buildWin:
+	@mkdir -p $(BUILDS_DIR)/$(VERSION)
+	CGO_ENABLED=0 GOOS=windows GOARCH=$(WINARCH) $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILDS_DIR)/$(VERSION)/$(BIN)-windows-$(WINARCH).exe ./cmd/$(BIN)
+	@echo "tayyor: $(BUILDS_DIR)/$(VERSION)/$(BIN)-windows-$(WINARCH).exe"
 
 ## Mock server (server kutmasdan C1–C3 ni tekshirish)
 devserver:
@@ -184,14 +203,15 @@ naldump:
 
 ## Tar qadoq (joylarga ko'chirish uchun)
 package: build
-	tar -C $(BUILD_DIR) -czf $(BUILD_DIR)/$(BIN)-$(VERSION)-linux-$(GOARCH).tar.gz \
+	@mkdir -p $(BUILDS_DIR)/$(VERSION)
+	tar -C $(BUILD_DIR) -czf $(BUILDS_DIR)/$(VERSION)/$(BIN)-$(VERSION)-linux-$(GOARCH).tar.gz \
 	  $(BIN) config systemd install.sh VERSION
-	@echo "qadoq: $(BUILD_DIR)/$(BIN)-$(VERSION)-linux-$(GOARCH).tar.gz"
+	@echo "qadoq: $(BUILDS_DIR)/$(VERSION)/$(BIN)-$(VERSION)-linux-$(GOARCH).tar.gz"
 
 ## Joyda SSH orqali yangilash: SSH_HOST=192.168.x.x make remote-update
 remote-update: package
 	@test -n "$$SSH_HOST" || { echo "SSH_HOST=... kerak"; exit 1; }
-	scp $(BUILD_DIR)/$(BIN)-$(VERSION)-linux-$(GOARCH).tar.gz $$SSH_HOST:/tmp/
+	scp $(BUILDS_DIR)/$(VERSION)/$(BIN)-$(VERSION)-linux-$(GOARCH).tar.gz $$SSH_HOST:/tmp/
 	ssh $$SSH_HOST 'sudo tar -xzf /tmp/$(BIN)-$(VERSION)-linux-$(GOARCH).tar.gz -C /opt/vmsagent && sudo systemctl restart $(BIN)'
 	@echo "yangilandi: $$SSH_HOST"
 
@@ -254,7 +274,7 @@ stop-service:
 	@sudo systemctl stop $(BIN) && echo "stop-service: $(BIN) to'xtatildi"
 
 clean:
-	rm -rf $(BUILD_DIR) coverage.out
+	rm -rf $(BUILD_DIR) $(BUILDS_DIR) coverage.out
 
 ## GitHub'ga yuklash: BARCHA o'zgarishlarni default izoh bilan commit qilib push qiladi.
 ## Izohni almashtirish: make push MSG="fix(client): …"  (bo‘sh → avtomatik izoh)

@@ -18,7 +18,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"central-vms/server/internal/config"
@@ -145,11 +144,11 @@ func runDoctor(cfg config.Config) error {
 	}
 
 	// 8. Disk joyi (DB turgan disk; 500 MB'dan kam bo'lsa SQLite yozuv
-	// qotadi — eng yashirin muammo).
+	// qotadi — eng yashirin muammo). Platform-spesifik qismi:
+	// doctor_disk_unix.go (Statfs) / doctor_disk_windows.go
+	// (GetDiskFreeSpaceEx) — `make buildWin` shu tufayli uzilmasligi uchun.
 	if dir := filepath.Dir(cfg.DBPath); true {
-		var st syscall.Statfs_t
-		if err := syscall.Statfs(dir, &st); err == nil {
-			free := st.Bavail * uint64(st.Bsize)
+		if free, ok := diskFreeBytes(dir); ok {
 			switch {
 			case free < 200<<20:
 				r.fail("disk joyi: %s'da faqat %d MB qoldi — DB yozuvlari qotadi", dir, free>>20)
@@ -158,6 +157,8 @@ func runDoctor(cfg config.Config) error {
 			default:
 				r.ok("disk joyi: %s'da %d MB bo'sh", dir, free>>20)
 			}
+		} else {
+			r.warn("disk joyi aniqlanmadi (%s)", dir)
 		}
 	}
 

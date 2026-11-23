@@ -518,3 +518,21 @@ prod'da `limits.max_uploads` orqali cheklash tavsiya etiladi);
 - [x] **systemd**: `StartLimitIntervalSec/Burst` (crash-loop to'xtatish),
       `MemoryHigh/MemoryMax` (FFmpeg bolalari shu cgroup'da),
       `LimitNOFILE=8192`.
+
+## 2026-11-23 — `make buildWin` (Windows agenti) va versiyalangan `builds/`
+
+- [x] Artefaktlar `builds/<versiyada>/` ichida: `vmsagent-linux-amd64`
+      (`make build`) va `vmsagent-windows-amd64.exe` (`make buildWin`,
+      `WINARCH=arm64` ham). `build/` — staging (linux binar nusxasi),
+      eski oqimlar (start/install/itest/remote-update) ishlayveradi;
+      `package`/`remote-update` qadoqlari ham `builds/<ver>/`ga.
+- [x] `internal/ffmpeg` platform abstraktsiyasi: `procsys_unix.go`
+      (Setpgid + kill(-pid) — §8.2 xatti-harakati O'ZGARMADI) va
+      `procsys_windows.go` (Windows'da jarayon guruhlari yo'q — Kill;
+      Windows agent'da FFmpeg yo'li kamdan-kam, asosiy yo'l sof Go).
+      Race testlari shu holatda ham o'tdi (media 77%).
+- [x] Windows'da ishga tushirish eslatmasi: `vmsagent-windows-amd64.exe`
+      config yo'llari Windows uslubida bo'lishi kerak (masalan
+      `C:\\ProgramData\\vmsagent\\state.json`) — Linux default yo'llari
+      (/var/...) Windows'da yaratilmaydi; `vmsagent -doctor` buni
+      aniq xato bilan ko'rsatadi.
