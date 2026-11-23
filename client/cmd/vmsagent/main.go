@@ -161,6 +161,15 @@ func run(ctx context.Context, log *slog.Logger, cfgPath string,
 		}
 	}()
 
+	// Birinchi ishga tushirish: config bo'lmasa avtomatik yaratiladi
+	// (server_url bo'sh — manzil lokal UI orqali kiritiladi; configgen.go).
+	if created, cerr := ensureAgentConfig(cfgPath); cerr != nil {
+		return cerr
+	} else if created {
+		fmt.Fprintf(os.Stderr, "vmsagent: config avtomatik yaratildi: %s "+
+			"(yo'llar binar papkasidan; server URL'ni lokal UI orqali kiriting)\n", cfgPath)
+	}
+
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		// BARCHA xatolar faylga ham tushishi kerak: config buzuq bo'lsa

@@ -544,3 +544,25 @@ BEKOR: endi hammasi bitta `builds/` ichida, versiya nomda —
 `cvms_agent_0.1`, `cvms_agent_0.2.exe`, qadoq `cvms_agent_0.N.tar.gz`.
 Hisoblagich: `builds/.next_version`. `remote-update`/`package` shu
 nomlarga o'tkazildi (ssh iqtibosidagi `$V` kengaytmasi ham tuzatildi).
+
+## 2026-11-23 — BIRINCHI ISHGA TUSHIRISH: config avtomatik yaratiladi
+
+- [x] **`vmsagent -config <yo'l>` fayl bo'lmasa default yaratadi va ishga
+      tushadi** (`cmd/vmsagent/configgen.go`). Mavjud faylga tegilmaydi.
+      Shablon mijozning o'z YAML o'quvchisiga (yamlsub) mos.
+- [x] **`server_url` BO'SH yaratiladi** (talab: "dastur ochilib ishga
+      tushgandan keyin server URL UI orqali kiritiladi"): sessiya
+      backoff bilan urib-xato loglamaydi — TINIM holati
+      (`agent.Session.Run`: "server_url sozlanmagan" bitta INFO).
+      Lokal UI'dagi Server URL maydoni (allaqachon bor) "Save" bilan
+      manzilni FAYLGA yozadi (config.SetValues) va sessiyani qayta
+      boshlaydi — eski mexanizm, yangi kod yo'q.
+- [x] **Yo'llar OS-ga mos, binar papkasidan absolut**: `<exe>/data`
+      (state+kalit), `<exe>/logs` — Windows (`C:/...`) va Linux'da cwd'siz
+      to'g'ri ishlaydi.
+- [x] Testlar: `TestEnsureAgentConfig_CreatesValid` (yamlsub Parse +
+      Validate), `TestRun_EmptyServerURLIdles`.
+- [x] **Jonli E2E**: bo'sh DB/server yonida yangi agent → config yaratildi
+      → UI settings bilan server_url → "sessiya qayta boshlandi" →
+      UI join → server tasdiqi → "ulanish tasdiqlandi", client `online`.
+      Faylga `server_url: ws://...` yozilgani tasdiqlandi.

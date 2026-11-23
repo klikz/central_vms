@@ -605,3 +605,23 @@ qadoq `cvms_server_0.N.tar.gz`. Hisoblagich `builds/.next_version`
 ulanadi). Standart bo'lmagan GOOS/GOARCH faqat suffix: `_arm64` va h.k.
 Jonli tasdiq: `make build` → 0.1; `make buildWin` → 0.2.exe (ikkala
 tomon); CI `cross-win` job'i glob'ga o'tkazildi.
+
+## 2026-11-23 — BIRINCHI ISHGA TUSHIRISH: config avtomatik yaratiladi
+
+Foydalanuvchi talabi (savollar + javoblar bilan aniqlashtirildi):
+
+- [x] **`vmsd -config <yo'l>` fayl bo'lmasa default yaratadi va darhol
+      ishga tushadi** (`cmd/vmsd/configgen.go`). Mavjud faylga
+      (buzuq bo'lsa ham) TEGILMAYDI — xato bilan chiqamiz.
+- [x] **Yo'llar OS-ga mos va absolut**: binar turgan papkadan
+      (`<exe>/var/vmsd.db`, `<exe>/web`, `<exe>/migrations`,
+      `<exe>/var/log/vmsd.log`) — cwd'ga bog'liq emas; Windows'da
+      `C:/...` ko'rinishida (Windows to'g'ri slash'larni qabul qiladi),
+      Linux'da `/opt/vmsd/...`. Dastur shu yo'llarni to'g'ri o'qiydi.
+- [x] **jwt_secret o'zi generatsiya qilinadi** (32 bayt tasodifiy →
+      64 belgi) va faylga 0600 bilan yoziladi; stderr'da aniq xabar.
+- [x] Test: `TestEnsureServerConfig_CreatesValid` (Load+Validate o'tadi,
+      izinlar, tasodifiy secret, mavjud fayl himoyasi).
+      Yo'lda ochildi: `fmt.Sprintf` indeksli verb'lar argument ro'yxatini
+      BOSHIDAN sanaydi — shablon siljib, jwt_secret o'rniga papka yo'li
+      yozilgan edi; test uni darhol ushladi.

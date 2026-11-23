@@ -151,6 +151,24 @@ func (s *Session) serve(ctx context.Context, conn *websocket.Conn) error {
 // Run — uzluksiz qayta ulanish sikli (backoff clock.Clock orqali: fake clock testi).
 // ctx bekor qilinsa nil qaytaradi.
 func (s *Session) Run(ctx context.Context) error {
+	// server_url sozlanmagan (birinchi ishga tushirish — config avtomatik
+	// yaratilganda bo'sh bo'ladi): backoff bilan xato loglamasdan TINIM.
+	// Lokal UI "Save" sessiyani qayta boshlaydi (main.go reload), shuning
+	// uchun bu yerda faqat ctx kutiladi. 2026-11-23 talabi.
+	if s.cfg.ServerURL == "" {
+		s.cfg.Log.Info("server_url sozlanmagan",
+			"izoh", "lokal UI'dan server manzilini kiriting — sessiya avtomatik qayta boshlanadi")
+		t := s.cfg.Clock.NewTicker(2 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-t.C():
+			}
+		}
+	}
+
 	bo := NewBackoff(ProfileNormal, nil)
 	for {
 		if err := ctx.Err(); err != nil {

@@ -59,6 +59,15 @@ func run() error {
 		return nil
 	}
 
+	// Birinchi ishga tushirish: config bo'lmasa avtomatik yaratiladi
+	// (jwt_secret bilan); mavjud faylga tegilmaydi (configgen.go).
+	if created, cerr := ensureServerConfig(*cfgPath); cerr != nil {
+		return cerr
+	} else if created {
+		fmt.Fprintf(os.Stderr, "vmsd: config avtomatik yaratildi: %s "+
+			"(yo'llar binar papkasidan; jwt_secret generatsiya qilindi — tekshirib chiqing)\n", *cfgPath)
+	}
+
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
 		return err

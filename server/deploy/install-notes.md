@@ -28,6 +28,13 @@ sudo systemctl enable --now vms-media vmsd
 - `/opt/vmsd/config/config.yaml` — `config/prod.yaml.example` dan
   nusxa; `bind`, `db_path`, `mediamtx.public_host` (LAN IP yoki
   DNS nomi) to'g'rilanadi.
+- **Birinchi ishga tushirish (2026-11-23):** config fayl BO'LMA-SA
+  `vmsd` uni o'zi yaratadi va ishga tushadi — yo'llar binar papkasidan
+  absolut (`<exe>/var/vmsd.db`, `<exe>/web`, ...; Windows'da `C:/...`),
+  `jwt_secret` tasodifiy generatsiya qilinadi (fayl 0600). Mavjud
+  faylga (buzuq bo'lsa ham) tegilmaydi. Agent tomonida ham xuddi shu:
+  `server_url` bo'sh yaratiladi, manzil lokal UI orqali kiritiladi
+  (faylga saqlanadi, sessiya avtomatik qayta boshlanadi).
 - JWT sirri faylda SAQLANMAYDI: `/etc/vmsd/secret.env` (0600) ichida
   `VMSD_JWT_SECRET=<32+ belgi>`.
 - Birinchi admin: `sudo /opt/vmsd/vmsd -config /opt/vmsd/config/config.yaml -seed-admin "login:parol"`.
